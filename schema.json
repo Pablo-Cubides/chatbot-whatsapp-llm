@@ -1,0 +1,13 @@
+{
+    "name": "cita_response",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "sugerencia_cita": { "type": "string" },
+        "nivel_interes":    { "type": "integer" }
+      },
+      "required": ["sugerencia_cita", "nivel_interes"]
+    },
+    "strict": true
+  }
+  
