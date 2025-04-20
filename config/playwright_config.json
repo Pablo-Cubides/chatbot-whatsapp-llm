@@ -1,0 +1,9 @@
+{
+    "userDataDir":    "${PLAYWRIGHT_PROFILE_DIR}",
+    "whatsappUrl":    "${WHATSAPP_URL}",
+    "headless":       false,
+    "messageCheckInterval": "${MESSAGE_CHECK_INTERVAL}",
+    "maxRetries":     3,
+    "navigationTimeout": 30000
+  }
+    
