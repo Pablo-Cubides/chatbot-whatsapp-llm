@@ -1,7 +1,13 @@
 # stub_chat.py
 
-import json
-import os
+iclient = OpenAI(
+    base_url="http://127.0.0.1:1234/v1",
+    api_key="lm-studio",
+    timeout=30.0  # 30 segundos timeout
+)
+
+
+def chat(user_message: str, chat_id: str, history: list) -> str:port os
 from openai import OpenAI
 import logging
 
@@ -21,6 +27,12 @@ client = OpenAI(
     base_url="http://127.0.0.1:1234/v1",
     api_key="lm-studio",
     timeout=30.0  # 30 segundos timeout
+)
+
+# Inicializa el cliente de LM Studio
+client = OpenAI(
+    base_url="http://127.0.0.1:1234/v1",
+    api_key="lm-studio"
 )
 
 
@@ -127,32 +139,10 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
         
         # Mensajes específicos según el tipo de error
         if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-            return "El servidor de IA está tardando demasiado en responder. Intenta de nuevo."
-        elif "connection" in error_msg.lower() or "refused" in error_msg.lower():
-            return "No se puede conectar con el servidor de IA. ¿Está LM Studio ejecutándose?"
-        elif "404" in error_msg or "not found" in error_msg.lower():
-            return "El modelo de IA configurado no se encuentra disponible."
+            return "El modelo está tardando mucho en responder. ¿Está cargado en LM Studio?"
+        elif "connection" in error_msg.lower():
+            return "No se puede conectar con LM Studio. Verifica que esté ejecutándose en puerto 1234."
+        elif "model" in error_msg.lower():
+            return "Error con el modelo configurado. Verifica que esté cargado en LM Studio."
         else:
-            return "Ocurrió un error al generar la respuesta. Intenta de nuevo."
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Función auxiliar para tests locales
-# ──────────────────────────────────────────────────────────────────────────────
-def test_connection():
-    """Test básico de conexión con LM Studio"""
-    try:
-        models = client.models.list()
-        print("✓ Conexión exitosa con LM Studio")
-        print(f"Modelos disponibles: {[m.id for m in models.data]}")
-        return True
-    except Exception as e:
-        print(f"✗ Error conectando con LM Studio: {e}")
-        return False
-
-if __name__ == "__main__":
-    test_connection()
-    
-    # Test de chat básico
-    test_response = chat("Hola", "test_user", [])
-    print(f"Respuesta de prueba: {test_response}")
+            return "Error generando respuesta. Verifica la configuración de LM Studio."

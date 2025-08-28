@@ -1,7 +1,12 @@
+import os
 import requests
 import json
+import pytest
+
 
 def test_chat_completions():
+    if os.environ.get("ENABLE_LLM_TEST") != "1":
+        pytest.skip("LM server test disabled. Set ENABLE_LLM_TEST=1 to enable.")
     # URL del endpoint de Chat Completions de LM Studio  
     url = "http://localhost:1234/api/v0/chat/completions"
     

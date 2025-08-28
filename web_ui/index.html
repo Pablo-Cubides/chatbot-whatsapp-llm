@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Admin Panel</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .section { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; padding: 20px; }
+        .section h3 { margin-top: 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .section h4 { color: #555; margin-bottom: 15px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+        input, select, textarea, button { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        textarea { font-family: Arial, sans-serif; }
+        button { background: #667eea; color: white; border: none; cursor: pointer; transition: all 0.3s; }
+        button:hover { background: #5a6fd8; transform: translateY(-1px); }
+        button.secondary { background: #6c757d; }
+        button.success { background: #28a745; }
+        button.danger { background: #dc3545; }
+        button.warning { background: #ffc107; color: #333; }
+        .status { padding: 8px 12px; border-radius: 4px; font-weight: bold; display: inline-block; margin: 5px; }
+        .status.online { background: #d4edda; color: #155724; }
+        .status.offline { background: #f8d7da; color: #721c24; }
+        .status.loading { background: #fff3cd; color: #856404; }
+        .file-editor { margin-bottom: 15px; }
+        .file-editor label { font-weight: bold; display: block; margin-bottom: 5px; }
+        .chat-list { max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; }
+        .chat-item { padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; transition: background 0.2s; }
+        .chat-item:hover { background: #f8f9fa; }
+        .chat-item:last-child { border-bottom: none; }
+        .log-area { height: 200px; overflow-y: auto; background: #f8f9fa; border: 1px solid #ddd; padding: 10px; font-family: monospace; font-size: 12px; border-radius: 4px; }
+        .model-selector { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .current-model { font-weight: bold; color: #28a745; }
+        label { font-weight: 500; color: #555; display: block; margin-bottom: 5px; margin-top: 10px; }
+        input[type="text"], textarea { width: calc(100% - 22px); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Chatbot Admin Panel</h1>
+            <p>Control completo del chatbot WhatsApp con LM Studio</p>
+            <div id="connection-status" class="status loading">Conectando...</div>
+        </div>
+
+        <div class="grid">
+            <!-- LM Studio Models Section -->
+            <div class="section">
+                <h3>🤖 Modelos LM Studio</h3>
+                <div class="model-selector">
+                    <label>Modelo Actual:</label>
+                    <span id="current-model" class="current-model">Cargando...</span>
+                </div>
+                <div id="lm-studio-status" style="margin-bottom: 10px; font-size: 12px;"></div>
+                <select id="lm-models" style="width: 100%; margin-bottom: 10px;">
+                    <option>Cargando modelos...</option>
+                </select>
+                <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap: wrap;">
+                    <button id="start-lmserver" class="secondary">🌐 Iniciar Servidor</button>
+                    <button id="refresh-models" class="secondary">🔄 Refrescar</button>
+                </div>
+                <button id="apply-model" class="success">💾 Aplicar Modelo</button>
+                <div id="model-status" style="margin-top: 10px;"></div>
+
+                <hr style="margin:16px 0;">
+                <div class="model-selector">
+                    <label>Modelo Reasoner:</label>
+                    <span id="current-reasoner-model" class="current-model" style="color:#6f42c1;">Cargando...</span>
+                </div>
+                <select id="reasoner-models" style="width: 100%; margin-bottom: 10px;">
+                    <option>Cargando modelos...</option>
+                </select>
+                <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap: wrap;">
+                    <button id="apply-reasoner-model" class="success">🧠 Aplicar Modelo Reasoner</button>
+                </div>
+                <div id="reasoner-status" style="margin-top: 6px; font-size: 13px;"></div>
+
+                <hr style="margin:16px 0;">
+                <div style="display:flex; gap:8px; flex-wrap: wrap;">
+                    <button id="stop-lmserver" class="warning">⏹️ Parar Servidor LM Studio</button>
+                    <button id="stop-all" class="danger">🛑 Detener Todo</button>
+                </div>
+                <div id="stop-status" style="margin-top: 6px; font-size: 13px;"></div>
+            </div>
+
+            <!-- WhatsApp Control Section -->
+            <div class="section">
+                <h3>📱 Control WhatsApp</h3>
+                <div id="whatsapp-status" class="status offline">Desconectado</div>
+                
+                <div style="margin-top: 15px;">
+                    <button id="start-whatsapp" class="success">🚀 Iniciar WhatsApp</button>
+                    <button id="stop-whatsapp" class="danger">⏹️ Detener WhatsApp</button>
+                    <button id="refresh-whatsapp" class="secondary">🔄 Estado</button>
+                </div>
+                <div id="whatsapp-info" style="margin-top: 10px; font-size: 12px; color: #666;"></div>
+            </div>
+
+            <!-- Settings Section -->
+            <div class="section">
+                <h3>⚙️ Configuración del Modelo</h3>
+                <label>Temperatura: <span id="temp-value">0.7</span></label>
+                <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                
+                <label>Max Tokens: <span id="tokens-value">512</span></label>
+                <input type="range" id="max-tokens" min="50" max="4000" step="50" value="512">
+                
+                <label>Reasoning cada X mensajes:</label>
+                <input type="number" id="reason-messages" min="1" max="50" value="10">
+                
+                <label>
+                    <input type="checkbox" id="respond-to-all"> 
+                    Responder a TODOS los mensajes (no solo contactos permitidos)
+                </label>
+                
+                <button id="save-settings" class="success">💾 Guardar</button>
+            </div>
+        </div>
+
+        <!-- File Editor Section -->
+        <div class="section">
+            <h3>📄 Editor de Archivos</h3>
+            <div class="grid">
+                <div class="file-editor">
+                    <label>📖 Ejemplo Chat:</label>
+                    <textarea id="file-ejemplo-chat" placeholder="Contenido del archivo ejemplo_chat.txt"></textarea>
+                    <button onclick="saveFile('ejemplo_chat')" class="success">💾 Guardar</button>
+                </div>
+                <div class="file-editor">
+                    <label>👤 Perfil:</label>
+                    <textarea id="file-perfil" placeholder="Contenido del archivo Perfil.txt"></textarea>
+                    <button onclick="saveFile('perfil')" class="success">💾 Guardar</button>
+                </div>
+                <div class="file-editor">
+                    <label>📋 Último Contexto:</label>
+                    <textarea id="file-ultimo-contexto" placeholder="Contenido del archivo Ultimo_contexto.txt"></textarea>
+                    <button onclick="saveFile('ultimo_contexto')" class="success">💾 Guardar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Contexts Section -->
+        <div class="section">
+            <h3>💬 Gestión de Contactos y Contextos</h3>
+            <div class="grid">
+                <div>
+                    <h4>Agregar Contacto Admitido</h4>
+                    <div style="margin-bottom: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
+                        <label>ID del Chat (número o nombre):</label>
+                        <input type="text" id="new-chat-id" placeholder="Ej: +1234567890 o NombreContacto" style="width: 100%; margin-bottom: 10px;">
+                        
+                        <label>Contexto inicial:</label>
+                        <textarea id="new-chat-context" placeholder="Información de trasfondo sobre esta persona o conversación" style="width: 100%; height: 80px; margin-bottom: 10px;"></textarea>
+                        
+                        <label>Objetivo de la conversación:</label>
+                        <textarea id="new-chat-objective" placeholder="Qué quieres lograr en esta conversación" style="width: 100%; height: 60px; margin-bottom: 10px;"></textarea>
+                        
+                        <button id="add-allowed-contact" class="success">✅ Agregar a Lista de Admitidos</button>
+                    </div>
+                </div>
+                <div>
+                    <h4>Lista de Contactos Admitidos</h4>
+                    <button id="refresh-chats" class="secondary">🔄 Refrescar</button>
+                    <div id="chat-list" class="chat-list">
+                        <div class="chat-item">Cargando chats...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Editor de contexto existente -->
+            <div id="chat-editor" style="display: none; margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #f9f9f9;">
+                <h4>Editar Contacto</h4>
+                <label>Chat ID: <span id="current-chat-id"></span></label>
+                
+                <label>Contexto del Chat:</label>
+                <textarea id="chat-context" placeholder="Contexto específico para este chat" style="width: 100%; height: 100px; margin-bottom: 10px;"></textarea>
+                
+                <label>Objetivo del Chat:</label>
+                <textarea id="chat-objective" placeholder="Objetivo específico para este chat" style="width: 100%; height: 80px; margin-bottom: 10px;"></textarea>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button id="save-chat-context" class="success">💾 Guardar Cambios</button>
+                    <button id="remove-allowed-contact" class="danger">🗑️ Quitar de Lista</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Section -->
+        <div class="section">
+            <h3>📊 Analytics</h3>
+            <div id="analytics">Cargando estadísticas...</div>
+        </div>
+
+        <!-- Real-time Events -->
+        <div class="section">
+            <h3>🔄 Eventos en Tiempo Real</h3>
+            <div id="events" class="log-area">Conectando a eventos...</div>
+        </div>
+    </div>
+
+    <script>
+    const API_TOKEN = 'Bearer admintoken';
+        let currentChatId = null;
+        let eventSource = null;
+        let whatsappActive = false;
+
+        // Small helpers to safely bind events only when elements exist
+        function bindClick(id, handler){
+            const el = document.getElementById(id);
+            if (el) el.onclick = handler;
+        }
+        function bindChange(id, handler){
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', handler);
+        }
+
+        // API helper function
+        async function api(endpoint, options = {}) {
+            // Build headers and auto-serialize JSON bodies when needed
+            const headers = {
+                'Authorization': API_TOKEN,
+                'Content-Type': 'application/json',
+                ...(options.headers || {})
+            };
+            const init = { ...options, headers };
+            const ct = (headers['Content-Type'] || headers['content-type'] || '').toLowerCase();
+            if (init.body && typeof init.body !== 'string' && ct.includes('application/json')) {
+                init.body = JSON.stringify(init.body);
+            }
+
+            const response = await fetch(endpoint, init);
+            
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.status}`);
+            }
+            
+            return response.json();
+        }
+
+        // Initialize dashboard
+        async function init() {
+            try {
+                // Check connection without auth first
+                const response = await fetch('/api/status');
+                if (!response.ok) {
+                    throw new Error(`Status check failed: ${response.status}`);
+                }
+                const status = await response.json();
+                
+                document.getElementById('connection-status').className = 'status online';
+                document.getElementById('connection-status').textContent = 'Conectado';
+                
+                // Load everything
+                await Promise.all([
+                    loadLMStudioModels(),
+                    loadCurrentModel(),
+                    loadSettings(),
+                    loadFiles(),
+                    loadChats(),
+                    loadAnalytics(),
+                    checkWhatsAppStatus(),
+                    loadRespondToAllSetting()
+                ]);
+                
+                // Setup event listeners
+                setupEventListeners();
+                
+            } catch (error) {
+                console.error('Failed to initialize:', error);
+                document.getElementById('connection-status').className = 'status offline';
+                document.getElementById('connection-status').textContent = 'Error de conexión';
+            }
+        }
+
+        // Load respond to all setting
+        async function loadRespondToAllSetting() {
+            try {
+                const response = await api('/api/settings');
+                const respondToAll = response.respond_to_all || false;
+                document.getElementById('respond-to-all').checked = respondToAll;
+            } catch (error) {
+                console.error('Failed to load respond to all setting:', error);
+            }
+        }
+
+        // Save respond to all setting
+        async function saveRespondToAllSetting() {
+            try {
+                const respondToAll = document.getElementById('respond-to-all').checked;
+                await api('/api/settings', {
+                    method: 'PUT',
+                    body: { respond_to_all: respondToAll }
+                });
+                console.log('Respond to all setting saved:', respondToAll);
+            } catch (error) {
+                console.error('Failed to save respond to all setting:', error);
+            }
+        }
+
+        // Add allowed contact
+        async function addAllowedContact() {
+            try {
+                const chatId = document.getElementById('new-chat-id').value.trim();
+                const context = document.getElementById('new-chat-context').value.trim();
+                const objective = document.getElementById('new-chat-objective').value.trim();
+
+                if (!chatId) {
+                    alert('Por favor ingresa un ID de chat');
+                    return;
+                }
+
+                await api('/api/allowed-contacts', {
+                    method: 'POST',
+                    body: {
+                        chat_id: chatId,
+                        initial_context: context,
+                        objective: objective
+                    }
+                });
+
+                // Clear form
+                document.getElementById('new-chat-id').value = '';
+                document.getElementById('new-chat-context').value = '';
+                document.getElementById('new-chat-objective').value = '';
+
+                alert(`✅ Contacto ${chatId} agregado a la lista de admitidos`);
+                loadChats(); // Refresh list
+            } catch (error) {
+                console.error('Failed to add allowed contact:', error);
+                alert('❌ Error al agregar contacto');
+            }
+        }
+
+        // Remove allowed contact
+        async function removeAllowedContact() {
+            if (!currentChatId) return;
+            
+            if (!confirm(`¿Estás seguro de quitar ${currentChatId} de la lista de admitidos?`)) {
+                return;
+            }
+
+            try {
+                await api(`/api/allowed-contacts/${currentChatId}`, {
+                    method: 'DELETE'
+                });
+
+                alert(`✅ Contacto ${currentChatId} removido de la lista`);
+                document.getElementById('chat-editor').style.display = 'none';
+                currentChatId = null;
+                loadChats(); // Refresh list
+            } catch (error) {
+                console.error('Failed to remove allowed contact:', error);
+                alert('❌ Error al remover contacto');
+            }
+        }
+
+        // Load LM Studio models (with local fallback)
+        async function loadLMStudioModels() {
+            try {
+                const response = await api('/api/lmstudio/models');
+                const select = document.getElementById('lm-models');
+                const selectReasoner = document.getElementById('reasoner-models');
+                const statusDiv = document.getElementById('lm-studio-status');
+                
+                select.innerHTML = '';
+                selectReasoner.innerHTML = '';
+                
+                const hasLm = response.lm_studio_running && response.models && response.models.length > 0;
+                const hasLocal = response.local_models && response.local_models.length > 0;
+
+                if (hasLm) {
+                    statusDiv.innerHTML = `<span style="color: green;">✅ LM Studio conectado (puerto ${response.port || 1234})</span>`;
+                    response.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = `${model.name} (LM)`;
+                        select.appendChild(option);
+                        // clone for reasoner
+                        const r = option.cloneNode(true);
+                        selectReasoner.appendChild(r);
+                    });
+                }
+
+                if (!hasLm && hasLocal) {
+                    statusDiv.innerHTML = '<span style="color: #b58900;">ℹ️ LM Studio no disponible. Mostrando modelos locales.</span>';
+                }
+
+                if (hasLocal) {
+                    // group local
+                    const group = document.createElement('optgroup');
+                    group.label = 'Modelos locales (.gguf)';
+                    response.local_models.forEach(m => {
+                        const option = document.createElement('option');
+                        option.value = m.id;
+                        option.textContent = `${m.name} (local)`;
+                        option.dataset.path = m.path;
+                        option.dataset.source = 'local';
+                        group.appendChild(option);
+                    });
+                    select.appendChild(group);
+                    // replicate group for reasoner
+                    const group2 = document.createElement('optgroup');
+                    group2.label = 'Modelos locales (.gguf)';
+                    response.local_models.forEach(m => {
+                        const option = document.createElement('option');
+                        option.value = m.id;
+                        option.textContent = `${m.name} (local)`;
+                        option.dataset.path = m.path;
+                        option.dataset.source = 'local';
+                        group2.appendChild(option);
+                    });
+                    selectReasoner.appendChild(group2);
+                }
+
+                if (!hasLm && !hasLocal) {
+                    statusDiv.innerHTML = '<span style="color: red;">❌ No se detectó LM Studio ni modelos locales en D:\\IA\\Texto\\Models</span>';
+                    select.innerHTML = '<option>Sin modelos disponibles</option>';
+                    selectReasoner.innerHTML = '<option>Sin modelos disponibles</option>';
+                    document.getElementById('model-status').innerHTML = 
+                        `<div style="color: red;">Inicia LM Studio en 127.0.0.1:1234 o coloca modelos .gguf en D:\\IA\\Texto\\Models</div>`;
+                }
+            } catch (error) {
+                console.error('Failed to load LM Studio models:', error);
+                document.getElementById('lm-models').innerHTML = '<option>Error cargando modelos</option>';
+                document.getElementById('reasoner-models').innerHTML = '<option>Error cargando modelos</option>';
+                document.getElementById('lm-studio-status').innerHTML = '<span style="color: red;">❌ Error de conexión</span>';
+            }
+        }
+
+        // Start LM Studio App (opens the GUI), then try to start server
+        async function startLMStudio() {
+            try {
+                const statusDiv = document.getElementById('lm-studio-status');
+                statusDiv.innerHTML = '<span style="color:#b58900;">⏳ Iniciando LM Studio…</span>';
+                const resp = await api('/api/lmstudio/start', { method: 'POST' });
+                if (resp.success) {
+                    statusDiv.innerHTML = `<span style=\"color: green;\">✅ ${resp.message}</span>`;
+                    // Try to start the HTTP server as well
+                    setTimeout(startLMStudioServer, 1000);
+                    setTimeout(loadLMStudioModels, 2000);
+                } else {
+                    statusDiv.innerHTML = `<span style=\"color: red;\">❌ ${resp.error || 'No se pudo iniciar LM Studio'}</span>`;
+                }
+            } catch (e) {
+                document.getElementById('lm-studio-status').innerHTML = '<span style="color: red;">❌ Error al iniciar LM Studio</span>';
+            }
+        }
+
+        // Start LM Studio local server via CLI (lms server start)
+        async function startLMStudioServer() {
+            try {
+                const statusDiv = document.getElementById('lm-studio-status');
+                statusDiv.innerHTML = '<span style="color:#b58900;">⏳ Iniciando servidor LM Studio…</span>';
+                const resp = await api('/api/lmstudio/server/start', { method: 'POST' });
+                if (resp.success) {
+                    statusDiv.innerHTML = `<span style=\"color: green;\">✅ ${resp.message}</span>`;
+                    setTimeout(loadLMStudioModels, 1000);
+                } else {
+                    statusDiv.innerHTML = `<span style=\"color: red;\">❌ ${resp.error || 'No se pudo iniciar el servidor'}</span>`;
+                }
+            } catch (e) {
+                document.getElementById('lm-studio-status').innerHTML = '<span style="color: red;">❌ Error al iniciar el servidor</span>';
+            }
+        }
+
+        // Load the currently selected model into LM Studio via CLI (lms load <model>)
+        async function loadModelInLMStudio() {
+            try {
+                const select = document.getElementById('lm-models');
+                const opt = select.options[select.selectedIndex];
+                if (!opt) return;
+                const toLoad = opt.dataset?.source === 'local' && opt.dataset?.path ? opt.dataset.path : opt.value;
+                const statusDiv = document.getElementById('model-status');
+                statusDiv.innerHTML = '<span style="color:#b58900;">⏳ Cargando modelo en LM Studio…</span>';
+                const resp = await api('/api/lmstudio/load', { method: 'POST', body: { model: toLoad } });
+                if (resp.success) {
+                    statusDiv.innerHTML = '<span style="color: green;">✅ Modelo cargado en LM Studio</span>';
+                    setTimeout(loadLMStudioModels, 1000);
+                } else {
+                    statusDiv.innerHTML = `<span style=\"color: red;\">❌ ${resp.error || 'No se pudo cargar el modelo'}</span>`;
+                }
+            } catch (e) {
+                document.getElementById('model-status').innerHTML = '<span style="color: red;">❌ Error al cargar el modelo</span>';
+            }
+        }
+
+        // Load current model
+        async function loadCurrentModel() {
+            try {
+                const [responderRes, reasonerRes] = await Promise.all([
+                    api('/api/current-model'),
+                    api('/api/reasoner-model')
+                ]);
+
+                if (responderRes.current_model) {
+                    document.getElementById('current-model').textContent = responderRes.current_model;
+                    const select = document.getElementById('lm-models');
+                    for (let option of select.options) {
+                        if (option.value === responderRes.current_model) {
+                            option.selected = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (reasonerRes.reasoner_model) {
+                    document.getElementById('current-reasoner-model').textContent = reasonerRes.reasoner_model;
+                    const selectR = document.getElementById('reasoner-models');
+                    for (let option of selectR.options) {
+                        if (option.value === reasonerRes.reasoner_model) {
+                            option.selected = true;
+                            break;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load current model:', error);
+            }
+        }
+
+        // Apply model change
+        async function applyModelChange() {
+            try {
+                const select = document.getElementById('lm-models');
+                const opt = select.options[select.selectedIndex];
+                const selectedModel = opt?.value;
+                const response = await api('/api/current-model', {
+                    method: 'PUT',
+                    body: { model: selectedModel }
+                });
+                
+                if (response.success) {
+                    document.getElementById('current-model').textContent = response.new_model;
+                    const source = opt?.dataset?.source || (opt?.textContent?.includes('(local)') ? 'local' : 'lmstudio');
+                    const extra = source === 'local' ? ' (local)' : '';
+                    document.getElementById('model-status').innerHTML = 
+                        `<div style=\"color: green;\">✅ Modelo actualizado a: ${response.new_model}${extra}</div>`;
+                } else {
+                    document.getElementById('model-status').innerHTML = 
+                        `<div style="color: red;">❌ Error: ${response.error}</div>`;
+                }
+            } catch (error) {
+                console.error('Failed to apply model change:', error);
+                document.getElementById('model-status').innerHTML = 
+                    `<div style="color: red;">❌ Error de conexión</div>`;
+            }
+        }
+
+        // Apply Reasoner model change
+        async function applyReasonerModelChange() {
+            try {
+                const select = document.getElementById('reasoner-models');
+                const opt = select.options[select.selectedIndex];
+                const selectedModel = opt?.value;
+                const response = await api('/api/reasoner-model', {
+                    method: 'PUT',
+                    body: JSON.stringify({ model: selectedModel })
+                });
+                if (response.success) {
+                    document.getElementById('current-reasoner-model').textContent = response.reasoner_model;
+                    const source = opt?.dataset?.source || (opt?.textContent?.includes('(local)') ? 'local' : 'lmstudio');
+                    const extra = source === 'local' ? ' (local)' : '';
+                    document.getElementById('reasoner-status').innerHTML = `<div style="color: green;">✅ Reasoner actualizado a: ${response.reasoner_model}${extra}</div>`;
+                } else {
+                    document.getElementById('reasoner-status').innerHTML = `<div style="color: red;">❌ Error: ${response.error}</div>`;
+                }
+            } catch (e) {
+                document.getElementById('reasoner-status').innerHTML = '<div style="color: red;">❌ Error de conexión</div>';
+            }
+        }
+
+        // Set responder model from selector
+        async function setResponderModel() {
+            await applyModelChange();
+        }
+
+        // Set reasoner model from selector
+        async function setReasonerModel() {
+            await applyReasonerModelChange();
+        }
+
+        // Stop endpoints wiring
+        async function stopLmServer() {
+            try {
+                const resp = await api('/api/lmstudio/server/stop', { method: 'POST' });
+                document.getElementById('stop-status').textContent = resp.success ? `Servidor detenido (PIDs: ${(resp.stopped_pids||[]).join(', ')})` : (resp.error || 'Error al detener servidor');
+                // Refresh models/status shortly after stopping
+                setTimeout(loadLMStudioModels, 800);
+            } catch (e) {
+                document.getElementById('stop-status').textContent = 'Error de conexión al detener servidor';
+            }
+        }
+        async function stopAll() {
+            try {
+                const resp = await api('/api/system/stop-all', { method: 'POST' });
+                document.getElementById('stop-status').textContent = resp.success ? `Detenido todo (PIDs: ${(resp.stopped_pids||[]).join(', ')})` : (resp.error || 'Error al detener');
+                // Refresh states
+                setTimeout(() => { loadLMStudioModels(); checkWhatsAppStatus(); }, 800);
+            } catch (e) {
+                document.getElementById('stop-status').textContent = 'Error de conexión al detener todo';
+            }
+        }
+
+        // Check WhatsApp status
+        async function checkWhatsAppStatus() {
+            try {
+                const response = await api('/api/whatsapp/status');
+                const statusEl = document.getElementById('whatsapp-status');
+                const infoEl = document.getElementById('whatsapp-info');
+                
+                if (response.status === 'running') {
+                    statusEl.className = 'status online';
+                    statusEl.textContent = '🟢 Conectado';
+                    infoEl.textContent = `PID: ${response.pid}`;
+                    whatsappActive = true;
+                    if (!eventSource) startEventStream();
+                } else if (response.status === 'stopped') {
+                    statusEl.className = 'status offline';
+                    statusEl.textContent = '🔴 Desconectado';
+                    infoEl.textContent = 'WhatsApp automator no está ejecutándose';
+                    whatsappActive = false;
+                    stopEventStream();
+                } else if (response.status === 'stale-browser') {
+                    statusEl.className = 'status offline';
+                    statusEl.textContent = '🟠 Restos de navegador';
+                    infoEl.textContent = 'Se detectaron procesos de navegador, usa "Detener WhatsApp" o "Detener Todo" para limpiarlos';
+                    whatsappActive = false;
+                    stopEventStream();
+                } else {
+                    statusEl.className = 'status loading';
+                    statusEl.textContent = '❓ Error';
+                    infoEl.textContent = `Error: ${response.error}`;
+                    whatsappActive = false;
+                    stopEventStream();
+                }
+            } catch (error) {
+                console.error('Failed to check WhatsApp status:', error);
+                whatsappActive = false;
+                stopEventStream();
+            }
+        }
+
+        // Start WhatsApp
+        async function startWhatsApp() {
+            try {
+                document.getElementById('whatsapp-status').className = 'status loading';
+                document.getElementById('whatsapp-status').textContent = '🟡 Iniciando...';
+                
+                const response = await api('/api/whatsapp/start', { method: 'POST' });
+                
+                if (response.success) {
+                    document.getElementById('whatsapp-info').textContent = response.message + ` (PID: ${response.pid})`;
+                    whatsappActive = true;
+                    startEventStream(); // Start events when WhatsApp starts
+                    setTimeout(checkWhatsAppStatus, 2000);
+                } else {
+                    document.getElementById('whatsapp-status').className = 'status offline';
+                    document.getElementById('whatsapp-status').textContent = '❌ Error';
+                    document.getElementById('whatsapp-info').textContent = response.error;
+                    whatsappActive = false;
+                }
+            } catch (error) {
+                console.error('Failed to start WhatsApp:', error);
+                document.getElementById('whatsapp-status').className = 'status offline';
+                document.getElementById('whatsapp-status').textContent = '❌ Error';
+                whatsappActive = false;
+            }
+        }
+
+        // Stop WhatsApp
+        async function stopWhatsApp() {
+            try {
+                document.getElementById('whatsapp-status').className = 'status loading';
+                document.getElementById('whatsapp-status').textContent = '🟡 Deteniendo...';
+                
+                const response = await api('/api/whatsapp/stop', { method: 'POST' });
+                
+                if (response.success) {
+                    const message = response.message || 'WhatsApp automator detenido';
+                    document.getElementById('whatsapp-info').textContent = message;
+                    whatsappActive = false;
+                    stopEventStream(); // Stop events when WhatsApp stops
+                    
+                    // Force immediate status update
+                    document.getElementById('whatsapp-status').className = 'status offline';
+                    document.getElementById('whatsapp-status').textContent = '🔴 Desconectado';
+                    
+                    // Double check status after a moment
+                    setTimeout(checkWhatsAppStatus, 1000);
+                } else {
+                    document.getElementById('whatsapp-info').textContent = response.error || 'Error al detener';
+                    setTimeout(checkWhatsAppStatus, 1000);
+                }
+            } catch (error) {
+                console.error('Failed to stop WhatsApp:', error);
+                setTimeout(checkWhatsAppStatus, 1000);
+            }
+        }
+
+        // Load settings
+        async function loadSettings() {
+            try {
+                const response = await api('/api/settings');
+                
+                document.getElementById('temperature').value = response.temperature || 0.7;
+                document.getElementById('temp-value').textContent = response.temperature || 0.7;
+                
+                document.getElementById('max-tokens').value = response.max_tokens || 512;
+                document.getElementById('tokens-value').textContent = response.max_tokens || 512;
+                
+                document.getElementById('reason-messages').value = response.reason_after_messages || 10;
+                document.getElementById('respond-to-all').checked = response.respond_to_all || false;
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+            }
+        }
+
+        // Save settings
+        async function saveSettings() {
+            try {
+                const settings = {
+                    temperature: parseFloat(document.getElementById('temperature').value),
+                    max_tokens: parseInt(document.getElementById('max-tokens').value),
+                    reason_after_messages: parseInt(document.getElementById('reason-messages').value),
+                    respond_to_all: document.getElementById('respond-to-all').checked
+                };
+                
+                await api('/api/settings', {
+                    method: 'PUT',
+                    body: JSON.stringify(settings)
+                });
+                
+                alert('✅ Configuración guardada correctamente');
+            } catch (error) {
+                console.error('Failed to save settings:', error);
+                alert('❌ Error al guardar configuración');
+            }
+        }
+
+        // Load prompts
+        async function loadPrompts() {
+            try {
+                const response = await api('/api/prompts');
+                
+                document.getElementById('conversational-prompt').value = response.conversational || '';
+                document.getElementById('reasoner-prompt').value = response.reasoner || '';
+                document.getElementById('conversation-prompt').value = response.conversation || '';
+            } catch (error) {
+                console.error('Failed to load prompts:', error);
+            }
+        }
+
+        // Save prompts
+        async function savePrompts() {
+            try {
+                const prompts = {
+                    conversational: document.getElementById('conversational-prompt').value,
+                    reasoner: document.getElementById('reasoner-prompt').value,
+                    conversation: document.getElementById('conversation-prompt').value
+                };
+                
+                await api('/api/prompts', {
+                    method: 'PUT',
+                    body: JSON.stringify(prompts)
+                });
+                
+                alert('✅ Prompts guardados correctamente');
+            } catch (error) {
+                console.error('Failed to save prompts:', error);
+                alert('❌ Error al guardar prompts');
+            }
+        }
+
+        // Load files
+        async function loadFiles() {
+            const files = ['ejemplo_chat', 'perfil', 'ultimo_contexto'];
+            
+            for (const fileName of files) {
+                try {
+                    const response = await api(`/api/files/${fileName}`);
+                    document.getElementById(`file-${fileName}`).value = response.content || '';
+                } catch (error) {
+                    console.error(`Failed to load file ${fileName}:`, error);
+                }
+            }
+        }
+
+        // Save file
+        async function saveFile(fileName) {
+            try {
+                const content = document.getElementById(`file-${fileName}`).value;
+                
+                await api(`/api/files/${fileName}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ content })
+                });
+                
+                alert(`✅ Archivo ${fileName} guardado correctamente`);
+            } catch (error) {
+                console.error(`Failed to save file ${fileName}:`, error);
+                alert(`❌ Error al guardar archivo ${fileName}`);
+            }
+        }
+
+        // Load chats
+        async function loadChats() {
+            try {
+                const response = await api('/api/allowed-contacts');
+                const chatList = document.getElementById('chat-list');
+                
+                if (response && response.length > 0) {
+                    chatList.innerHTML = '';
+                    response.forEach(contact => {
+                        const chatItem = document.createElement('div');
+                        chatItem.className = 'chat-item';
+                        chatItem.innerHTML = `
+                            <strong>${contact.name || contact.chat_id}</strong>
+                            <br>
+                            <small>ID: ${contact.chat_id}</small>
+                            <br>
+                            <small>Contexto: ${contact.initial_context ? '✅' : '❌'} | Objetivo: ${contact.objective ? '✅' : '❌'}</small>
+                            ${contact.initial_context ? `<br><em>${contact.initial_context.substring(0, 50)}...</em>` : ''}
+                        `;
+                        chatItem.onclick = () => selectChat(contact.chat_id);
+                        chatList.appendChild(chatItem);
+                    });
+                } else {
+                    chatList.innerHTML = '<div class="chat-item">No hay contactos permitidos</div>';
+                }
+            } catch (error) {
+                console.error('Failed to load chats:', error);
+                document.getElementById('chat-list').innerHTML = '<div class="chat-item">Error al cargar contactos</div>';
+            }
+        }
+
+        // Select chat
+        async function selectChat(chatId) {
+            try {
+                currentChatId = chatId;
+                const response = await api(`/api/chats/${chatId}`);
+                
+                document.getElementById('current-chat-id').textContent = chatId;
+                document.getElementById('chat-perfil').value = response.files.perfil || '';
+                document.getElementById('chat-contexto').value = response.files.contexto || '';
+                
+                document.getElementById('chat-editor').style.display = 'block';
+            } catch (error) {
+                console.error('Failed to load chat context:', error);
+            }
+        }
+
+        // Save chat context
+        async function saveChatContext() {
+            if (!currentChatId) return;
+            
+            try {
+                const update = {
+                    perfil: document.getElementById('chat-perfil').value,
+                    contexto: document.getElementById('chat-contexto').value
+                };
+                
+                await api(`/api/chats/${currentChatId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(update)
+                });
+                
+                alert(`✅ Contexto del chat ${currentChatId} guardado correctamente`);
+                loadChats(); // Refresh chat list
+            } catch (error) {
+                console.error('Failed to save chat context:', error);
+                alert('❌ Error al guardar contexto del chat');
+            }
+        }
+
+        // Load analytics
+        async function loadAnalytics() {
+            try {
+                const response = await api('/api/analytics');
+                document.getElementById('analytics').innerHTML = `
+                    <div>📊 <strong>Estadísticas:</strong></div>
+                    <div>Modelos: ${response.models || 0}</div>
+                    <div>Contactos: ${response.contacts || 0}</div>
+                    <div>Contextos diarios: ${response.daily_contexts || 0}</div>
+                    <div>Conversaciones: ${response.conversations || 0}</div>
+                `;
+            } catch (error) {
+                console.error('Failed to load analytics:', error);
+                document.getElementById('analytics').textContent = 'Error cargando estadísticas';
+            }
+        }
+
+        // Start event stream (only when WhatsApp is active)
+        function startEventStream() {
+            if (eventSource) return; // Already started
+            
+            try {
+                eventSource = new EventSource('/api/events');
+                
+                eventSource.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    const eventsDiv = document.getElementById('events');
+                    
+                    const eventLine = document.createElement('div');
+                    eventLine.innerHTML = `[${new Date().toLocaleTimeString()}] ${data.type}: ${data.message}`;
+                    
+                    eventsDiv.appendChild(eventLine);
+                    eventsDiv.scrollTop = eventsDiv.scrollHeight;
+                    
+                    // Keep only last 50 events
+                    while (eventsDiv.children.length > 50) {
+                        eventsDiv.removeChild(eventsDiv.firstChild);
+                    }
+                };
+                
+                eventSource.onerror = function(event) {
+                    console.error('EventSource failed:', event);
+                    document.getElementById('events').innerHTML += '<div>[ERROR] Conexión de eventos perdida</div>';
+                };
+                
+                document.getElementById('events').innerHTML = '<div>[INFO] Eventos en tiempo real activados</div>';
+            } catch (error) {
+                console.error('Failed to start event stream:', error);
+            }
+        }
+
+        // Stop event stream
+        function stopEventStream() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                document.getElementById('events').innerHTML = '<div>[INFO] Eventos en tiempo real desactivados</div>';
+            }
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            // Temperature slider
+            document.getElementById('temperature').oninput = function() {
+                document.getElementById('temp-value').textContent = this.value;
+            };
+            
+            // Max tokens slider
+            document.getElementById('max-tokens').oninput = function() {
+                document.getElementById('tokens-value').textContent = this.value;
+            };
+            
+            // Model controls
+            bindClick('refresh-models', loadLMStudioModels);
+            bindClick('start-lmstudio', startLMStudio);      // optional button, may not exist
+            bindClick('start-lmserver', startLMStudioServer);
+            bindClick('load-model', loadModelInLMStudio);    // optional button, may not exist
+            bindClick('apply-model', applyModelChange);
+            bindClick('apply-reasoner-model', applyReasonerModelChange);
+            bindClick('stop-lmserver', stopLmServer);
+            bindClick('stop-all', stopAll);
+            
+            // Model selector handlers
+            bindChange('lm-models', setResponderModel);
+            bindChange('reasoner-models', setReasonerModel);
+            
+            // WhatsApp controls
+            bindClick('start-whatsapp', startWhatsApp);
+            bindClick('stop-whatsapp', stopWhatsApp);
+            bindClick('refresh-whatsapp', checkWhatsAppStatus);
+            
+            // Respond to all toggle
+            document.getElementById('respond-to-all').addEventListener('change', saveRespondToAllSetting);
+            
+            // Contact management handlers
+            bindClick('add-allowed-contact', addAllowedContact);
+            bindClick('remove-allowed-contact', removeAllowedContact);
+            
+            // Settings
+            bindClick('save-settings', saveSettings);
+            
+            // Prompts
+            bindClick('save-prompts', savePrompts); // optional section
+            
+            // Chat controls
+            bindClick('refresh-chats', loadChats);
+            bindClick('save-chat-context', saveChatContext);
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
