@@ -12,9 +12,38 @@ automation.log
 data/contacts.json
 data/contacts_backup.json
 
-# Perfil de navegador
+# Perfil de navegador completo
 data/profile/
+data/whatsapp-profile/
 
 # Archivos generados
 __pycache__/
 *.pyc
+
+# Documentos sensibles - no incluir en el repositorio
+Docs/
+backup_docs/
+Docs_original/
+
+# Archivos de base de datos
+*.db
+chatbot_context.db
+
+# Archivos de datos vectoriales
+docs.index
+docs.pkl
+
+# Archivos de configuración sensibles
+payload.json
+
+# Archivos temporales
+*.tmp
+*.temp
+
+# Archivos específicos de Windows
+*.bat
+*.ps1
+
+# Archivos de configuración local
+data/settings.json
+data/fernet.key
