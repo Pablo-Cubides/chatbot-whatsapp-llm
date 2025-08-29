@@ -51,3 +51,45 @@ data/fernet.key
 # Conversaciones por chat (sensibles)
 contextos/
 contextos/
+# ...existing code...
+# Conversaciones y contextos
+contextos/
+
+# Perfiles/artefactos de navegador y Playwright
+data/profile/
+data/profiles/
+playwright/.auth/
+playwright/.cache/
+*.har
+
+# Bases de datos y cachés locales
+*.db
+*.sqlite
+*.sqlite3
+data/**/*.db
+data/logs/
+logs/
+*.log
+__pycache__/
+.pytest_cache/
+.cache/
+
+# Índices/embeddings (FAISS, pickles, etc.)
+docs.index
+docs.pkl
+*.faiss
+*.index
+*.pkl
+*.npy
+*.npz
+
+# Modelos/pesados
+*.gguf
+*.bin
+
+# Entornos
+venv/
+.venv/
+
+# IDE
+.vscode/
