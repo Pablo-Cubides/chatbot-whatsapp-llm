@@ -47,3 +47,7 @@ payload.json
 # Archivos de configuración local
 data/settings.json
 data/fernet.key
+
+# Conversaciones por chat (sensibles)
+contextos/
+contextos/

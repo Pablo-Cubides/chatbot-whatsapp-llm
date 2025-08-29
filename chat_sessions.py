@@ -48,6 +48,33 @@ def load_last_context(chat_id):
     return []
 
 
+def clear_conversation_history(chat_id: str) -> int:
+    """Borra TODO el historial (tabla conversations) para un chat_id dado.
+    Devuelve el número de filas eliminadas."""
+    session = get_session()
+    try:
+        q = session.query(Conversation).filter(Conversation.chat_id == chat_id)
+        count = q.count()
+        q.delete(synchronize_session=False)
+        session.commit()
+        return count
+    finally:
+        session.close()
+
+
+def clear_all_conversation_histories() -> int:
+    """Borra TODO el historial de TODAS las conversaciones.
+    Devuelve el número de filas eliminadas."""
+    session = get_session()
+    try:
+        count = session.query(Conversation).count()
+        session.query(Conversation).delete(synchronize_session=False)
+        session.commit()
+        return count
+    finally:
+        session.close()
+
+
 # Inicializar al importar para no romper expectativas actuales
 initialize_db()
 

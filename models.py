@@ -27,6 +27,7 @@ class ModelConfig(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     provider = Column(String, nullable=False)
+    model_type = Column(String, default='local')  # 'local' or 'online'
     config = Column(JSON, nullable=True)
     active = Column(Boolean, default=True)
 

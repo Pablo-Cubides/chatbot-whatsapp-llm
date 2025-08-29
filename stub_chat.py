@@ -42,12 +42,141 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
     except Exception:
         payload["max_tokens"] = 2048
 
-    # 2) Inyecta perfil y estrategia activa como system prompts previos al historial
+    # 2) Inyecta perfil/estrategia y Docs locales como system prompts previos al historial
     try:
         import chat_sessions as cs
         profile = cs.get_profile(chat_id)
         active_strategy = cs.get_active_strategy(chat_id)
         pre_systems = []
+        
+        # Primero agregar el perfil del bot/empresa
+        def _read_text(fp: str) -> str:
+            try:
+                with open(fp, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except UnicodeDecodeError:
+                try:
+                    with open(fp, 'r', encoding='cp1252', errors='ignore') as f:
+                        return f.read()
+                except Exception:
+                    return ""
+            except Exception:
+                return ""
+
+        def _load_chat_specific_context(chat_id: str) -> dict:
+            """
+            Carga el contexto específico para un chat desde contextos/{chat_id}/
+            Retorna dict con 'perfil', 'contexto' y 'objetivo' específicos del usuario
+            """
+            # Consider both folders: contextos/{chat_id} and contextos/chat_{chat_id}
+            candidates = [
+                os.path.join(HERE, 'contextos', chat_id),
+                os.path.join(HERE, 'contextos', f'chat_{chat_id}')
+            ]
+            result = {'perfil': '', 'contexto': '', 'objetivo': ''}
+
+            print(f"🔍 Buscando contexto para chat_id: {chat_id}")
+            for contextos_dir in candidates:
+                print(f"🔍 Directorio candidato: {contextos_dir} -> existe={os.path.exists(contextos_dir)}")
+                if not os.path.exists(contextos_dir):
+                    continue
+
+                # Cargar perfil específico del usuario
+                perfil_path = os.path.join(contextos_dir, 'perfil.txt')
+                if os.path.exists(perfil_path) and not result['perfil']:
+                    result['perfil'] = _read_text(perfil_path)
+                    print(f"✅ Cargado perfil del usuario: {len(result['perfil'])} caracteres")
+
+                # Cargar contexto específico del usuario
+                contexto_path = os.path.join(contextos_dir, 'contexto.txt')
+                if os.path.exists(contexto_path) and not result['contexto']:
+                    result['contexto'] = _read_text(contexto_path)
+                    print(f"✅ Cargado contexto del usuario: {len(result['contexto'])} caracteres")
+
+                # Cargar objetivo específico del usuario
+                objetivo_path = os.path.join(contextos_dir, 'objetivo.txt')
+                if os.path.exists(objetivo_path) and not result['objetivo']:
+                    result['objetivo'] = _read_text(objetivo_path)
+                    print(f"✅ Cargado objetivo del usuario: {len(result['objetivo'])} caracteres")
+
+            return result
+
+        docs_dir = os.path.join(HERE, 'Docs')
+        
+        # Cargar archivos globales del sistema
+        try:
+            perfil_fp = os.path.join(docs_dir, 'Perfil.txt')
+            ej_fp = os.path.join(docs_dir, 'ejemplo_chat.txt')
+            ult_fp = os.path.join(docs_dir, 'Ultimo_contexto.txt')
+            
+            perfil_global_txt = _read_text(perfil_fp) if os.path.exists(perfil_fp) else ""
+            ejemplo_txt = _read_text(ej_fp) if os.path.exists(ej_fp) else ""
+            ultimo_txt = _read_text(ult_fp) if os.path.exists(ult_fp) else ""
+            
+            # Cargar contexto específico del chat/usuario
+            chat_context = _load_chat_specific_context(chat_id)
+            
+            # ORDEN DE PRIORIDAD SEGÚN TU ESPECIFICACIÓN:
+            # 1. System base de payload.json (ya está)
+            # 2. System "Guía de conversación" (de ejemplo_chat.txt)
+            # 3. System "Perfil Global" (de Docs/Perfil.txt)  
+            # 4. System "Perfil Usuario" (de contextos/{chat_id}/perfil.txt)
+            # 5. System "Contexto Usuario" (de contextos/{chat_id}/contexto.txt)
+            # 6. System "Contexto diario" (de Docs/Ultimo_contexto.txt)
+            # 7. System "Contexto RAG" (después)
+            
+            if ejemplo_txt.strip():
+                pre_systems.append({
+                    "role": "system", 
+                    "content": f"GUÍA DE CONVERSACIÓN - Estilo y comportamiento (sigue estas pautas siempre):\n{ejemplo_txt}"
+                })
+            
+            if perfil_global_txt.strip():
+                pre_systems.append({
+                    "role": "system", 
+                    "content": f"PERFIL GLOBAL - Información general sobre ti:\n{perfil_global_txt}"
+                })
+            
+            if chat_context['perfil'].strip():
+                pre_systems.append({
+                    "role": "system", 
+                    "content": f"PERFIL DE USUARIO - Información específica sobre este usuario ({chat_id}):\n{chat_context['perfil']}"
+                })
+            
+            if chat_context['contexto'].strip():
+                pre_systems.append({
+                    "role": "system", 
+                    "content": f"CONTEXTO DE USUARIO - Información de contexto específica para este usuario ({chat_id}):\n{chat_context['contexto']}"
+                })
+            if chat_context.get('objetivo','').strip():
+                pre_systems.append({
+                    "role": "system",
+                    "content": f"OBJETIVO DEL CHAT - Qué se busca lograr en esta conversación ({chat_id}):\n{chat_context['objetivo']}"
+                })
+            
+            if ultimo_txt.strip():
+                pre_systems.append({
+                    "role": "system", 
+                    "content": f"CONTEXTO DIARIO - Información reciente y actualizada:\n{ultimo_txt}"
+                })
+            
+            # Agregar información del perfil y estrategia desde la DB si existe
+            if profile and hasattr(profile, 'name'):
+                pre_systems.append({
+                    "role": "system", 
+                    "content": f"PERFIL DB - {profile.name}: {getattr(profile, 'description', 'Sin descripción')}"
+                })
+            
+            if active_strategy and hasattr(active_strategy, 'name'):
+                pre_systems.append({
+                    "role": "system", 
+                    "content": f"ESTRATEGIA ACTIVA - {active_strategy.name}: {getattr(active_strategy, 'description', 'Sin descripción')}"
+                })
+                
+        except Exception as _e:
+            logging.getLogger(__name__).debug(f"Docs no inyectados: {_e}")
+        
+        # Luego agregar configuraciones específicas del chat
         if profile:
             if (profile.initial_context or '').strip():
                 pre_systems.append({"role": "system", "content": f"Contexto inicial del chat: {profile.initial_context}"})
@@ -57,47 +186,70 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
                 pre_systems.append({"role": "system", "content": f"Instrucciones adicionales: {profile.instructions}"})
         if active_strategy and (active_strategy.strategy_text or '').strip():
             pre_systems.append({"role": "system", "content": f"Estrategia activa para este chat (seguir estrictamente):\n{active_strategy.strategy_text}"})
-        # Insert them at the very beginning, before any existing system messages
-        payload["messages"] = pre_systems + payload["messages"]
+
+        # Consolida todos los pre_systems en UN solo system fuerte para maximizar cumplimiento
+        # Añade instrucciones clave para reforzar identidad y estilo
+        preamble = (
+            "INSTRUCCIONES CLAVE (siempre obedecer):\n"
+            "- Cuando te pregunten quién eres o cómo te llamas, responde según el PERFIL (global y/o del usuario) y jamás como 'modelo' o 'IA'.\n"
+            "- Usa el tono y estilo de la GUÍA DE CONVERSACIÓN.\n"
+            "- Para hechos recientes, apóyate en CONTEXTO DIARIO y RAG si están presentes.\n"
+        )
+        pre_systems.insert(0, {"role": "system", "content": preamble})
+        combined_text = "\n\n".join([s.get("content", "") for s in pre_systems if s.get("content")])
+
+        # 3) Añadir Contexto RAG (top-k) directamente al bloque combinado
+        try:
+            from rag_utils import retrieve_context
+            rag_ctx = retrieve_context(user_message)
+            if rag_ctx and rag_ctx.strip():
+                combined_text += ("\n\n" if combined_text else "") + f"CONTEXTO RAG (fragmentos relevantes):\n{rag_ctx}"
+        except Exception as _re:
+            logging.getLogger(__name__).debug(f"RAG no disponible: {_re}")
+
+        # Inserta el bloque combinado como 2º system (dejando primero el system base del payload)
+        base_msgs = payload["messages"]
+        if base_msgs and isinstance(base_msgs[0], dict) and base_msgs[0].get("role") == "system":
+            payload["messages"] = [base_msgs[0]]
+            if combined_text:
+                payload["messages"].append({"role": "system", "content": combined_text})
+            payload["messages"].extend(base_msgs[1:])
+        else:
+            # Si no hay system base, agregamos solo el combinado
+            payload["messages"] = ([{"role": "system", "content": combined_text}] if combined_text else []) + base_msgs
     except Exception as e:
         # If anything fails, continue without extra system messages
         print(f"Warn: profile/strategy injection failed: {e}")
 
-    # 3) Agregar contexto diario desde DB
+    # 3) (Opcional) Contextos de usuario desde DB: se anexan al bloque combinado si existen
     try:
         from admin_db import get_session
-        from models import DailyContext, UserContext
+        from models import UserContext
         session = get_session()
-        
-        # Último contexto diario
-        daily = session.query(DailyContext).order_by(DailyContext.date.desc()).first()
-        if daily:
-            payload["messages"].insert(1, {
-                "role": "system", 
-                "content": f"Contexto diario: {daily.text}"
-            })
-        
-        # Contextos del usuario específico (usar chat_id como user_id)
         user_contexts = session.query(UserContext).filter(UserContext.user_id == chat_id).all()
+        session.close()
+
         if user_contexts:
             user_ctx_text = "\n".join([uc.text for uc in user_contexts])
-            payload["messages"].insert(-1, {
+            # Insertar justo después del primer system (el base) o al principio si no hay base
+            idx = 1 if (payload["messages"] and payload["messages"][0].get("role") == "system") else 0
+            payload["messages"].insert(idx + 1, {  # después del combinado
                 "role": "system",
-                "content": f"Contexto del usuario: {user_ctx_text}"
+                "content": f"CONTEXTO DEL USUARIO (DB):\n{user_ctx_text}"
             })
-        
-        session.close()
     except Exception as e:
-        # Si falla la DB, continuar sin contextos adicionales
-        print(f"Warning: Could not load contexts from DB: {e}")
+        logging.getLogger(__name__).debug(f"UserContext DB no disponible: {e}")
 
-    # 4) (Opcional) Si quieres contexto RAG, descomenta:
-    # from rag_utils import retrieve_context
-    # rag_ctx = retrieve_context(user_message)
-    # payload["messages"].insert(1, {"role":"system", "content": f"Contexto RAG:\n{rag_ctx}"})
+    # 4) RAG ya inyectado en el bloque combinado (arriba)
 
-    # 5) Añade el historial completo
-    payload["messages"].extend(history)
+    # 5) Añade el historial pero limitado para evitar que eclipse el perfil
+    try:
+        import os as _os
+        max_msgs = int(_os.environ.get("CHAT_HISTORY_MAX_MSGS", "12"))
+    except Exception:
+        max_msgs = 12
+    trimmed_history = history[-max_msgs:] if isinstance(history, list) else []
+    payload["messages"].extend(trimmed_history)
 
     # 6) Añade el nuevo turno de usuario
     payload["messages"].append({"role": "user", "content": user_message})

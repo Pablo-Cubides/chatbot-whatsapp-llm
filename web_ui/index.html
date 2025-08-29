@@ -35,6 +35,60 @@
         .current-model { font-weight: bold; color: #28a745; }
         label { font-weight: 500; color: #555; display: block; margin-bottom: 5px; margin-top: 10px; }
         input[type="text"], textarea { width: calc(100% - 22px); }
+        
+        /* Tab Styles */
+        .model-tabs { border-bottom: 2px solid #eee; }
+        .tab-button { 
+            background: transparent; 
+            border: none; 
+            padding: 12px 20px; 
+            cursor: pointer; 
+            border-bottom: 3px solid transparent;
+            font-weight: 500;
+            transition: all 0.3s;
+            margin-right: 10px;
+        }
+        .tab-button.active { 
+            border-bottom-color: #667eea; 
+            color: #667eea; 
+            background: rgba(102, 126, 234, 0.1);
+        }
+        .tab-button:hover:not(.active) { 
+            background: rgba(102, 126, 234, 0.05); 
+        }
+        .tab-content { 
+            padding-top: 20px; 
+        }
+        .online-model-item {
+            border: 1px solid #eee;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+        }
+        .online-model-item h5 {
+            margin: 0 0 8px 0;
+            color: #333;
+        }
+        .online-model-item .provider-badge {
+            background: #667eea;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        .online-model-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .online-model-actions button {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -46,43 +100,204 @@
         </div>
 
         <div class="grid">
-            <!-- LM Studio Models Section -->
+            <!-- Models Management Section -->
             <div class="section">
-                <h3>🤖 Modelos LM Studio</h3>
-                <div class="model-selector">
-                    <label>Modelo Actual:</label>
-                    <span id="current-model" class="current-model">Cargando...</span>
+                <h3>🤖 Gestión de Modelos</h3>
+                
+                <!-- Model Type Tabs -->
+                <div class="model-tabs" style="margin-bottom: 20px;">
+                    <button id="tab-local" class="tab-button active" onclick="switchModelTab('local')">
+                        🏠 Modelos Locales (LM Studio)
+                    </button>
+                    <button id="tab-online" class="tab-button" onclick="switchModelTab('online')">
+                        🌐 Modelos Online (API)
+                    </button>
                 </div>
-                <div id="lm-studio-status" style="margin-bottom: 10px; font-size: 12px;"></div>
-                <select id="lm-models" style="width: 100%; margin-bottom: 10px;">
-                    <option>Cargando modelos...</option>
-                </select>
-                <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap: wrap;">
-                    <button id="start-lmserver" class="secondary">🌐 Iniciar Servidor</button>
-                    <button id="refresh-models" class="secondary">🔄 Refrescar</button>
-                </div>
-                <button id="apply-model" class="success">💾 Aplicar Modelo</button>
-                <div id="model-status" style="margin-top: 10px;"></div>
 
-                <hr style="margin:16px 0;">
-                <div class="model-selector">
-                    <label>Modelo Reasoner:</label>
-                    <span id="current-reasoner-model" class="current-model" style="color:#6f42c1;">Cargando...</span>
-                </div>
-                <select id="reasoner-models" style="width: 100%; margin-bottom: 10px;">
-                    <option>Cargando modelos...</option>
-                </select>
-                <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap: wrap;">
-                    <button id="apply-reasoner-model" class="success">🧠 Aplicar Modelo Reasoner</button>
-                </div>
-                <div id="reasoner-status" style="margin-top: 6px; font-size: 13px;"></div>
+                <!-- Local Models Tab -->
+                <div id="local-models-tab" class="tab-content">
+                    <!-- Main Model Section -->
+                    <div style="margin-bottom: 20px;">
+                        <h4>🤖 Modelo Principal</h4>
+                        <div class="tab-header">
+                            <button class="tab-button active" onclick="switchMainModelTab('local')">Local (LM Studio)</button>
+                            <button class="tab-button" onclick="switchMainModelTab('online')">Online (APIs)</button>
+                        </div>
+                        
+                        <!-- Main Model - Local Tab -->
+                        <div id="main-local-tab" class="tab-content">
+                            <div class="model-selector">
+                                <label>Modelo Actual:</label>
+                                <span id="current-model" class="current-model">Cargando...</span>
+                            </div>
+                            <div id="lm-studio-status" style="margin-bottom: 10px; font-size: 12px;"></div>
+                            <select id="lm-models" style="width: 100%; margin-bottom: 10px;">
+                                <option>Cargando modelos...</option>
+                            </select>
+                            <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap: wrap;">
+                                <button id="start-lmserver" class="secondary">🌐 Iniciar Servidor</button>
+                                <button id="refresh-models" class="secondary">🔄 Refrescar</button>
+                            </div>
+                            <button id="apply-model" class="success">💾 Aplicar Modelo Local</button>
+                            <div id="model-status" style="margin-top: 10px;"></div>
+                        </div>
+                        
+                        <!-- Main Model - Online Tab -->
+                        <div id="main-online-tab" class="tab-content" style="display: none;">
+                            <div class="model-selector">
+                                <label>Modelo Online Actual:</label>
+                                <span id="current-online-model" class="current-model" style="color:#e74c3c;">No configurado</span>
+                            </div>
+                            
+                            <!-- Provider Selection for Main Model -->
+                            <div style="margin-bottom: 15px;">
+                                <label>Proveedor:</label>
+                                <select id="main-online-provider" style="width: 100%; margin-bottom: 10px;" onchange="loadMainOnlineModels()">
+                                    <option value="">Seleccionar proveedor...</option>
+                                    <option value="openai">🤖 OpenAI (GPT-4, GPT-3.5)</option>
+                                    <option value="google">🧠 Google (Gemini)</option>
+                                    <option value="anthropic">🎭 Anthropic (Claude)</option>
+                                    <option value="x-ai">🚀 X AI (Grok)</option>
+                                </select>
+                            </div>
+                            
+                            <div style="margin-bottom: 15px;">
+                                <label>Modelo:</label>
+                                <select id="main-online-models" style="width: 100%; margin-bottom: 10px;">
+                                    <option>Seleccionar proveedor primero...</option>
+                                </select>
+                            </div>
+                            
+                            <div style="margin-bottom: 15px;">
+                                <label>API Key:</label>
+                                <input type="password" id="main-api-key" placeholder="Ingrese su API Key..." style="width: 100%; margin-bottom: 10px;">
+                            </div>
+                            
+                            <button id="apply-main-online-model" class="success">🌐 Aplicar Modelo Online</button>
+                            <div id="main-online-status" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
 
-                <hr style="margin:16px 0;">
-                <div style="display:flex; gap:8px; flex-wrap: wrap;">
-                    <button id="stop-lmserver" class="warning">⏹️ Parar Servidor LM Studio</button>
-                    <button id="stop-all" class="danger">🛑 Detener Todo</button>
+                    <hr style="margin:20px 0;">
+
+                    <!-- Reasoner Model Section -->
+                    <div style="margin-bottom: 20px;">
+                        <h4>🧠 Modelo Razonador</h4>
+                        <div class="tab-header">
+                            <button class="tab-button active" onclick="switchReasonerTab('local')">Local (LM Studio)</button>
+                            <button class="tab-button" onclick="switchReasonerTab('online')">Online (APIs)</button>
+                        </div>
+                        
+                        <!-- Reasoner - Local Tab -->
+                        <div id="reasoner-local-tab" class="tab-content">
+                            <div class="model-selector">
+                                <label>Modelo Reasoner Actual:</label>
+                                <span id="current-reasoner-model" class="current-model" style="color:#6f42c1;">Cargando...</span>
+                            </div>
+                            <select id="reasoner-models" style="width: 100%; margin-bottom: 10px;">
+                                <option>Cargando modelos...</option>
+                            </select>
+                            <button id="apply-reasoner-model" class="success">🧠 Aplicar Modelo Reasoner Local</button>
+                            <div id="reasoner-status" style="margin-top: 6px; font-size: 13px;"></div>
+                        </div>
+                        
+                        <!-- Reasoner - Online Tab -->
+                        <div id="reasoner-online-tab" class="tab-content" style="display: none;">
+                            <div class="model-selector">
+                                <label>Modelo Reasoner Online Actual:</label>
+                                <span id="current-reasoner-online-model" class="current-model" style="color:#e74c3c;">No configurado</span>
+                            </div>
+                            
+                            <!-- Provider Selection for Reasoner -->
+                            <div style="margin-bottom: 15px;">
+                                <label>Proveedor:</label>
+                                <select id="reasoner-online-provider" style="width: 100%; margin-bottom: 10px;" onchange="loadReasonerOnlineModels()">
+                                    <option value="">Seleccionar proveedor...</option>
+                                    <option value="openai">🤖 OpenAI (GPT-4, GPT-3.5)</option>
+                                    <option value="google">🧠 Google (Gemini)</option>
+                                    <option value="anthropic">🎭 Anthropic (Claude)</option>
+                                    <option value="x-ai">🚀 X AI (Grok)</option>
+                                </select>
+                            </div>
+                            
+                            <div style="margin-bottom: 15px;">
+                                <label>Modelo:</label>
+                                <select id="reasoner-online-models" style="width: 100%; margin-bottom: 10px;">
+                                    <option>Seleccionar proveedor primero...</option>
+                                </select>
+                            </div>
+                            
+                            <div style="margin-bottom: 15px;">
+                                <label>API Key:</label>
+                                <input type="password" id="reasoner-api-key" placeholder="Ingrese su API Key..." style="width: 100%; margin-bottom: 10px;">
+                            </div>
+                            
+                            <button id="apply-reasoner-online-model" class="success">🧠 Aplicar Modelo Reasoner Online</button>
+                            <div id="reasoner-online-status" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+
+                    <hr style="margin:16px 0;">
+                    <div style="display:flex; gap:8px; flex-wrap: wrap;">
+                        <button id="stop-lmserver" class="warning">⏹️ Parar Servidor LM Studio</button>
+                        <button id="stop-all" class="danger">🛑 Detener Todo</button>
+                    </div>
+                    <div id="stop-status" style="margin-top: 6px; font-size: 13px;"></div>
                 </div>
-                <div id="stop-status" style="margin-top: 6px; font-size: 13px;"></div>
+
+                <!-- Online Models Tab -->
+                <div id="online-models-tab" class="tab-content" style="display: none;">
+                    <h4>Configurar Modelos Online</h4>
+                    
+                    <!-- Provider Selection -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Proveedor:</label>
+                        <select id="online-provider" style="width: 100%; margin-bottom: 10px;">
+                            <option value="">Seleccionar proveedor...</option>
+                            <option value="google">🧠 Google (Gemini)</option>
+                            <option value="openai">🤖 OpenAI (GPT)</option>
+                            <option value="anthropic">🎭 Anthropic (Claude)</option>
+                            <option value="x-ai">🚀 X AI (Grok)</option>
+                        </select>
+                    </div>
+
+                    <!-- Model Selection -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Modelo:</label>
+                        <select id="online-model" style="width: 100%; margin-bottom: 10px;">
+                            <option value="">Primero selecciona un proveedor</option>
+                        </select>
+                    </div>
+
+                    <!-- Configuration -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Nombre del Modelo (personalizado):</label>
+                        <input type="text" id="online-model-name" placeholder="ej: Mi GPT-4 Personal" style="width: calc(100% - 22px);">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label>API Key:</label>
+                        <input type="password" id="online-api-key" placeholder="Ingresa tu API key" style="width: calc(100% - 22px);">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label>Base URL (opcional):</label>
+                        <input type="text" id="online-base-url" placeholder="URL personalizada del API" style="width: calc(100% - 22px);">
+                    </div>
+
+                    <div style="display:flex; gap:8px; margin-bottom:15px; flex-wrap: wrap;">
+                        <button id="save-online-model" class="success">💾 Guardar Modelo</button>
+                        <button id="test-online-model" class="secondary">🔍 Probar Conexión</button>
+                        <button id="refresh-online-models" class="secondary">🔄 Refrescar</button>
+                    </div>
+
+                    <div id="online-model-status" style="margin-bottom: 15px;"></div>
+
+                    <!-- Online Models List -->
+                    <hr style="margin:16px 0;">
+                    <h4>Modelos Online Configurados</h4>
+                    <div id="online-models-list" style="margin-top: 10px;"></div>
+                </div>
             </div>
 
             <!-- WhatsApp Control Section -->
@@ -151,10 +366,13 @@
                         <label>ID del Chat (número o nombre):</label>
                         <input type="text" id="new-chat-id" placeholder="Ej: +1234567890 o NombreContacto" style="width: 100%; margin-bottom: 10px;">
                         
-                        <label>Contexto inicial:</label>
+                        <label>👤 Perfil del Contacto:</label>
+                        <textarea id="new-chat-perfil" placeholder="Rasgos clave, rol y cómo debes tratar a este contacto" style="width: 100%; height: 80px; margin-bottom: 10px;"></textarea>
+
+                        <label>📋 Contexto inicial:</label>
                         <textarea id="new-chat-context" placeholder="Información de trasfondo sobre esta persona o conversación" style="width: 100%; height: 80px; margin-bottom: 10px;"></textarea>
                         
-                        <label>Objetivo de la conversación:</label>
+                        <label>🎯 Objetivo de la conversación:</label>
                         <textarea id="new-chat-objective" placeholder="Qué quieres lograr en esta conversación" style="width: 100%; height: 60px; margin-bottom: 10px;"></textarea>
                         
                         <button id="add-allowed-contact" class="success">✅ Agregar a Lista de Admitidos</button>
@@ -174,14 +392,19 @@
                 <h4>Editar Contacto</h4>
                 <label>Chat ID: <span id="current-chat-id"></span></label>
                 
-                <label>Contexto del Chat:</label>
-                <textarea id="chat-context" placeholder="Contexto específico para este chat" style="width: 100%; height: 100px; margin-bottom: 10px;"></textarea>
+                <label>👤 Perfil:</label>
+                <textarea id="chat-perfil" placeholder="Perfil específico para este contacto" style="width: 100%; height: 90px; margin-bottom: 10px;"></textarea>
+
+                <label>📋 Contexto:</label>
+                <textarea id="chat-contexto" placeholder="Contexto específico para este chat" style="width: 100%; height: 100px; margin-bottom: 10px;"></textarea>
                 
-                <label>Objetivo del Chat:</label>
-                <textarea id="chat-objective" placeholder="Objetivo específico para este chat" style="width: 100%; height: 80px; margin-bottom: 10px;"></textarea>
+                <label>🎯 Objetivo:</label>
+                <textarea id="chat-objetivo" placeholder="Objetivo específico para este chat" style="width: 100%; height: 80px; margin-bottom: 10px;"></textarea>
                 
-                <div style="display: flex; gap: 10px;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button id="save-chat-context" class="success">💾 Guardar Cambios</button>
+                    <button id="refresh-chat-context" class="secondary">🔄 Actualizar contexto</button>
+                    <button id="clear-chat-history" class="warning">🧹 Borrar historial</button>
                     <button id="remove-allowed-contact" class="danger">🗑️ Quitar de Lista</button>
                 </div>
             </div>
@@ -300,9 +523,10 @@
         }
 
         // Add allowed contact
-        async function addAllowedContact() {
+    async function addAllowedContact() {
             try {
                 const chatId = document.getElementById('new-chat-id').value.trim();
+        const perfil = document.getElementById('new-chat-perfil').value.trim();
                 const context = document.getElementById('new-chat-context').value.trim();
                 const objective = document.getElementById('new-chat-objective').value.trim();
 
@@ -311,10 +535,11 @@
                     return;
                 }
 
-                await api('/api/allowed-contacts', {
+        await api('/api/allowed-contacts', {
                     method: 'POST',
                     body: {
                         chat_id: chatId,
+            perfil: perfil,
                         initial_context: context,
                         objective: objective
                     }
@@ -322,6 +547,7 @@
 
                 // Clear form
                 document.getElementById('new-chat-id').value = '';
+                document.getElementById('new-chat-perfil').value = '';
                 document.getElementById('new-chat-context').value = '';
                 document.getElementById('new-chat-objective').value = '';
 
@@ -356,10 +582,10 @@
             }
         }
 
-        // Load LM Studio models (with local fallback)
+        // Load LM Studio models (local only)
         async function loadLMStudioModels() {
             try {
-                const response = await api('/api/lmstudio/models');
+                const response = await api('/api/lmstudio/models/local-only');
                 const select = document.getElementById('lm-models');
                 const selectReasoner = document.getElementById('reasoner-models');
                 const statusDiv = document.getElementById('lm-studio-status');
@@ -820,7 +1046,7 @@
                             <br>
                             <small>ID: ${contact.chat_id}</small>
                             <br>
-                            <small>Contexto: ${contact.initial_context ? '✅' : '❌'} | Objetivo: ${contact.objective ? '✅' : '❌'}</small>
+                            <small>Perfil: ${contact.initial_context ? '✅' : (contact.perfil ? '✅' : '❌')} | Contexto: ${contact.initial_context ? '✅' : '❌'} | Objetivo: ${contact.objective ? '✅' : '❌'}</small>
                             ${contact.initial_context ? `<br><em>${contact.initial_context.substring(0, 50)}...</em>` : ''}
                         `;
                         chatItem.onclick = () => selectChat(contact.chat_id);
@@ -836,14 +1062,15 @@
         }
 
         // Select chat
-        async function selectChat(chatId) {
+    async function selectChat(chatId) {
             try {
                 currentChatId = chatId;
                 const response = await api(`/api/chats/${chatId}`);
                 
                 document.getElementById('current-chat-id').textContent = chatId;
-                document.getElementById('chat-perfil').value = response.files.perfil || '';
-                document.getElementById('chat-contexto').value = response.files.contexto || '';
+        document.getElementById('chat-perfil').value = response.files.perfil || '';
+        document.getElementById('chat-contexto').value = response.files.contexto || '';
+        document.getElementById('chat-objetivo').value = response.files.objetivo || '';
                 
                 document.getElementById('chat-editor').style.display = 'block';
             } catch (error) {
@@ -858,7 +1085,8 @@
             try {
                 const update = {
                     perfil: document.getElementById('chat-perfil').value,
-                    contexto: document.getElementById('chat-contexto').value
+                    contexto: document.getElementById('chat-contexto').value,
+                    objetivo: document.getElementById('chat-objetivo').value
                 };
                 
                 await api(`/api/chats/${currentChatId}`, {
@@ -871,6 +1099,34 @@
             } catch (error) {
                 console.error('Failed to save chat context:', error);
                 alert('❌ Error al guardar contexto del chat');
+            }
+        }
+
+        // Refresh chat context via reasoner
+        async function refreshChatContext() {
+            if (!currentChatId) return;
+            try {
+                const res = await api(`/api/chats/${currentChatId}/refresh-context`, { method: 'POST' });
+                // Reload editor content
+                await selectChat(currentChatId);
+                alert(`✅ Contexto actualizado. Estrategia v${res.version}.`);
+            } catch (e) {
+                console.error('Failed to refresh chat context:', e);
+                alert('❌ Error al actualizar contexto');
+            }
+        }
+
+        // Clear chat history for specific contact
+        async function clearChatHistory() {
+            if (!currentChatId) return;
+            try {
+                await api('/api/conversations/clear', {
+                    method: 'POST',
+                    body: { chat_id: currentChatId }
+                });
+                alert(`🧹 Historial del chat ${currentChatId} borrado`);
+            } catch (e) {
+                alert('❌ Error al borrar historial');
             }
         }
 
@@ -953,6 +1209,11 @@
             bindClick('load-model', loadModelInLMStudio);    // optional button, may not exist
             bindClick('apply-model', applyModelChange);
             bindClick('apply-reasoner-model', applyReasonerModelChange);
+            
+            // New online model controls
+            bindClick('apply-main-online-model', applyMainOnlineModel);
+            bindClick('apply-reasoner-online-model', applyReasonerOnlineModel);
+            
             bindClick('stop-lmserver', stopLmServer);
             bindClick('stop-all', stopAll);
             
@@ -971,6 +1232,7 @@
             // Contact management handlers
             bindClick('add-allowed-contact', addAllowedContact);
             bindClick('remove-allowed-contact', removeAllowedContact);
+            bindClick('clear-chat-history', clearChatHistory);
             
             // Settings
             bindClick('save-settings', saveSettings);
@@ -981,7 +1243,422 @@
             // Chat controls
             bindClick('refresh-chats', loadChats);
             bindClick('save-chat-context', saveChatContext);
+            bindClick('refresh-chat-context', refreshChatContext);
+            
+            // Online models controls
+            bindClick('save-online-model', saveOnlineModel);
+            bindClick('test-online-model', testOnlineModel);
+            bindClick('refresh-online-models', loadOnlineModels);
+            
+            // Online provider selection
+            document.getElementById('online-provider').addEventListener('change', loadProviderModels);
         }
+
+        // ==================== Tab Management ====================
+        function switchModelTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+            document.getElementById(`${tab}-models-tab`).style.display = 'block';
+            
+            // Load content for the active tab
+            if (tab === 'local') {
+                loadLMStudioModels();
+            } else if (tab === 'online') {
+                loadOnlineModels();
+            }
+        }
+
+        // ==================== Online Models Management ====================
+        
+        // Available models by provider
+        const availableModels = {
+            'google': [
+                {id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Google\'s most capable model'},
+                {id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast and efficient model'},
+                {id: 'gemini-pro', name: 'Gemini Pro', description: 'Google\'s general purpose model'}
+            ],
+            'openai': [
+                {id: 'gpt-4o', name: 'GPT-4o', description: 'OpenAI\'s most advanced model'},
+                {id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Faster, cost-effective model'},
+                {id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Latest GPT-4 with improved capabilities'},
+                {id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', description: 'Fast and cost-effective model'}
+            ],
+            'anthropic': [
+                {id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Anthropic\'s most capable model'},
+                {id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Most powerful Claude model'},
+                {id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet', description: 'Balanced performance and speed'},
+                {id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fast and cost-effective'}
+            ],
+            'x-ai': [
+                {id: 'grok-beta', name: 'Grok Beta', description: 'X\'s conversational AI model'},
+                {id: 'grok-vision-beta', name: 'Grok Vision Beta', description: 'Grok with image understanding'}
+            ]
+        };
+
+        function loadProviderModels() {
+            const provider = document.getElementById('online-provider').value;
+            const modelSelect = document.getElementById('online-model');
+            
+            modelSelect.innerHTML = '<option value="">Selecciona un modelo...</option>';
+            
+            if (provider && availableModels[provider]) {
+                availableModels[provider].forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = `${model.name} - ${model.description}`;
+                    modelSelect.appendChild(option);
+                });
+            }
+        }
+
+        async function loadOnlineModels() {
+            try {
+                const models = await api('/api/models/online');
+                const container = document.getElementById('online-models-list');
+                
+                if (models.length === 0) {
+                    container.innerHTML = '<p style="color: #666; font-style: italic;">No hay modelos online configurados</p>';
+                    return;
+                }
+                
+                container.innerHTML = models.map(model => `
+                    <div class="online-model-item">
+                        <h5>
+                            ${model.name} 
+                            <span class="provider-badge">${model.provider}</span>
+                            ${model.active ? '<span style="color: #28a745;">●</span>' : '<span style="color: #dc3545;">●</span>'}
+                        </h5>
+                        <div class="online-model-actions">
+                            <button onclick="activateOnlineModel(${model.id})" class="success" style="font-size: 12px;">
+                                💾 Activar
+                            </button>
+                            <button onclick="editOnlineModel(${model.id})" class="secondary" style="font-size: 12px;">
+                                ✏️ Editar
+                            </button>
+                            <button onclick="deleteOnlineModel(${model.id})" class="danger" style="font-size: 12px;">
+                                🗑️ Eliminar
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Failed to load online models:', error);
+                document.getElementById('online-models-list').innerHTML = '<p style="color: #dc3545;">Error al cargar modelos online</p>';
+            }
+        }
+
+        async function saveOnlineModel() {
+            const provider = document.getElementById('online-provider').value;
+            const modelId = document.getElementById('online-model').value;
+            const name = document.getElementById('online-model-name').value;
+            const apiKey = document.getElementById('online-api-key').value;
+            const baseUrl = document.getElementById('online-base-url').value;
+            
+            if (!provider || !modelId || !name || !apiKey) {
+                alert('Por favor completa todos los campos requeridos');
+                return;
+            }
+            
+            try {
+                await api('/api/models/online', {
+                    method: 'POST',
+                    body: {
+                        name: name,
+                        provider: provider,
+                        model_id: modelId,
+                        api_key: apiKey,
+                        base_url: baseUrl || null,
+                        active: true
+                    }
+                });
+                
+                // Clear form
+                document.getElementById('online-provider').value = '';
+                document.getElementById('online-model').value = '';
+                document.getElementById('online-model-name').value = '';
+                document.getElementById('online-api-key').value = '';
+                document.getElementById('online-base-url').value = '';
+                
+                document.getElementById('online-model-status').innerHTML = '<span style="color: #28a745;">✅ Modelo guardado exitosamente</span>';
+                setTimeout(() => document.getElementById('online-model-status').innerHTML = '', 3000);
+                
+                // Reload list
+                loadOnlineModels();
+                
+            } catch (error) {
+                console.error('Failed to save online model:', error);
+                document.getElementById('online-model-status').innerHTML = '<span style="color: #dc3545;">❌ Error al guardar modelo</span>';
+            }
+        }
+
+        async function testOnlineModel() {
+            const provider = document.getElementById('online-provider').value;
+            const modelId = document.getElementById('online-model').value;
+            const apiKey = document.getElementById('online-api-key').value;
+            const baseUrl = document.getElementById('online-base-url').value;
+            
+            if (!provider || !modelId || !apiKey) {
+                alert('Por favor completa los campos requeridos para probar');
+                return;
+            }
+            
+            document.getElementById('online-model-status').innerHTML = '<span style="color: #856404;">🔄 Probando conexión...</span>';
+            
+            // TODO: Implement test connection endpoint
+            setTimeout(() => {
+                document.getElementById('online-model-status').innerHTML = '<span style="color: #28a745;">✅ Conexión exitosa (simulado)</span>';
+                setTimeout(() => document.getElementById('online-model-status').innerHTML = '', 3000);
+            }, 2000);
+        }
+
+        async function activateOnlineModel(modelId) {
+            try {
+                // TODO: Implement activate online model
+                alert('Activar modelo online aún no implementado');
+            } catch (error) {
+                console.error('Failed to activate online model:', error);
+                alert('Error al activar modelo online');
+            }
+        }
+
+        async function editOnlineModel(modelId) {
+            // TODO: Implement edit online model
+            alert('Editar modelo online aún no implementado');
+        }
+
+        async function deleteOnlineModel(modelId) {
+            if (!confirm('¿Estás seguro de eliminar este modelo online?')) {
+                return;
+            }
+            
+            try {
+                await api(`/api/models/online/${modelId}`, {
+                    method: 'DELETE'
+                });
+                
+                alert('✅ Modelo eliminado exitosamente');
+                loadOnlineModels();
+                
+            } catch (error) {
+                console.error('Failed to delete online model:', error);
+                alert('❌ Error al eliminar modelo');
+            }
+        }
+
+        // ==================== New Tab Functions ====================
+        
+        // Debug function - call this from browser console if needed
+        window.debugTabs = function() {
+            console.log('=== Debug Tabs ===');
+            const allTabHeaders = document.querySelectorAll('#local-models-tab .tab-header');
+            console.log('All tab headers found:', allTabHeaders.length);
+            
+            allTabHeaders.forEach((header, index) => {
+                const buttons = header.querySelectorAll('.tab-button');
+                console.log(`Tab header ${index}:`, buttons.length, 'buttons');
+                buttons.forEach((btn, btnIndex) => {
+                    console.log(`  Button ${btnIndex}:`, btn.textContent);
+                });
+            });
+            
+            console.log('Reasoner local tab:', document.getElementById('reasoner-local-tab'));
+            console.log('Reasoner online tab:', document.getElementById('reasoner-online-tab'));
+        };
+        
+        function switchMainModelTab(tabType) {
+            // Update tab buttons
+            const tabButtons = document.querySelectorAll('#local-models-tab .tab-header .tab-button');
+            tabButtons[0].classList.toggle('active', tabType === 'local');
+            tabButtons[1].classList.toggle('active', tabType === 'online');
+            
+            // Show/hide content
+            document.getElementById('main-local-tab').style.display = tabType === 'local' ? 'block' : 'none';
+            document.getElementById('main-online-tab').style.display = tabType === 'online' ? 'block' : 'none';
+            
+            // Load data if switching to online
+            if (tabType === 'online') {
+                loadMainOnlineModels();
+            }
+        }
+
+        function switchReasonerTab(tabType) {
+            console.log('switchReasonerTab called with:', tabType);
+            
+            // Find all tab headers and get the second one (reasoner) - more reliable approach
+            const allTabHeaders = document.querySelectorAll('#local-models-tab .tab-header');
+            console.log('Found tab headers:', allTabHeaders.length);
+            
+            if (allTabHeaders.length >= 2) {
+                const reasonerTabButtons = allTabHeaders[1].querySelectorAll('.tab-button');
+                console.log('Found reasoner tab buttons:', reasonerTabButtons.length);
+                
+                if (reasonerTabButtons.length >= 2) {
+                    reasonerTabButtons[0].classList.toggle('active', tabType === 'local');
+                    reasonerTabButtons[1].classList.toggle('active', tabType === 'online');
+                    console.log('Tab buttons updated');
+                }
+            }
+            
+            // Show/hide content
+            const localTab = document.getElementById('reasoner-local-tab');
+            const onlineTab = document.getElementById('reasoner-online-tab');
+            
+            console.log('Local tab found:', !!localTab);
+            console.log('Online tab found:', !!onlineTab);
+            
+            if (localTab) localTab.style.display = tabType === 'local' ? 'block' : 'none';
+            if (onlineTab) onlineTab.style.display = tabType === 'online' ? 'block' : 'none';
+            
+            // Load data if switching to online
+            if (tabType === 'online') {
+                loadReasonerOnlineModels();
+            }
+        }
+
+        async function loadMainOnlineModels() {
+            const provider = document.getElementById('main-online-provider').value;
+            const modelsSelect = document.getElementById('main-online-models');
+            
+            if (!provider) {
+                modelsSelect.innerHTML = '<option>Seleccionar proveedor primero...</option>';
+                return;
+            }
+            
+            try {
+                const response = await api('/api/models/online/available');
+                const availableModels = response[provider];
+                
+                if (availableModels && availableModels.models) {
+                    modelsSelect.innerHTML = '';
+                    availableModels.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = `${model.name} - ${model.description}`;
+                        modelsSelect.appendChild(option);
+                    });
+                } else {
+                    modelsSelect.innerHTML = '<option>No hay modelos disponibles</option>';
+                }
+            } catch (error) {
+                console.error('Error loading main online models:', error);
+                modelsSelect.innerHTML = '<option>Error cargando modelos</option>';
+            }
+        }
+
+        async function loadReasonerOnlineModels() {
+            const provider = document.getElementById('reasoner-online-provider').value;
+            const modelsSelect = document.getElementById('reasoner-online-models');
+            
+            if (!provider) {
+                modelsSelect.innerHTML = '<option>Seleccionar proveedor primero...</option>';
+                return;
+            }
+            
+            try {
+                const response = await api('/api/models/online/available');
+                const availableModels = response[provider];
+                
+                if (availableModels && availableModels.models) {
+                    modelsSelect.innerHTML = '';
+                    availableModels.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = `${model.name} - ${model.description}`;
+                        modelsSelect.appendChild(option);
+                    });
+                } else {
+                    modelsSelect.innerHTML = '<option>No hay modelos disponibles</option>';
+                }
+            } catch (error) {
+                console.error('Error loading reasoner online models:', error);
+                modelsSelect.innerHTML = '<option>Error cargando modelos</option>';
+            }
+        }
+
+        async function applyMainOnlineModel() {
+            const provider = document.getElementById('main-online-provider').value;
+            const modelId = document.getElementById('main-online-models').value;
+            const apiKey = document.getElementById('main-api-key').value;
+            const statusDiv = document.getElementById('main-online-status');
+            
+            if (!provider || !modelId || !apiKey) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">⚠️ Por favor completa todos los campos</span>';
+                return;
+            }
+            
+            try {
+                statusDiv.innerHTML = '<span style="color: #007bff;">⏳ Configurando modelo online...</span>';
+                
+                const modelName = `${provider}-${modelId}-main`;
+                const response = await api('/api/models/online', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: modelName,
+                        provider: provider,
+                        model_id: modelId,
+                        api_key: apiKey,
+                        active: true
+                    })
+                });
+                
+                document.getElementById('current-online-model').textContent = modelName;
+                statusDiv.innerHTML = '<span style="color: #28a745;">✅ Modelo online configurado correctamente</span>';
+                
+                // Clear sensitive data
+                document.getElementById('main-api-key').value = '';
+                
+            } catch (error) {
+                console.error('Error applying main online model:', error);
+                statusDiv.innerHTML = '<span style="color: #dc3545;">❌ Error configurando modelo online</span>';
+            }
+        }
+
+        async function applyReasonerOnlineModel() {
+            const provider = document.getElementById('reasoner-online-provider').value;
+            const modelId = document.getElementById('reasoner-online-models').value;
+            const apiKey = document.getElementById('reasoner-api-key').value;
+            const statusDiv = document.getElementById('reasoner-online-status');
+            
+            if (!provider || !modelId || !apiKey) {
+                statusDiv.innerHTML = '<span style="color: #dc3545;">⚠️ Por favor completa todos los campos</span>';
+                return;
+            }
+            
+            try {
+                statusDiv.innerHTML = '<span style="color: #007bff;">⏳ Configurando modelo reasoner online...</span>';
+                
+                const modelName = `${provider}-${modelId}-reasoner`;
+                const response = await api('/api/models/online', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: modelName,
+                        provider: provider,
+                        model_id: modelId,
+                        api_key: apiKey,
+                        active: true
+                    })
+                });
+                
+                document.getElementById('current-reasoner-online-model').textContent = modelName;
+                statusDiv.innerHTML = '<span style="color: #28a745;">✅ Modelo reasoner online configurado correctamente</span>';
+                
+                // Clear sensitive data
+                document.getElementById('reasoner-api-key').value = '';
+                
+            } catch (error) {
+                console.error('Error applying reasoner online model:', error);
+                statusDiv.innerHTML = '<span style="color: #dc3545;">❌ Error configurando modelo reasoner online</span>';
+            }
+        }
+
+        // ==================== End New Functions ====================
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', init);

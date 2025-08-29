@@ -262,9 +262,6 @@ def main() -> None:
     log.info("Base de datos de contexto inicializada")
 
     profile_dir = cfg["userDataDir"]
-    # Verificar si es un archivo y eliminarlo si es necesario
-    if os.path.exists(profile_dir) and os.path.isfile(profile_dir):
-        os.remove(profile_dir)
     os.makedirs(profile_dir, exist_ok=True)
     log.debug(f"Perfil de Chromium: {profile_dir}")
 
@@ -283,6 +280,7 @@ def main() -> None:
             # Simplemente esperar a que aparezca el panel de chats
             log.info("Esperando que cargue WhatsApp Web...")
             page.wait_for_selector("#pane-side", timeout=30000)
+            log.info("WhatsApp Web cargado correctamente")
             log.info("WhatsApp Web cargado correctamente")
         except Exception:
             log.exception("Error al cargar WhatsApp Web", exc_info=True)
@@ -381,9 +379,9 @@ def main() -> None:
                     if n >= threshold:
                         chat_sessions.reset_reply_counter(chat_id)
                         try:
-                            from reasoner import update_chat_context_and_profile
-                            res = update_chat_context_and_profile(chat_id)
-                            log.info(f"[{chat_id}] Razonador ejecutado. Estrategia v{res.get('version')} | contexto={res.get('wrote_contexto')} perfil={res.get('wrote_perfil')}")
+                            from reasoner import run_reasoner_for_chat
+                            ver = run_reasoner_for_chat(chat_id)
+                            log.info(f"[{chat_id}] Razonador ejecutado. Nueva estrategia versión {ver}")
                         except Exception:
                             log.exception(f"[{chat_id}] Falló el razonador")
                 except Exception:
