@@ -1,6 +1,0 @@
-Perfil de ejemplo para chat 123:
-- Nombre: María
-- Edad: 28
-- Intereses: Viajes, fotografía, yoga
-- Personalidad: Extrovertida, aventurera
-- Contexto: Primera conversación después de match en app de citas

@@ -5,8 +5,11 @@ Demo script to populate admin panel with sample data and test functionality.
 
 import requests
 import json
+import os
 
-BASE_URL = "http://127.0.0.1:8001"
+# Get port from environment or use default
+UVICORN_PORT = os.getenv("UVICORN_PORT", "8002")
+BASE_URL = f"http://127.0.0.1:{UVICORN_PORT}"
 AUTH_HEADERS = {
     "Content-Type": "application/json",
     "Authorization": "Bearer admintoken"
@@ -137,7 +140,7 @@ def wait_for_server(timeout: int = 60):
 
 if __name__ == "__main__":
     print("🚀 Admin Panel Demo")
-    print("Make sure admin panel is running: uvicorn admin_panel:app --reload --port 8001")
+    print(f"Make sure admin panel is running: uvicorn admin_panel:app --reload --port {UVICORN_PORT}")
     print()
     
     try:

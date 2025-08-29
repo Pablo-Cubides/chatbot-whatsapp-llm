@@ -9,6 +9,7 @@ import requests
 import subprocess
 import json
 import sys
+import asyncio
 
 from admin_db import initialize_schema, get_session
 from sqlalchemy import text
@@ -19,6 +20,7 @@ import stub_chat
 import os
 from string import Template as StrTemplate
 from fastapi.staticfiles import StaticFiles
+from reasoner import update_chat_context_and_profile
 
 # Import psutil with fallback
 try:
@@ -63,6 +65,7 @@ def verify_token(authorization: str = Header(None)):
 class ModelIn(BaseModel):
     name: str
     provider: str
+    model_type: Optional[str] = 'local'  # 'local' or 'online'
     config: Optional[dict] = None
     active: Optional[bool] = True
 
@@ -123,11 +126,14 @@ def create_model(payload: ModelIn, user=Depends(verify_token)):
 
 
 @app.get("/models", response_model=List[dict])
-def list_models(user=Depends(verify_token)):
+def list_models(model_type: Optional[str] = None, user=Depends(verify_token)):
     session = get_session()
-    items = session.query(ModelConfig).all()
+    query = session.query(ModelConfig)
+    if model_type:
+        query = query.filter(ModelConfig.model_type == model_type)
+    items = query.all()
     session.close()
-    return [{"id": i.id, "name": i.name, "provider": i.provider, "active": i.active} for i in items]
+    return [{"id": i.id, "name": i.name, "provider": i.provider, "model_type": getattr(i, 'model_type', 'local'), "active": i.active} for i in items]
 
 
 class RuleIn(BaseModel):
@@ -1164,11 +1170,12 @@ def api_get_chat_context(chat_id: str):
         chat_dir = os.path.join(os.path.dirname(__file__), "contextos", f"chat_{chat_id}")
         os.makedirs(chat_dir, exist_ok=True)
 
-        result = {"chat_id": chat_id, "files": {"perfil": "", "contexto": "", "historial": []}, "automator_pid": None, "browser_pids": []}
+        result = {"chat_id": chat_id, "files": {"perfil": "", "contexto": "", "objetivo": "", "historial": []}, "automator_pid": None, "browser_pids": []}
 
-        # Read perfil and contexto if present
+        # Read perfil, contexto, objetivo if present
         perfil_path = os.path.join(chat_dir, "perfil.txt")
         contexto_path = os.path.join(chat_dir, "contexto.txt")
+        objetivo_path = os.path.join(chat_dir, "objetivo.txt")
         if os.path.exists(perfil_path):
             try:
                 with open(perfil_path, 'r', encoding='utf-8') as f:
@@ -1181,6 +1188,12 @@ def api_get_chat_context(chat_id: str):
                     result["files"]["contexto"] = f.read()
             except Exception:
                 result["files"]["contexto"] = ""
+        if os.path.exists(objetivo_path):
+            try:
+                with open(objetivo_path, 'r', encoding='utf-8') as f:
+                    result["files"]["objetivo"] = f.read()
+            except Exception:
+                result["files"]["objetivo"] = ""
 
         # Detect running automator by matching its script in process cmdlines
         if psutil is not None:
@@ -1228,6 +1241,7 @@ def api_get_chat_context(chat_id: str):
 class ChatContextUpdate(BaseModel):
     perfil: Optional[str] = None
     contexto: Optional[str] = None
+    objetivo: Optional[str] = None
 
 @app.put('/api/chats/{chat_id}')
 def api_update_chat_context(chat_id: str, update: ChatContextUpdate):
@@ -1252,8 +1266,40 @@ def api_update_chat_context(chat_id: str, update: ChatContextUpdate):
             with open(contexto_path, 'w', encoding='utf-8') as f:
                 f.write(update.contexto)
             updated_files.append("contexto.txt")
+        if update.objetivo is not None:
+            objetivo_path = os.path.join(chat_dir, "objetivo.txt")
+            with open(objetivo_path, 'w', encoding='utf-8') as f:
+                f.write(update.objetivo)
+            updated_files.append("objetivo.txt")
+
+        # Best-effort sync to DB ChatProfile
+        try:
+            session = get_session()
+            profile = session.query(ChatProfile).filter(ChatProfile.chat_id == chat_id).first()
+            if not profile:
+                profile = ChatProfile(chat_id=chat_id)
+                session.add(profile)
+            if update.contexto is not None:
+                profile.initial_context = update.contexto
+            if update.objetivo is not None:
+                profile.objective = update.objetivo
+            session.commit()
+            session.close()
+        except Exception:
+            pass
         
         return {"success": True, "chat_id": chat_id, "updated_files": updated_files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post('/api/chats/{chat_id}/refresh-context')
+def api_refresh_chat_context(chat_id: str, user=Depends(verify_token)):
+    """Execute the reasoner to update perfil/contexto files and activate a new strategy for this chat."""
+    try:
+        # Sanitize chat_id
+        chat_id = "".join(c for c in chat_id if c.isalnum() or c in "_-")
+        result = update_chat_context_and_profile(chat_id)
+        return {"success": True, "chat_id": chat_id, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1388,6 +1434,7 @@ class AllowedContactCreate(BaseModel):
     chat_id: str
     initial_context: Optional[str] = ""
     objective: Optional[str] = ""
+    perfil: Optional[str] = ""
 
 
 @app.post('/api/contacts')
@@ -1452,6 +1499,22 @@ def api_create_allowed_contact(payload: AllowedContactCreate, user=Depends(verif
             profile.is_ready = True
         
         session.commit()
+
+        # Persist filesystem files under contextos/chat_{chat_id}
+        try:
+            chat_dir = os.path.join(os.path.dirname(__file__), "contextos", f"chat_{payload.chat_id}")
+            os.makedirs(chat_dir, exist_ok=True)
+            if (payload.perfil or "").strip():
+                with open(os.path.join(chat_dir, 'perfil.txt'), 'w', encoding='utf-8') as f:
+                    f.write(payload.perfil or "")
+            if (payload.initial_context or "").strip():
+                with open(os.path.join(chat_dir, 'contexto.txt'), 'w', encoding='utf-8') as f:
+                    f.write(payload.initial_context or "")
+            if (payload.objective or "").strip():
+                with open(os.path.join(chat_dir, 'objetivo.txt'), 'w', encoding='utf-8') as f:
+                    f.write(payload.objective or "")
+        except Exception:
+            pass
         return {
             'success': True,
             'chat_id': payload.chat_id,
@@ -1481,6 +1544,7 @@ def api_list_allowed_contacts(user=Depends(verify_token)):
                 'name': contact.name or contact.chat_id,
                 'initial_context': profile.initial_context if profile else "",
                 'objective': profile.objective if profile else "",
+                'perfil': True if os.path.exists(os.path.join(os.path.dirname(__file__), 'contextos', f"chat_{contact.chat_id}", 'perfil.txt')) else False,
                 'is_ready': profile.is_ready if profile else False,
                 'created_at': contact.created_at.isoformat() if contact.created_at else None
             })
@@ -1586,6 +1650,29 @@ def api_events():
     return StreamingResponse(event_stream(), media_type='text/event-stream')
 
 
+# ============== MEMORY / CONVERSATION RESET API ==============
+class ClearChatIn(BaseModel):
+    chat_id: str
+
+
+@app.post('/api/conversations/clear', response_class=JSONResponse)
+def api_clear_conversation(payload: ClearChatIn, user=Depends(verify_token)):
+    try:
+        n = chat_sessions.clear_conversation_history(payload.chat_id)
+        return {"success": True, "deleted": n}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/api/conversations/clear-all', response_class=JSONResponse)
+def api_clear_all_conversations(user=Depends(verify_token)):
+    try:
+        n = chat_sessions.clear_all_conversation_histories()
+        return {"success": True, "deleted": n}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class ChatIn(BaseModel):
         chat_id: str
         message: str
@@ -1629,6 +1716,361 @@ def api_test_reply():
             "error": str(e),
             "message": "Error testing reply generation"
         }
+
+
+# ============== DAILY CONTEXTS API ==============
+class DailyContextCreate(BaseModel):
+    text: str
+    active: Optional[bool] = True
+
+@app.post('/api/daily-contexts')
+def api_create_daily_context(payload: DailyContextCreate, user=Depends(verify_token)):
+    """Create a new daily context"""
+    session = get_session()
+    try:
+        context = DailyContext(
+            text=payload.text,
+            active=payload.active
+        )
+        
+        session.add(context)
+        session.commit()
+        
+        return {
+            "id": context.id,
+            "text": context.text,
+            "active": context.active,
+            "created_at": context.created_at.isoformat() if context.created_at else None
+        }
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+
+@app.get('/api/daily-contexts')
+def api_list_daily_contexts(user=Depends(verify_token)):
+    """List all daily contexts"""
+    session = get_session()
+    try:
+        contexts = session.query(DailyContext).all()
+        return [
+            {
+                "id": ctx.id,
+                "text": ctx.text,
+                "active": ctx.active,
+                "created_at": ctx.created_at.isoformat() if ctx.created_at else None
+            }
+            for ctx in contexts
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+
+# ============== USER CONTEXTS API ==============
+class UserContextCreate(BaseModel):
+    user_id: str
+    text: str
+    source: Optional[str] = "manual_admin"
+
+@app.post('/api/user-contexts')
+def api_create_user_context(payload: UserContextCreate, user=Depends(verify_token)):
+    """Create a new user context"""
+    session = get_session()
+    try:
+        context = UserContext(
+            user_id=payload.user_id,
+            text=payload.text,
+            source=payload.source
+        )
+        
+        session.add(context)
+        session.commit()
+        
+        return {
+            "id": context.id,
+            "user_id": context.user_id,
+            "text": context.text,
+            "source": context.source,
+            "created_at": context.created_at.isoformat() if context.created_at else None
+        }
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+
+@app.get('/api/user-contexts')
+def api_list_user_contexts(user_id: Optional[str] = None, user=Depends(verify_token)):
+    """List user contexts, optionally filtered by user_id"""
+    session = get_session()
+    try:
+        query = session.query(UserContext)
+        if user_id:
+            query = query.filter(UserContext.user_id == user_id)
+        
+        contexts = query.all()
+        return [
+            {
+                "id": ctx.id,
+                "user_id": ctx.user_id,
+                "text": ctx.text,
+                "source": ctx.source,
+                "created_at": ctx.created_at.isoformat() if ctx.created_at else None
+            }
+            for ctx in contexts
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+
+# ==================== Online Models API Endpoints ====================
+
+@app.get('/api/models/local')
+def api_list_local_models(user=Depends(verify_token)):
+    """List only local models (LM Studio models)"""
+    session = get_session()
+    try:
+        models = session.query(ModelConfig).filter(ModelConfig.model_type == 'local').all()
+        return [
+            {
+                "id": m.id,
+                "name": m.name,
+                "provider": m.provider,
+                "model_type": m.model_type,
+                "active": m.active
+            }
+            for m in models
+        ]
+    finally:
+        session.close()
+
+
+@app.get('/api/models/online')
+def api_list_online_models(user=Depends(verify_token)):
+    """List only online models (API-based models)"""
+    session = get_session()
+    try:
+        models = session.query(ModelConfig).filter(ModelConfig.model_type == 'online').all()
+        return [
+            {
+                "id": m.id,
+                "name": m.name,
+                "provider": m.provider,
+                "model_type": m.model_type,
+                "active": m.active,
+                "config": m.config
+            }
+            for m in models
+        ]
+    finally:
+        session.close()
+
+
+@app.get('/api/models/online/available')
+def api_available_online_models():
+    """Get available online models by provider"""
+    return {
+        "google": {
+            "provider": "google",
+            "models": [
+                {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "description": "Google's most capable model"},
+                {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "description": "Fast and efficient model"},
+                {"id": "gemini-pro", "name": "Gemini Pro", "description": "Google's general purpose model"},
+            ]
+        },
+        "openai": {
+            "provider": "openai", 
+            "models": [
+                {"id": "gpt-4o", "name": "GPT-4o", "description": "OpenAI's most advanced model"},
+                {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "description": "Faster, cost-effective model"},
+                {"id": "gpt-4-turbo", "name": "GPT-4 Turbo", "description": "Latest GPT-4 with improved capabilities"},
+                {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "description": "Fast and cost-effective model"},
+            ]
+        },
+        "anthropic": {
+            "provider": "anthropic",
+            "models": [
+                {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "description": "Anthropic's most capable model"},
+                {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "description": "Most powerful Claude model"},
+                {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "description": "Balanced performance and speed"},
+                {"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku", "description": "Fast and cost-effective"},
+            ]
+        },
+        "x-ai": {
+            "provider": "x-ai",
+            "models": [
+                {"id": "grok-beta", "name": "Grok Beta", "description": "X's conversational AI model"},
+                {"id": "grok-vision-beta", "name": "Grok Vision Beta", "description": "Grok with image understanding"},
+            ]
+        }
+    }
+
+
+class OnlineModelConfig(BaseModel):
+    name: str
+    provider: str  # "google", "openai", "anthropic", "x-ai"
+    model_id: str  # The actual model ID from the provider
+    api_key: str
+    base_url: Optional[str] = None
+    active: bool = True
+
+
+@app.post('/api/models/online')
+def api_create_online_model(config: OnlineModelConfig, user=Depends(verify_token)):
+    """Create a new online model configuration"""
+    session = get_session()
+    try:
+        # Encrypt the API key
+        from crypto import encrypt_text
+        encrypted_key = encrypt_text(config.api_key)
+        
+        model_config = {
+            "model_id": config.model_id,
+            "api_key_encrypted": encrypted_key,
+            "base_url": config.base_url
+        }
+        
+        model = ModelConfig(
+            name=config.name,
+            provider=config.provider,
+            model_type='online',
+            config=model_config,
+            active=config.active
+        )
+        
+        session.add(model)
+        session.commit()
+        session.refresh(model)
+        
+        return {
+            "id": model.id,
+            "name": model.name,
+            "provider": model.provider,
+            "model_type": model.model_type,
+            "active": model.active
+        }
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+
+@app.put('/api/models/online/{model_id}')
+def api_update_online_model(model_id: int, config: OnlineModelConfig, user=Depends(verify_token)):
+    """Update an online model configuration"""
+    session = get_session()
+    try:
+        model = session.query(ModelConfig).filter(ModelConfig.id == model_id, ModelConfig.model_type == 'online').first()
+        if not model:
+            raise HTTPException(status_code=404, detail="Online model not found")
+        
+        # Encrypt the new API key
+        from crypto import encrypt_text
+        encrypted_key = encrypt_text(config.api_key)
+        
+        model_config = {
+            "model_id": config.model_id,
+            "api_key_encrypted": encrypted_key,
+            "base_url": config.base_url
+        }
+        
+        model.name = config.name
+        model.provider = config.provider
+        model.config = model_config
+        model.active = config.active
+        
+        session.commit()
+        
+        return {
+            "id": model.id,
+            "name": model.name,
+            "provider": model.provider,
+            "model_type": model.model_type,
+            "active": model.active
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+
+@app.delete('/api/models/online/{model_id}')
+def api_delete_online_model(model_id: int, user=Depends(verify_token)):
+    """Delete an online model configuration"""
+    session = get_session()
+    try:
+        model = session.query(ModelConfig).filter(ModelConfig.id == model_id, ModelConfig.model_type == 'online').first()
+        if not model:
+            raise HTTPException(status_code=404, detail="Online model not found")
+        
+        session.delete(model)
+        session.commit()
+        
+        return {"success": True, "message": "Online model deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
+
+# ==================== Enhanced LM Studio API (Local Models Only) ====================
+
+@app.get('/api/lmstudio/models/local-only')
+def api_lmstudio_local_models():
+    """Get only local models from LM Studio, filtering out any online models"""
+    result = api_lmstudio_models()
+    
+    # Filter the models to only include actual local models
+    if result.get('models'):
+        # Only keep models that don't have provider indicators for online services
+        filtered_models = []
+        for model in result['models']:
+            model_name = model.get('name', '').lower()
+            # Skip models that look like online service indicators
+            if not any(provider in model_name for provider in ['gpt-', 'claude-', 'gemini-', 'grok-']):
+                filtered_models.append(model)
+        result['models'] = filtered_models
+    
+    return result
+
+
+# ==================== Model Type Migration ====================
+
+@app.post('/api/admin/migrate-model-types')
+def api_migrate_model_types(user=Depends(verify_token)):
+    """Migrate existing models to have proper model_type field"""
+    session = get_session()
+    try:
+        # Update all models without model_type to be 'local'
+        models_updated = session.execute(
+            text("UPDATE models SET model_type = 'local' WHERE model_type IS NULL OR model_type = ''")
+        ).rowcount
+        session.commit()
+        
+        return {
+            "success": True,
+            "models_updated": models_updated,
+            "message": f"Updated {models_updated} models to have model_type='local'"
+        }
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":
