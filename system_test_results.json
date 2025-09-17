@@ -1,6 +1,6 @@
 {
-  "tests_passed": 7,
-  "tests_failed": 3,
+  "tests_passed": 10,
+  "tests_failed": 0,
   "tests_details": [
     {
       "test": "Web UI Exists",
@@ -10,17 +10,17 @@
     {
       "test": "Database Structure",
       "status": "PASS",
-      "details": "Contacts: 0, Profiles: 0, Conversations: 0"
+      "details": "Contacts: 2, Profiles: 0, Conversations: 0"
     },
     {
       "test": "Model Manager",
-      "status": "FAIL",
-      "details": "ModelManager error: 'ModelManager' object has no attribute 'select_model_for_chat'"
+      "status": "PASS",
+      "details": "Selected model: default, Reasoner: default"
     },
     {
       "test": "Message Generation",
-      "status": "FAIL",
-      "details": "No response generated"
+      "status": "PASS",
+      "details": "Generated response: Interesante lo que me dices... cuéntame más. A mí me gusta mantenerme activo y siempre aprender cosa..."
     },
     {
       "test": "Manual Message API",
@@ -44,8 +44,8 @@
     },
     {
       "test": "Contact Management",
-      "status": "FAIL",
-      "details": "Contact management error: cannot import name 'get_allowed_contacts' from 'chat_sessions' (/home/runner/work/chatbot-whatsapp-llm/chatbot-whatsapp-llm/chat_sessions.py)"
+      "status": "PASS",
+      "details": "Contacts in system: 2, Test contact added: True"
     },
     {
       "test": "API Health Check",

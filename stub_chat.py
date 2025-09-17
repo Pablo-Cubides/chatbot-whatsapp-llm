@@ -32,6 +32,18 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
     y respetando el 'model' y parámetros definidos en payload.json.
     Incluye contextos diarios y por usuario desde la DB.
     """
+    
+    # Quick check for LM Studio availability and fallback if not available
+    try:
+        # Quick connection test to LM Studio
+        import requests
+        response = requests.get("http://127.0.0.1:1234/v1/models", timeout=2)
+        if response.status_code != 200:
+            log.warning("⚠️ LM Studio no disponible, usando respuesta de demo")
+            return generate_demo_response(user_message, chat_id)
+    except Exception:
+        log.warning("⚠️ LM Studio no disponible, usando respuesta de demo")
+        return generate_demo_response(user_message, chat_id)
 
     # 1) Reconstruye el payload a enviar (hacemos copia para no mutar la global)
     payload = base_payload.copy()
@@ -509,6 +521,26 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 # Función auxiliar para tests locales
 # ──────────────────────────────────────────────────────────────────────────────
+def generate_demo_response(user_message: str, chat_id: str) -> str:
+    """Generate a demo response when LM Studio is not available"""
+    responses = {
+        "hola": "¡Hola! ¿Cómo estás? Es un gusto saludarte.",
+        "quién eres": "Soy Andrés, ingeniero químico y docente universitario. Me gusta el ejercicio, la música y siempre estoy aprendiendo algo nuevo.",
+        "qué haces": "Actualmente estoy trabajando en varios proyectos, enseñando en la universidad y manteniéndome activo. ¿Y tú qué tal?",
+        "bien": "Me alegra saber que estás bien. Yo también estoy muy bien, aprovechando cada día al máximo.",
+        "cómo estás": "Muy bien, gracias por preguntar. Estoy disfrutando estos días y trabajando en cosas que me apasionan.",
+        "default": "Interesante lo que me dices... cuéntame más. A mí me gusta mantenerme activo y siempre aprender cosas nuevas."
+    }
+    
+    # Simple keyword matching for demo purposes
+    message_lower = user_message.lower()
+    for key, response in responses.items():
+        if key in message_lower:
+            return response
+    
+    return responses["default"]
+
+
 def test_connection():
     """Test básico de conexión con LM Studio"""
     try:

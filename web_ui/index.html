@@ -594,6 +594,7 @@
                 <div style="margin-bottom: 15px;">
                     <button id="generate-message" class="secondary" disabled>🤖 Generar Mensaje</button>
                     <button id="regenerate-message" class="secondary" style="display: none;">🔄 Regenerar</button>
+                    <button id="refine-message" class="warning" style="display: none;">✏️ Pedir Mejoras</button>
                 </div>
                 
                 <div id="generated-message-container" style="display: none; margin-bottom: 15px;">
@@ -624,8 +625,10 @@
                     </div>
                     
                     <div style="margin-top: 10px;">
+                        <button id="approve-message" class="success">✅ Aprobar y Enviar</button>
                         <button id="edit-message" class="secondary">✏️ Editar</button>
-                        <button id="send-message" class="success">📨 Enviar Mensaje</button>
+                        <button id="reject-message" class="danger">❌ Rechazar y Mejorar</button>
+                        <button id="send-message" class="success" style="display: none;">📨 Enviar Mensaje</button>
                         <button id="clear-message" class="danger">🗑️ Limpiar</button>
                     </div>
                 </div>
@@ -1770,6 +1773,9 @@ Examples:
             // Manual message composition
             bindClick('generate-message', generateManualMessage);
             bindClick('regenerate-message', regenerateManualMessage);
+            bindClick('refine-message', openRefinementModal);
+            bindClick('approve-message', approveAndSendMessage);
+            bindClick('reject-message', rejectAndImproveMessage);
             bindClick('edit-message', editGeneratedMessage);
             bindClick('send-message', sendManualMessage);
             bindClick('clear-message', clearManualMessage);
@@ -1907,7 +1913,14 @@ Examples:
                     document.getElementById('generated-message').value = response.reply;
                     document.getElementById('generated-message-container').style.display = 'block';
                     document.getElementById('regenerate-message').style.display = 'inline-block';
-                    showMessageStatus('Mensaje generado exitosamente', 'success');
+                    document.getElementById('refine-message').style.display = 'inline-block';
+                    
+                    // Show approval workflow buttons
+                    document.getElementById('approve-message').style.display = 'inline-block';
+                    document.getElementById('reject-message').style.display = 'inline-block';
+                    document.getElementById('send-message').style.display = 'none';
+                    
+                    showMessageStatus('Mensaje generado. ¿Aprobar y enviar o solicitar mejoras?', 'success');
                 } else {
                     showMessageStatus('Error: No se pudo generar el mensaje', 'error');
                 }
@@ -1996,6 +2009,13 @@ Examples:
             document.getElementById('generated-message').value = '';
             document.getElementById('generated-message-container').style.display = 'none';
             document.getElementById('regenerate-message').style.display = 'none';
+            document.getElementById('refine-message').style.display = 'none';
+            
+            // Reset button states to initial
+            document.getElementById('approve-message').style.display = 'none';
+            document.getElementById('reject-message').style.display = 'none';
+            document.getElementById('send-message').style.display = 'none';
+            
             showMessageStatus('', '');
             updateGenerateButtonState();
             
@@ -2044,13 +2064,13 @@ Examples:
                         
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
-                        checkbox.id = `bulk_contact_${contact.contact_number}`;
-                        checkbox.value = contact.contact_number;
+                        checkbox.id = `bulk_contact_${contact.chat_id || contact.contact_number}`;
+                        checkbox.value = contact.chat_id || contact.contact_number;
                         checkbox.addEventListener('change', updateSelectedContacts);
                         
                         const label = document.createElement('label');
                         label.htmlFor = checkbox.id;
-                        label.textContent = `${contact.name || 'Sin nombre'} (${contact.contact_number})`;
+                        label.textContent = `${contact.name || 'Sin nombre'} (${contact.chat_id || contact.contact_number})`;
                         
                         item.appendChild(checkbox);
                         item.appendChild(label);
@@ -2078,7 +2098,9 @@ Examples:
             
             // Enable/disable generate button based on selection
             const generateBtn = document.getElementById('generateBulkMessages');
-            generateBtn.disabled = selectedContacts.length === 0;
+            if (generateBtn) {
+                generateBtn.disabled = selectedContacts.length === 0;
+            }
         }
 
         // Select all contacts
@@ -2878,8 +2900,89 @@ Examples:
 
         // ==================== End New Functions ====================
 
+        // Message Refinement Modal Functions
+        function openRefinementModal() {
+            document.getElementById('refinement-modal').style.display = 'block';
+            document.getElementById('refinement-feedback').value = '';
+            document.getElementById('refinement-feedback').focus();
+        }
+
+        function closeRefinementModal() {
+            document.getElementById('refinement-modal').style.display = 'none';
+        }
+
+        async function submitRefinement() {
+            const feedback = document.getElementById('refinement-feedback').value.trim();
+            if (!feedback) {
+                alert('Por favor describe qué mejoras quieres');
+                return;
+            }
+
+            const contactId = document.getElementById('manual-contact-select').value;
+            const originalObjective = document.getElementById('manual-objective').value.trim();
+            const currentMessage = document.getElementById('generated-message').value;
+
+            try {
+                showMessageStatus('Mejorando mensaje según tu feedback...', 'info');
+                closeRefinementModal();
+
+                const response = await api('/api/chat/compose', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        chat_id: contactId,
+                        objective: originalObjective + " MEJORAS SOLICITADAS: " + feedback,
+                        additional_context: "Mensaje anterior: " + currentMessage + "\n\nMejoras pedidas: " + feedback
+                    })
+                });
+
+                if (response.reply) {
+                    document.getElementById('generated-message').value = response.reply;
+                    showMessageStatus('Mensaje mejorado según tu feedback', 'success');
+                } else {
+                    showMessageStatus('Error al mejorar mensaje', 'error');
+                }
+            } catch (error) {
+                console.error('Error refining message:', error);
+                showMessageStatus('Error al conectar con IA para mejoras', 'error');
+                closeRefinementModal();
+            }
+        }
+
+        function approveAndSendMessage() {
+            // Show the send button and hide approval buttons
+            document.getElementById('send-message').style.display = 'inline-block';
+            document.getElementById('approve-message').style.display = 'none';
+            document.getElementById('reject-message').style.display = 'none';
+            showMessageStatus('Mensaje aprobado. Haz clic en "Enviar Mensaje" para enviarlo.', 'success');
+        }
+
+        function rejectAndImproveMessage() {
+            openRefinementModal();
+        }
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', init);
     </script>
+
+    <!-- Message Refinement Modal -->
+    <div id="refinement-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+        <div style="background-color: white; margin: 5% auto; padding: 30px; border-radius: 10px; width: 80%; max-width: 600px; position: relative;">
+            <span onclick="closeRefinementModal()" style="color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+            <h3 style="margin-top: 0; color: #333;">✏️ Mejorar Mensaje</h3>
+            <p style="color: #666; margin-bottom: 20px;">Describe qué mejoras quieres que haga la IA al mensaje. Sé específico sobre el tono, contenido, longitud, etc.</p>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-weight: bold; margin-bottom: 10px;">🎯 ¿Qué mejoras quieres?</label>
+                <textarea id="refinement-feedback" 
+                          placeholder="Ejemplo: Hazlo más formal, más breve, incluye una fecha específica, cambia el tono a más amigable, etc."
+                          style="width: 100%; height: 120px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; resize: vertical; font-family: Arial, sans-serif;"></textarea>
+            </div>
+            
+            <div style="text-align: center;">
+                <button onclick="submitRefinement()" class="success" style="margin-right: 10px; padding: 12px 24px;">✅ Aplicar Mejoras</button>
+                <button onclick="closeRefinementModal()" class="secondary" style="padding: 12px 24px;">❌ Cancelar</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

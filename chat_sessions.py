@@ -126,6 +126,26 @@ def get_profile(chat_id: str):
         session.close()
 
 
+def get_allowed_contacts():
+    """Get all contacts that are enabled for auto-reply"""
+    session = get_session()
+    try:
+        contacts = session.query(Contact).filter(Contact.auto_enabled == True).all()
+        return contacts
+    finally:
+        session.close()
+
+
+def get_all_contacts():
+    """Get all contacts regardless of auto_enabled status"""
+    session = get_session()
+    try:
+        contacts = session.query(Contact).all()
+        return contacts
+    finally:
+        session.close()
+
+
 def is_ready_to_reply(chat_id: str) -> bool:
     session = get_session()
     try:

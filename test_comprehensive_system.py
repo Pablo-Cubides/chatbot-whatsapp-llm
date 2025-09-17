@@ -291,7 +291,7 @@ class SystemTester:
             contacts = get_allowed_contacts()
             
             # Find our test contact
-            test_contact_found = any(c.contact_number == test_contact_id for c in contacts)
+            test_contact_found = any(c.chat_id == test_contact_id for c in contacts)
             
             self.log_test("Contact Management", True, 
                          f"Contacts in system: {len(contacts)}, Test contact added: {test_contact_found}")
