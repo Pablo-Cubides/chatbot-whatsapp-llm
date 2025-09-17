@@ -55,6 +55,11 @@ def main():
 
     print("== Load model ==")
     print(post("/api/lmstudio/load", {"model": model}))
+    
+    print("== Load embeddings model ==")
+    embeddings_model = "text-embedding-nomic-embed-text-v1.5"
+    print(f"Loading embeddings model: {embeddings_model}")
+    print(post("/api/lmstudio/load", {"model": embeddings_model}))
 
     print("== Warmup ==")
     print(post("/api/lmstudio/warmup", {"model": model}))

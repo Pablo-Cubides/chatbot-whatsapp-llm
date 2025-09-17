@@ -1,6 +1,8 @@
 # rag_utils.py
 
-import json, pickle, os
+import json
+import pickle
+import os
 from typing import List
 import numpy as np
 from openai import OpenAI
@@ -11,7 +13,7 @@ except Exception:  # pragma: no cover
     faiss = None
 
 # Inicializaciones al importar (robustas)
-client = OpenAI(base_url="http://127.0.0.1:1234/v1", api_key="lm-studio")
+client = OpenAI(base_url="http://127.0.0.1:1234/v1", api_key="lm-studio", timeout=120.0)
 
 _INDEX = None
 _DOCS: List[dict] = []
@@ -49,22 +51,28 @@ def retrieve_context(query: str, top_k: int = 3) -> str:
     if faiss is None or _INDEX is None or not _DOCS:
         return ""
 
-    # 1) Embedding
-    res = client.embeddings.create(
-        model="text-embedding-nomic-embed-text-v1.5",
-        input=query
-    )
-    qemb = res.data[0].embedding
+    try:
+        # 1) Embedding
+        res = client.embeddings.create(
+            model="text-embedding-nomic-embed-text-v1.5",
+            input=query
+        )
+        qemb = res.data[0].embedding
 
-    # 2) Búsqueda
-    D, I = _INDEX.search(
-        np.array([qemb], dtype="float32"),
-        k=top_k
-    )
-    # Filtro por rangos válidos
-    ids = [i for i in I[0] if 0 <= i < len(_DOCS)]
-    docs_texts = "\n\n".join((_DOCS[i].get("text") or "") for i in ids)
-    return docs_texts
+        # 2) Búsqueda
+        distances, indices = _INDEX.search(
+            np.array([qemb], dtype="float32"),
+            k=top_k
+        )
+        # Filtro por rangos válidos
+        ids = [i for i in indices[0] if 0 <= i < len(_DOCS)]
+        docs_texts = "\n\n".join((_DOCS[i].get("text") or "") for i in ids)
+        return docs_texts
+    except Exception as e:
+        # Si falla el RAG (ej: embeddings no disponibles), devolver vacío
+        import logging
+        logging.getLogger(__name__).warning(f"RAG falló: {e}")
+        return ""
 
 def chat_with_rag(query: str) -> str:
     _lazy_load_index_and_docs()

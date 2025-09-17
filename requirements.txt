@@ -39,6 +39,8 @@ urllib3==2.4.0
 fastapi==0.104.1
 starlette==0.27.0
 uvicorn==0.24.0
+psutil==7.0.0
+python-multipart==0.0.20
 
 
 
