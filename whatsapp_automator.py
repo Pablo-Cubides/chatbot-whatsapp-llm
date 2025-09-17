@@ -24,8 +24,34 @@ def load_config() -> dict:
     here = os.path.dirname(__file__)
     fp = os.path.join(here, "config", "playwright_config.json")
     raw = open(fp, encoding="utf-8").read()
-    filled = Template(raw).substitute(os.environ)
-    cfg = json.loads(filled)
+    
+    # Definir valores por defecto para las variables de entorno
+    env_defaults = {
+        'PLAYWRIGHT_PROFILE_DIR': './data/whatsapp-profile',
+        'WHATSAPP_URL': 'https://web.whatsapp.com/',
+        'MESSAGE_CHECK_INTERVAL': '2'
+    }
+    
+    # Crear un diccionario combinando variables de entorno y valores por defecto
+    env_vars = {}
+    for key, default_value in env_defaults.items():
+        env_vars[key] = os.environ.get(key, default_value)
+    
+    try:
+        filled = Template(raw).substitute(env_vars)
+        cfg = json.loads(filled)
+    except (KeyError, ValueError) as e:
+        log.warning(f"Error al procesar configuración: {e}. Usando valores por defecto.")
+        # Configuración por defecto si falla el archivo
+        cfg = {
+            "userDataDir": "./data/whatsapp-profile",
+            "whatsappUrl": "https://web.whatsapp.com/",
+            "headless": False,
+            "messageCheckInterval": "2",
+            "maxRetries": 3,
+            "navigationTimeout": 30000
+        }
+    
     log.debug(f"Configuración cargada: {cfg}")
     return cfg
 
@@ -36,19 +62,116 @@ def setup_logging(log_path: str) -> None:
     handler = logging.handlers.RotatingFileHandler(
         log_path, maxBytes=5_000_000, backupCount=3, encoding="utf-8"
     )
-    class MaskFilter(logging.Filter):
-        import re
-        regex = re.compile(r'\+?\d[\d\s\-]{7,}\d')
+    
+    class SmartFilter(logging.Filter):
+        def __init__(self):
+            import re
+            import time
+            super().__init__()
+            self.re = re
+            self.time = time
+            self.regex = re.compile(r'\+?\d[\d\s\-]{7,}\d')
+            self.repeated_count = {}
+            self.last_logged_time = {}
+            self.spam_patterns = [
+                'Toggle AUTOMATION_ACTIVE=true',
+                'Revisando \\d+ rows',
+                'No hay nuevos mensajes, durmiendo',
+                'fetch_new_message retornó: None, None',
+                'número oculto.*no habilitado, saltar',
+                'Row #\\d+ con badge \\d+',
+                '→ Entrando a fetch_new_message'
+            ]
+        
         def filter(self, record):
-            record.msg = self.regex.sub('[número oculto]', record.getMessage())
+            # Aplicar el filtro de números
+            original_msg = record.getMessage()
+            record.msg = self.regex.sub('[número oculto]', original_msg)
             record.args = ()
+            
+            # Filtrado inteligente para reducir spam
+            msg = record.msg.lower()
+            
+            # Siempre permitir mensajes importantes
+            important_keywords = [
+                'nuevo mensaje detectado',
+                'respondiendo',
+                'error',
+                'warning',
+                'enviando al modelo',
+                'respuesta exitosa',
+                'contexto enviado',
+                '===',
+                'iniciado',
+                'finalizando'
+            ]
+            
+            if any(keyword in msg for keyword in important_keywords):
+                return True
+            
+            # Solo filtrar logs DEBUG e INFO rutinarios, nunca WARNING/ERROR
+            if record.levelno >= logging.WARNING:
+                return True
+            
+            # Filtrar mensajes repetitivos de DEBUG/INFO rutinarios
+            for pattern in self.spam_patterns:
+                if self.re.search(pattern, msg, self.re.IGNORECASE):
+                    # Contar repeticiones
+                    key = f"{record.funcName}:{pattern}"
+                    self.repeated_count[key] = self.repeated_count.get(key, 0) + 1
+                    
+                    # Solo mostrar cada 25 repeticiones o cada 2 minutos
+                    current_time = self.time.time()
+                    last_time = self.last_logged_time.get(key, 0)
+                    
+                    if (self.repeated_count[key] == 1 or 
+                        self.repeated_count[key] % 25 == 0 or 
+                        current_time - last_time > 120):  # 2 minutos
+                        
+                        if self.repeated_count[key] > 1:
+                            record.msg = f"[x{self.repeated_count[key]}] {record.msg}"
+                        self.last_logged_time[key] = current_time
+                        return True
+                    return False
+            
+            # Permitir otros mensajes no repetitivos
             return True
-    handler.addFilter(MaskFilter())
+    
+    handler.addFilter(SmartFilter())
+
+    # Crear un handler para la consola (más estricto)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter("[%(asctime)s][%(levelname)s] %(funcName)s – %(message)s", "%Y-%m-%d %H:%M:%S"))
+    
+    class ConsoleFilter(SmartFilter):
+        def filter(self, record):
+            # En consola solo mostrar WARNING y ERROR, más mensajes importantes
+            if record.levelno >= logging.WARNING:
+                return super().filter(record)
+            
+            msg = record.msg.lower()
+            # Solo mostrar INFO/DEBUG importantes en consola
+            console_important = [
+                'nuevo mensaje detectado',
+                'respondiendo',
+                'enviando al modelo', 
+                'respuesta exitosa',
+                'iniciado',
+                'finalizando'
+            ]
+            
+            if any(keyword in msg for keyword in console_important):
+                return super().filter(record)
+            
+            return False
+    
+    console_handler.addFilter(ConsoleFilter())
+
     logging.basicConfig(
         level=logging.DEBUG,
         format="[%(asctime)s][%(levelname)s] %(funcName)s – %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[handler]
+        handlers=[handler, console_handler] # Añadir ambos handlers
     )
     log.info("=== WhatsApp Automator iniciado ===")
 
@@ -78,7 +201,8 @@ def fetch_new_message(page, respond_to_all=False):
                     if text.isdigit() and int(text) > 0:
                         unread_count = int(text)
                         break
-                except:
+                except Exception as e:
+                    log.debug(f"Error reading span text: {e}")
                     continue
             
             # PASO 2: SALTAR si no hay número
@@ -110,7 +234,8 @@ def fetch_new_message(page, respond_to_all=False):
                 if time.time() - last_time < 120:  # 2 minutos
                     log.info(f"– {chat_id} en cooldown, saltar")
                     continue
-            except:
+            except Exception as e:
+                log.debug(f"Error checking cooldown for {chat_id}: {e}")
                 pass
                 
             # PASO 5: Verificar permisos
@@ -120,7 +245,8 @@ def fetch_new_message(page, respond_to_all=False):
                     if require and not chat_sessions.is_ready_to_reply(chat_id):
                         log.info(f"– {chat_id} no habilitado, saltar")
                         continue
-            except:
+            except Exception as e:
+                log.debug(f"Error checking permissions for {chat_id}: {e}")
                 pass
                 
             # PASO 6: Abrir y verificar último mensaje
@@ -144,7 +270,8 @@ def fetch_new_message(page, respond_to_all=False):
                             is_bot = True
                         elif "message-out" in (last_msg.get_attribute("class") or ""):
                             is_bot = True
-                    except:
+                    except Exception as e:
+                        log.debug(f"Error checking message direction: {e}")
                         pass
                         
                     if is_bot:
@@ -155,7 +282,8 @@ def fetch_new_message(page, respond_to_all=False):
                     try:
                         text_elem = last_msg.locator("span.selectable-text").first
                         incoming = text_elem.inner_text().strip() if text_elem.count() > 0 else "[msg]"
-                    except:
+                    except Exception as e:
+                        log.debug(f"Error extracting message text: {e}")
                         incoming = "[msg]"
                     
                     log.info(f"– {chat_id} mensaje válido: {incoming[:50]}")
@@ -206,20 +334,311 @@ def send_reply(page, chat_id, reply_text):
 
 def send_reply_with_typing(page, chat_id, reply_text, per_char_delay=0.05):
     """Simula typing enviando caracter por caracter."""
-    input_box = _get_message_input(page)
+    log.debug(f"📝 Iniciando envío con typing para {chat_id}: {reply_text[:30]}...")
+    
     try:
-        input_box.click()
-    except Exception:
-        pass
+        # Primero intentar con la función existente
+        input_box = _get_message_input(page)
+        log.debug("✅ Input de mensaje encontrado con función _get_message_input")
+    except Exception as e:
+        log.warning(f"⚠️ Error con _get_message_input: {e}")
+        
+        # Intentar con selectores más específicos para el contexto actual
+        specific_selectors = [
+            "div[data-testid='conversation-compose-box-input']",
+            "footer div[contenteditable='true'][data-tab='10']",
+            "div[data-tab='10'][contenteditable='true']",
+            "footer div[role='textbox']",
+            "div[contenteditable='true'][role='textbox']"
+        ]
+        
+        input_box = None
+        for selector in specific_selectors:
+            try:
+                locator = page.locator(selector)
+                if locator.count() > 0:
+                    input_box = locator.first
+                    log.debug(f"✅ Input encontrado con selector específico: {selector}")
+                    break
+            except Exception:
+                continue
+        
+        if not input_box:
+            log.error("❌ No se pudo encontrar el input de mensaje")
+            return False
 
-    input_box.fill("")
-    chunk = ""
-    for ch in reply_text:
-        chunk += ch
-        input_box.fill(chunk)
-        page.wait_for_timeout(int(per_char_delay * 1000))
-    input_box.press("Enter")
-    log.info(f"Mensaje (typing-sim) enviado a {chat_id}")
+    try:
+        # Hacer click en el input para asegurar que está activo
+        input_box.click()
+        page.wait_for_timeout(200)
+        log.debug("✅ Click en input realizado")
+    except Exception as e:
+        log.warning(f"⚠️ Error haciendo click en input: {e}")
+
+    try:
+        # Limpiar el input
+        input_box.fill("")
+        page.wait_for_timeout(100)
+        
+        # Escribir caracter por caracter
+        chunk = ""
+        for ch in reply_text:
+            chunk += ch
+            input_box.fill(chunk)
+            page.wait_for_timeout(int(per_char_delay * 1000))
+        
+        log.debug(f"✅ Texto escrito: {chunk[:30]}...")
+        
+        # Presionar Enter para enviar
+        input_box.press("Enter")
+        page.wait_for_timeout(500)
+        
+        log.info(f"✅ Mensaje (typing-sim) enviado a {chat_id}")
+        return True
+        
+    except Exception as e:
+        log.error(f"❌ Error escribiendo/enviando mensaje: {e}")
+        return False
+
+def cleanup_search_and_return_to_normal(page):
+    """Limpia la búsqueda y vuelve a la ventana normal de WhatsApp"""
+    try:
+        log.debug("🧹 Iniciando limpieza de búsqueda...")
+        
+        # 1. Presionar Esc para salir del chat
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
+        log.debug("✅ Esc presionado para salir del chat")
+        
+        # 2. Buscar y hacer click en la X para cerrar búsqueda
+        close_search_selectors = [
+            "span[data-icon='close-refreshed']",
+            "button[aria-label='Cerrar búsqueda']",
+            "span[aria-hidden='true'][data-icon='close-refreshed']",
+            # Selector más específico basado en el HTML que proporcionaste
+            "span[data-icon='close-refreshed'] svg"
+        ]
+        
+        search_closed = False
+        for selector in close_search_selectors:
+            try:
+                close_button = page.locator(selector)
+                if close_button.count() > 0:
+                    close_button.first.click(timeout=2000)
+                    search_closed = True
+                    log.debug(f"✅ Búsqueda cerrada con selector: {selector}")
+                    break
+            except Exception as e:
+                log.debug(f"❌ Error cerrando búsqueda con {selector}: {e}")
+                continue
+        
+        if not search_closed:
+            # Método alternativo: hacer click en el área principal
+            try:
+                page.click("div[data-testid='chat-list']", timeout=2000)
+                log.debug("✅ Búsqueda cerrada haciendo click en chat-list")
+            except Exception as e:
+                log.debug(f"❌ Error con método alternativo: {e}")
+        
+        page.wait_for_timeout(300)
+        log.debug("🏠 Limpieza completada - de vuelta a ventana normal")
+        
+    except Exception as e:
+        log.warning(f"⚠️ Error en limpieza de búsqueda: {e}")
+
+def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
+    """Envía un mensaje manual buscando el chat específico primero."""
+    try:
+        log.info(f"📤 Iniciando envío manual a {chat_id}: {message_text[:50]}...")
+        
+        # 1. Salir de cualquier chat actual
+        exit_chat_safely(page)
+        page.wait_for_timeout(1000)
+        
+        # 2. Activar búsqueda
+        search_clicked = False
+        search_selectors = [
+            "div[data-testid='chat-list-search']",
+            "div[data-tab='3']",
+            "div[title='Buscar o empezar un chat nuevo']",
+            "label[data-testid='chat-list-search-label']"
+        ]
+        
+        for selector in search_selectors:
+            try:
+                page.click(selector, timeout=2000)
+                search_clicked = True
+                log.debug(f"✅ Search activado con: {selector}")
+                break
+            except Exception:
+                continue
+        
+        if not search_clicked:
+            log.error("❌ No se pudo activar la búsqueda")
+            return False
+        
+        page.wait_for_timeout(500)
+        
+        # 3. Escribir en la búsqueda
+        search_input_selectors = [
+            "div[data-testid='chat-list-search'] div[contenteditable='true']",
+            "div[data-tab='3'][contenteditable='true']",
+            "div[contenteditable='true'][data-tab='3']"
+        ]
+        
+        search_input = None
+        for selector in search_input_selectors:
+            try:
+                search_input = page.locator(selector).first
+                if search_input.count() > 0:
+                    break
+            except Exception:
+                continue
+        
+        if not search_input or search_input.count() == 0:
+            log.error("❌ No se encontró input de búsqueda")
+            return False
+        
+        # Escribir el contacto
+        search_input.fill("")
+        search_input.type(chat_id)
+        page.wait_for_timeout(2000)  # Esperar resultados
+        
+        log.debug(f"🔍 Búsqueda realizada para: {chat_id}")
+        
+        # 4. Seleccionar primera conversación
+        # ESTRATEGIA 1: Probar Enter primero
+        try:
+            search_input.press("Enter")
+            page.wait_for_timeout(1500)
+            
+            # Verificar si se abrió el chat
+            chat_input = page.locator("div[data-testid='conversation-compose-box-input']")
+            if chat_input.count() > 0:
+                log.debug("✅ Enter abrió el chat exitosamente")
+                # Enviar mensaje
+                message_sent = send_reply_with_typing(page, chat_id, message_text, per_char_delay)
+                
+                if message_sent:
+                    log.info(f"✅ Mensaje manual enviado exitosamente a {chat_id}")
+                    # PASO ADICIONAL: Limpiar búsqueda y volver a ventana normal
+                    cleanup_search_and_return_to_normal(page)
+                    return True
+                else:
+                    log.error("❌ Error enviando mensaje en chat abierto con Enter")
+                    return False
+        except Exception as e:
+            log.debug(f"❌ Enter no funcionó: {e}")
+        
+        # ESTRATEGIA 2: Click en primera conversación
+        conversation_selectors = [
+            # Selectores más específicos para elementos clickeables
+            "div[data-testid='cell-frame-container'] div[role='gridcell']",
+            "div[data-testid='cell-frame-container']",
+            "div[role='listitem'] div[role='gridcell']",
+            "div[role='listitem']",
+            "div[data-animate-chat-entry]"
+        ]
+        
+        for selector in conversation_selectors:
+            try:
+                conversations = page.locator(selector)
+                count = conversations.count()
+                if count > 0:
+                    log.debug(f"📋 Encontradas {count} conversaciones con: {selector}")
+                    
+                    # Probar diferentes estrategias de click
+                    click_success = False
+                    
+                    # Estrategia A: Click normal
+                    try:
+                        conversations.first.click(timeout=3000)
+                        click_success = True
+                        log.debug(f"✅ Click normal exitoso con: {selector}")
+                    except Exception as e:
+                        log.debug(f"❌ Click normal falló con {selector}: {e}")
+                    
+                    # Estrategia B: Double click si el click normal no funcionó
+                    if not click_success:
+                        try:
+                            conversations.first.dblclick(timeout=3000)
+                            click_success = True
+                            log.debug(f"✅ Double click exitoso con: {selector}")
+                        except Exception as e:
+                            log.debug(f"❌ Double click falló con {selector}: {e}")
+                    
+                    # Estrategia C: Click con coordenadas específicas
+                    if not click_success:
+                        try:
+                            conversations.first.click(position={"x": 50, "y": 30}, timeout=3000)
+                            click_success = True
+                            log.debug(f"✅ Click con coordenadas exitoso con: {selector}")
+                        except Exception as e:
+                            log.debug(f"❌ Click con coordenadas falló con {selector}: {e}")
+                    
+                    if click_success:
+                        page.wait_for_timeout(2000)  # Esperar más tiempo
+                        
+                        # Verificar si se abrió el chat con múltiples indicadores
+                        chat_opened = False
+                        chat_indicators = [
+                            # Input de mensaje
+                            "div[data-testid='conversation-compose-box-input']",
+                            "footer div[contenteditable='true'][data-tab='10']",
+                            "div[data-tab='10'][contenteditable='true']",
+                            "footer div[role='textbox']",
+                            "div[contenteditable='true'][role='textbox']",
+                            
+                            # Header del chat
+                            "header[data-testid='conversation-header']",
+                            "div[data-testid='conversation-header']",
+                            
+                            # Área de mensajes
+                            "div[data-testid='conversation-panel-messages']",
+                            "div[role='application'][data-tab='6']",
+                            
+                            # Otros indicadores
+                            "div[data-testid='conversation-panel-wrapper']",
+                            "footer[data-testid='compose-box']"
+                        ]
+                        
+                        for indicator in chat_indicators:
+                            try:
+                                if page.locator(indicator).count() > 0:
+                                    chat_opened = True
+                                    log.debug(f"✅ Chat confirmado abierto con indicador: {indicator}")
+                                    break
+                            except Exception:
+                                continue
+                        
+                        if chat_opened:
+                            log.debug(f"✅ Chat abierto con selector: {selector}")
+                            # Enviar mensaje
+                            message_sent = send_reply_with_typing(page, chat_id, message_text, per_char_delay)
+                            
+                            if message_sent:
+                                log.info(f"✅ Mensaje manual enviado exitosamente a {chat_id}")
+                                # PASO ADICIONAL: Limpiar búsqueda y volver a ventana normal
+                                cleanup_search_and_return_to_normal(page)
+                                return True
+                            else:
+                                log.error(f"❌ Error enviando mensaje en chat abierto con {selector}")
+                                return False
+                        else:
+                            log.debug(f"❌ Click en {selector} no abrió el chat - ningún indicador encontrado")
+                    else:
+                        log.debug(f"❌ Todos los tipos de click fallaron con {selector}")
+                        
+            except Exception as e:
+                log.debug(f"❌ Error con selector {selector}: {e}")
+                continue
+        
+        log.error(f"❌ No se pudo abrir el chat {chat_id}")
+        return False
+        
+    except Exception as e:
+        log.error(f"❌ Error general en envío manual: {e}")
+        return False
 
 def exit_chat_safely(page):
     """Sale del chat actual y vuelve a la lista principal."""
@@ -235,7 +654,8 @@ def exit_chat_safely(page):
             page.wait_for_timeout(400)
             page.click("span[data-icon='chats-outline']", timeout=3000)
             log.debug("Navegación Status -> Chats")
-        except:
+        except Exception as e:
+            log.debug(f"Error in navigation Status -> Chats: {e}")
             # Fallback: click en el sidebar
             page.click("#pane-side", timeout=3000)
             
@@ -248,9 +668,69 @@ def exit_chat_safely(page):
     except Exception as e:
         log.warning(f"Error saliendo del chat: {e}")
 
+def process_manual_queue(page) -> bool:
+    """Procesa la cola de mensajes manuales. Retorna True si se procesó algún mensaje."""
+    try:
+        here = os.path.dirname(__file__)
+        queue_file = os.path.join(here, 'data', 'manual_queue.json')
+        
+        if not os.path.exists(queue_file):
+            return False
+        
+        # Cargar cola
+        with open(queue_file, 'r', encoding='utf-8') as f:
+            queue = json.load(f)
+        
+        # Filtrar mensajes pendientes
+        pending_messages = [msg for msg in queue if msg.get('status') == 'pending']
+        
+        if not pending_messages:
+            return False
+        
+        # Procesar el primer mensaje pendiente
+        message = pending_messages[0]
+        chat_id = message['chat_id']
+        content = message['message']
+        
+        log.info(f"📤 Procesando mensaje manual para {chat_id}: {content[:50]}...")
+        
+        # Enviar el mensaje
+        try:
+            per_char = float(os.getenv("TYPING_PER_CHAR", "0.05"))
+        except Exception:
+            per_char = 0.05
+            
+        # Usar la nueva función que incluye navegación al chat
+        success = send_manual_message(page, chat_id, content, per_char_delay=per_char)
+        
+        # Marcar como enviado O como fallido (para evitar bucles infinitos)
+        for msg in queue:
+            if msg['id'] == message['id']:
+                if success:
+                    msg['status'] = 'sent'
+                    msg['sent_timestamp'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                    log.info(f"✅ Mensaje manual enviado a {chat_id}")
+                else:
+                    msg['status'] = 'failed'
+                    msg['failed_timestamp'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                    log.error(f"❌ Mensaje manual falló para {chat_id} - marcado como failed")
+                break
+        
+        # Guardar cola actualizada (siempre, exitoso o fallido)
+        with open(queue_file, 'w', encoding='utf-8') as f:
+            json.dump(queue, f, indent=2, ensure_ascii=False)
+        
+        return success
+        
+    except Exception as e:
+        log.error(f"❌ Error procesando cola manual: {e}")
+        return False
+
 def main() -> None:
     load_dotenv(override=True)
-    setup_logging(os.getenv("LOG_PATH"))
+    log_path = os.getenv("LOG_PATH")
+    if log_path:
+        setup_logging(log_path)
     log.debug("Variables de entorno cargadas")
 
     cfg = load_config()
@@ -263,9 +743,20 @@ def main() -> None:
 
     profile_dir = cfg["userDataDir"]
     # Verificar si es un archivo y eliminarlo si es necesario
-    if os.path.exists(profile_dir) and os.path.isfile(profile_dir):
-        os.remove(profile_dir)
-    os.makedirs(profile_dir, exist_ok=True)
+    try:
+        if os.path.exists(profile_dir):
+            if os.path.isfile(profile_dir):
+                os.remove(profile_dir)
+            # Si ya es un directorio, no hacer nada
+        os.makedirs(profile_dir, exist_ok=True)
+    except (OSError, FileExistsError) as e:
+        log.debug(f"Error creando directorio de perfil: {e}")
+        # Intentar usar el directorio existente si es válido
+        if not os.path.isdir(profile_dir):
+            # Si no es un directorio válido, usar uno temporal
+            import tempfile
+            profile_dir = tempfile.mkdtemp(prefix="whatsapp_profile_")
+            log.warning(f"Usando directorio temporal: {profile_dir}")
     log.debug(f"Perfil de Chromium: {profile_dir}")
 
     keep_open = os.getenv("KEEP_AUTOMATOR_OPEN", "false").lower() == "true"
@@ -329,6 +820,12 @@ def main() -> None:
                 log.debug(f"fetch_new_message retornó: {chat_id}, {incoming}")
                 
                 if not chat_id or incoming is None:
+                    # No hay mensajes nuevos, verificar cola de mensajes manuales
+                    manual_processed = process_manual_queue(page)
+                    if manual_processed:
+                        # Si se procesó un mensaje manual, continuar el ciclo inmediatamente
+                        continue
+                    
                     log.debug("No hay nuevos mensajes, durmiendo…")
                     time.sleep(cfg["messageCheckInterval"])
                     continue
@@ -349,9 +846,15 @@ def main() -> None:
                     
                     reply = stub_chat(incoming, chat_id, history)
                     log.info(f"[{chat_id}] reply generado: '{reply}'")
+                    
+                    # Si no hay respuesta disponible (LM Studio no conectado), no enviar nada
+                    if not reply or reply.strip() == "":
+                        log.warning(f"[{chat_id}] No se generó respuesta (posible problema con LM Studio)")
+                        continue
                 except Exception:
                     log.exception("Error generando respuesta con stub_chat")
-                    reply = "Lo siento, ocurrió un error al procesar tu mensaje."
+                    # No enviar mensaje de error al usuario, simplemente continuar sin responder
+                    continue
                 
                 history.append({"role": "assistant", "content": reply})
                 chat_sessions.save_context(chat_id, history)
@@ -367,6 +870,10 @@ def main() -> None:
                     if not reply:
                         reply = ""
                     send_reply_with_typing(page, chat_id, reply, per_char_delay=per_char)
+                    
+                    # IMPORTANTE: Salir del chat para evitar quedarse en modo escritura
+                    exit_chat_safely(page)
+                    log.debug("Salida segura del chat después de enviar mensaje")
                     
                     # Marcar tiempo de respuesta
                     LAST_REPLIED[chat_id] = time.time()

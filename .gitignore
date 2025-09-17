@@ -1,80 +1,40 @@
-# Virtual environment
+# Envs
 venv/
-
-# Entorno y credenciales
+.venv/
 .env
+
+# IDE
+.vscode/
 
 # Logs
 logs/
+data/logs/
+*.log
 automation.log
 
-# Datos sensibles
-data/contacts.json
-data/contacts_backup.json
-
-# Perfil de navegador completo
-data/profile/
-data/whatsapp-profile/
-
-# Archivos generados
-__pycache__/
-*.pyc
-
-# Documentos sensibles - no incluir en el repositorio
-Docs/
-backup_docs/
-Docs_original/
-
-# Archivos de base de datos
-*.db
-chatbot_context.db
-
-# Archivos de datos vectoriales
-docs.index
-docs.pkl
-
-# Archivos de configuración sensibles
-payload.json
-
-# Archivos temporales
-*.tmp
-*.temp
-
-# Archivos específicos de Windows
-*.bat
-*.ps1
-
-# Archivos de configuración local
-data/settings.json
-data/fernet.key
-
-# Conversaciones por chat (sensibles)
-contextos/
-contextos/
-# ...existing code...
-# Conversaciones y contextos
-contextos/
-
-# Perfiles/artefactos de navegador y Playwright
-data/profile/
-data/profiles/
-playwright/.auth/
-playwright/.cache/
-*.har
-
-# Bases de datos y cachés locales
-*.db
-*.sqlite
-*.sqlite3
-data/**/*.db
-data/logs/
-logs/
-*.log
+# Caches/bytecode
 __pycache__/
 .pytest_cache/
 .cache/
+*.pyc
+*.tmp
+*.temp
 
-# Índices/embeddings (FAISS, pickles, etc.)
+# Local data and profiles
+data/profile/
+data/profiles/
+data/whatsapp-profile/
+data/**/*.db
+data/contacts.json
+data/contacts_backup.json
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+chatbot_context.db
+
+# Vector stores / embeddings / indices
 docs.index
 docs.pkl
 *.faiss
@@ -83,13 +43,26 @@ docs.pkl
 *.npy
 *.npz
 
-# Modelos/pesados
+# Models / large binaries
 *.gguf
 *.bin
 
-# Entornos
-venv/
-.venv/
+# Sensitive docs/config
+Docs/
+backup_docs/
+Docs_original/
+payload.json
+data/settings.json
+data/fernet.key
 
-# IDE
-.vscode/
+# Conversations per chat
+contextos/
+
+# Playwright artifacts
+playwright/.auth/
+playwright/.cache/
+*.har
+
+# Windows specific
+*.bat
+*.ps1

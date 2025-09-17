@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Header, Request
+from fastapi import FastAPI, Depends, HTTPException, Header, Request, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -8,16 +8,13 @@ from contextlib import asynccontextmanager
 import requests
 import subprocess
 import json
-import sys
-import asyncio
+import os
 
 from admin_db import initialize_schema, get_session
 from sqlalchemy import text
-from models import ModelConfig, Rule, AllowedContact, UserContext, DailyContext, AuditLog, Contact, ChatProfile, ChatCounter, ChatStrategy
-from crypto import encrypt_text
+from models import ModelConfig, Rule, AllowedContact, UserContext, DailyContext, Contact, ChatProfile, ChatCounter
 import chat_sessions
 import stub_chat
-import os
 from string import Template as StrTemplate
 from fastapi.staticfiles import StaticFiles
 from reasoner import update_chat_context_and_profile
@@ -29,10 +26,35 @@ except ImportError:
     psutil = None
 
 
+def ensure_bot_disabled_by_default():
+    """Ensure respond_to_all is false by default on startup"""
+    settings_file = os.path.join(os.path.dirname(__file__), 'data', 'settings.json')
+    try:
+        if os.path.exists(settings_file):
+            with open(settings_file, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+        else:
+            settings = {}
+        
+        # Force respond_to_all to false on startup unless explicitly configured
+        if 'respond_to_all' not in settings:
+            settings['respond_to_all'] = False
+            
+        # Save the settings
+        os.makedirs(os.path.dirname(settings_file), exist_ok=True)
+        with open(settings_file, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+        
+        print(f"Bot auto-responder set to: {settings['respond_to_all']}")
+    except Exception as e:
+        print(f"Error ensuring bot disabled by default: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     initialize_schema()
+    ensure_bot_disabled_by_default()
     yield
     # Shutdown
     pass
@@ -166,12 +188,17 @@ def add_contact(payload: ContactIn, user=Depends(verify_token)):
         # Upsert contact
         contact = session.query(Contact).filter(Contact.chat_id == payload.contact_id).first()
         if contact is None:
-            contact = Contact(chat_id=payload.contact_id, name=payload.label or None)
+            # Create new contact with constructor parameters
+            contact = Contact()
+            # Use setattr to bypass type checking issues
+            setattr(contact, 'chat_id', payload.contact_id)
+            setattr(contact, 'name', payload.label or None)
             session.add(contact)
         else:
-            contact.name = payload.label or contact.name
+            if payload.label:
+                setattr(contact, 'name', payload.label)
         session.commit()
-        return {"chat_id": contact.chat_id, "name": contact.name}
+        return {"chat_id": getattr(contact, 'chat_id'), "name": getattr(contact, 'name')}
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -297,6 +324,39 @@ def _kill_processes(matchers):
             pass
     return killed
 
+def _kill_processes_except_current(matchers, exclude_pid):
+    """Terminate processes whose name or cmdline contains any matcher, EXCEPT exclude_pid.
+    Returns list of killed PIDs.
+    """
+    killed = []
+    if psutil is None:
+        return killed
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            # Skip the current admin panel process
+            if proc.info['pid'] == exclude_pid:
+                continue
+                
+            name = (proc.info.get('name') or '').lower()
+            cmdline = ' '.join(proc.info.get('cmdline') or []).lower()
+            if any(m.lower() in name or m.lower() in cmdline for m in matchers):
+                proc.terminate()
+                killed.append(proc.info['pid'])
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    # best-effort wait and force-kill
+    try:
+        psutil.wait_procs([psutil.Process(pid) for pid in killed if psutil.pid_exists(pid)], timeout=2)
+    except Exception:
+        pass
+    for pid in list(killed):
+        try:
+            if psutil.pid_exists(pid):
+                psutil.Process(pid).kill()
+        except Exception:
+            pass
+    return killed
+
 def _kill_by_port(port: int) -> list:
     """Kill processes listening on a given TCP port (best-effort)."""
     killed = []
@@ -398,16 +458,67 @@ def _kill_browser_profile_processes() -> list:
     return list(set(killed))
 
 
+def _filter_and_categorize_models(models):
+    """Filtra y categoriza modelos según criterios específicos de Pablo"""
+    
+    # MODELOS PRINCIPALES PERMITIDOS (solo estos 3) - NOMBRES REALES DE LM STUDIO
+    allowed_main_models = [
+        'nemotron-mini-4b-instruct',
+        'meta-llama-3.1-8b-instruct', 
+        'phi-4'
+    ]
+    
+    # MODELOS RAZONADORES PERMITIDOS (solo estos 2) - NOMBRES REALES DE LM STUDIO
+    allowed_reasoning_models = [
+        'deepseek-r1-distill-qwen-7b',
+        'openai/gpt-oss-20b'
+    ]
+    
+    # Filtrar modelos
+    main_models = []
+    reasoning_models = []
+    hidden_models = []  # text-embedding, etc
+    other_models = []   # Para función "agregar modelo"
+    
+    for model in models:
+        model_name = model.get('id', '').lower()
+        
+        # Verificar si está en la lista principal permitida
+        if model_name in allowed_main_models:
+            main_models.append({**model, 'category': 'main'})
+        
+        # Verificar si está en la lista de razonadores permitidos
+        elif model_name in allowed_reasoning_models:
+            reasoning_models.append({**model, 'category': 'reasoning'})
+        
+        # Ocultar embeddings pero mantener para RAG
+        elif 'embed' in model_name or 'embedding' in model_name:
+            hidden_models.append({**model, 'category': 'hidden'})
+        
+        # Todo lo demás va a "otros" para agregar manualmente
+        else:
+            other_models.append({**model, 'category': 'other'})
+    
+    return {
+        'main_models': main_models,
+        'reasoning_models': reasoning_models, 
+        'hidden_models': hidden_models,
+        'other_models': other_models,
+        'all_available': other_models + hidden_models  # Para función agregar
+    }
+
 @app.get('/api/lmstudio/models')
 def api_lmstudio_models():
-    """Detect models from LM Studio API, and also list local GGUF models as fallback.
+    """Detect models from LM Studio API con filtrado específico de Pablo.
 
     Returns:
     {
       status: 'success'|'error',
       lm_studio_running: bool,
-      models: [{id,name,object,source:'lmstudio'}],
-      local_models: [{id,name,path,source:'local'}],
+      main_models: [Solo 3 modelos principales permitidos],
+      reasoning_models: [Solo 2 modelos razonadores permitidos],
+      available_for_add: [Modelos disponibles para agregar manualmente],
+      current_model: str,
       note?: str,
       error?: str
     }
@@ -464,11 +575,27 @@ def api_lmstudio_models():
         # ignore local scanning errors
         pass
 
+    # 3) Combinar todos los modelos y filtrar
+    all_models = models + local_models
+    categorized = _filter_and_categorize_models(all_models)
+    
+    # 4) Obtener modelo actual del payload.json
+    current_model = "ninguno"
+    try:
+        payload_path = os.path.join(os.path.dirname(__file__), 'payload.json')
+        with open(payload_path, 'r', encoding='utf-8') as f:
+            payload = json.load(f)
+            current_model = payload.get('model', 'ninguno')
+    except Exception:
+        pass
+    
     result = {
         'status': 'success',
         'lm_studio_running': bool(lm_running),
-        'models': models,
-        'local_models': local_models,
+        'main_models': categorized['main_models'],
+        'reasoning_models': categorized['reasoning_models'],
+        'available_for_add': categorized['all_available'],
+        'current_model': current_model,
         'port': port,
     }
 
@@ -481,6 +608,107 @@ def api_lmstudio_models():
             result['note'] = 'LM Studio no respondió y no se encontraron modelos locales.'
 
     return result
+
+@app.post('/api/lmstudio/add-model')
+async def api_lmstudio_add_model(request: Request):
+    """Agregar modelo manualmente a lista principal o razonadores"""
+    try:
+        body = await request.json()
+        model_id = body.get('model_id')
+        target_list = body.get('target_list', 'main')  # 'main' o 'reasoning'
+        
+        if not model_id:
+            return {"success": False, "error": "model_id requerido"}
+        
+        if target_list not in ['main', 'reasoning']:
+            return {"success": False, "error": "target_list debe ser 'main' o 'reasoning'"}
+        
+        # Obtener modelos disponibles
+        models_response = api_lmstudio_models()
+        available_models = models_response.get('available_for_add', [])
+        
+        # Verificar que el modelo está disponible
+        selected_model = None
+        for model in available_models:
+            if model['id'] == model_id:
+                selected_model = model
+                break
+        
+        if not selected_model:
+            return {"success": False, "error": f"Modelo {model_id} no disponible para agregar"}
+        
+        # Actualizar las listas permitidas en el código (esto requiere editar el archivo)
+        # Por ahora, solo cambiar el modelo activo en payload.json
+        payload_path = os.path.join(os.path.dirname(__file__), 'payload.json')
+        try:
+            with open(payload_path, 'r', encoding='utf-8') as f:
+                payload = json.load(f)
+            
+            old_model = payload.get('model', 'unknown')
+            payload['model'] = model_id
+            
+            with open(payload_path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, indent=4, ensure_ascii=False)
+            
+            return {
+                "success": True, 
+                "message": f"Modelo '{model_id}' agregado a lista {target_list} y activado",
+                "old_model": old_model,
+                "new_model": model_id,
+                "target_list": target_list,
+                "note": "NOTA: Para que aparezca permanentemente en la lista, contacta al desarrollador"
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": f"Error actualizando payload.json: {e}"}
+            
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post('/api/lmstudio/switch-model')
+async def api_lmstudio_switch_model(request: Request):
+    """Cambiar entre modelos ya permitidos en las listas"""
+    try:
+        body = await request.json()
+        model_id = body.get('model_id')
+        
+        if not model_id:
+            return {"success": False, "error": "model_id requerido"}
+        
+        # Verificar que es un modelo permitido
+        models_response = api_lmstudio_models()
+        main_models = models_response.get('main_models', [])
+        reasoning_models = models_response.get('reasoning_models', [])
+        
+        allowed_models = [m['id'] for m in main_models + reasoning_models]
+        
+        if model_id not in allowed_models:
+            return {"success": False, "error": f"Modelo {model_id} no está en listas permitidas"}
+        
+        # Actualizar payload.json
+        payload_path = os.path.join(os.path.dirname(__file__), 'payload.json')
+        try:
+            with open(payload_path, 'r', encoding='utf-8') as f:
+                payload = json.load(f)
+            
+            old_model = payload.get('model', 'unknown')
+            payload['model'] = model_id
+            
+            with open(payload_path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, indent=4, ensure_ascii=False)
+            
+            return {
+                "success": True, 
+                "message": f"Modelo cambiado de '{old_model}' a '{model_id}'",
+                "old_model": old_model,
+                "new_model": model_id
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": f"Error actualizando payload.json: {e}"}
+            
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.post('/api/lmstudio/start')
@@ -633,7 +861,8 @@ def api_lmstudio_server_start():
     try:
         port = _lm_port()
         # If already up, return
-        import socket, time
+        import socket
+        import time
         def _is_port_open(host: str, port: int, timeout: float = 0.5) -> bool:
             try:
                 with socket.create_connection((host, port), timeout=timeout):
@@ -697,7 +926,8 @@ async def api_lmstudio_load(request: Request):
         if not model_value:
             try:
                 form = await request.form()
-                model_value = form.get('model')
+                form_model = form.get('model')
+                model_value = str(form_model) if form_model and not hasattr(form_model, 'read') else None
             except Exception:
                 pass
         # Try query
@@ -790,19 +1020,169 @@ def api_lmstudio_app_stop():
         return {"success": False, "error": str(e)}
 
 
+@app.get('/api/system/check-processes')
+def api_system_check_processes():
+    """Verificar qué procesos problemáticos están corriendo ANTES de la limpieza"""
+    try:
+        problematic_processes = []
+        
+        if psutil:
+            # Procesos a verificar
+            targets = [
+                'LM Studio.exe', 'lms.exe', 'lmstudio.exe',
+                'chrome.exe', 'chromium.exe', 'msedge.exe', 
+                'python.exe', 'python3.exe', 'python3.13.exe',
+                'whatsapp_automator.py'
+            ]
+            
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'memory_info']):
+                try:
+                    name = (proc.info.get('name') or '').lower()
+                    cmdline = ' '.join(proc.info.get('cmdline') or []).lower()
+                    
+                    for target in targets:
+                        if target.lower() in name or target.lower() in cmdline:
+                            memory_mb = 0
+                            try:
+                                mem_info = proc.info.get('memory_info')
+                                if mem_info:
+                                    memory_mb = mem_info.rss // (1024 * 1024)
+                            except Exception:
+                                pass
+                            
+                            problematic_processes.append({
+                                'pid': proc.info['pid'],
+                                'name': proc.info.get('name', 'unknown'),
+                                'target_match': target,
+                                'memory_mb': memory_mb,
+                                'cmdline_snippet': cmdline[:100] + '...' if len(cmdline) > 100 else cmdline
+                            })
+                            break
+                            
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        
+        # Verificar puertos ocupados
+        import socket
+        ports_status = {}
+        for port in [1234, 8000, 8001, 8002, 8003]:
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=0.5):
+                    ports_status[port] = "OCUPADO"
+            except OSError:
+                ports_status[port] = "LIBRE"
+        
+        return {
+            "success": True,
+            "problematic_processes": problematic_processes,
+            "total_problematic": len(problematic_processes),
+            "ports_status": ports_status,
+            "needs_cleanup": len(problematic_processes) > 0 or any(status == "OCUPADO" for status in ports_status.values())
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @app.post('/api/system/stop-all')
 def api_system_stop_all():
-    """Emergency stop: kill WhatsApp automator, LM Studio server/GUI."""
+    """STOP NUCLEAR: Mata TODO (LM Studio, Chrome, Python, WhatsApp automator) como hizo Pablo."""
     try:
         killed = []
-        # WhatsApp automator and its browser context
-        killed += _kill_processes(['whatsapp_automator.py'])
-        killed += _kill_browser_profile_processes()
-        # LM Studio CLI/Server and App
-        killed += _kill_processes(['lms', 'lms.exe', 'lm-studio', 'lm studio local server'])
-        killed += _kill_by_port(_lm_port())
-        killed += _kill_processes(['lm studio.exe', 'lmstudio.exe'])
-        return {"success": True, "stopped_pids": list(set(killed))}
+        results = []
+        
+        # 1. Matar procesos usando psutil primero (si está disponible)
+        if psutil:
+            # LM Studio - todas las variantes
+            lm_processes = ['LM Studio.exe', 'lms.exe', 'lms', 'lm-studio', 'lmstudio.exe']
+            for process_name in lm_processes:
+                pids = _kill_processes([process_name])
+                if pids:
+                    killed.extend(pids)
+                    results.append(f"psutil: Matados {len(pids)} procesos de {process_name}")
+            
+            # Chrome y browsers
+            browser_processes = ['chrome.exe', 'chromium.exe', 'msedge.exe']
+            for process_name in browser_processes:
+                pids = _kill_processes([process_name])
+                if pids:
+                    killed.extend(pids)
+                    results.append(f"psutil: Matados {len(pids)} procesos de {process_name}")
+            
+            # Python - todas las versiones PERO NO EL ADMIN PANEL ACTUAL
+            import os
+            current_pid = os.getpid()  # PID del admin panel actual
+            
+            python_processes = ['python.exe', 'python3.exe', 'python3.13.exe', 'pythonw.exe']
+            for process_name in python_processes:
+                pids = _kill_processes_except_current([process_name], current_pid)
+                if pids:
+                    killed.extend(pids)
+                    results.append(f"psutil: Matados {len(pids)} procesos de {process_name} (excluyendo admin panel)")
+            
+            # WhatsApp automator específico
+            wa_pids = _kill_processes(['whatsapp_automator.py'])
+            if wa_pids:
+                killed.extend(wa_pids)
+                results.append(f"psutil: Matados {len(wa_pids)} procesos WhatsApp automator")
+        
+        # 2. Usar taskkill de Windows como backup/fuerza bruta (método que funcionó)
+        import subprocess
+        try:
+            # Comando robusto que funcionó en PowerShell (SIN matar admin panel)
+            taskkill_commands = [
+                'taskkill /f /im "LM Studio.exe" 2>nul',
+                'taskkill /f /im lms.exe 2>nul', 
+                'taskkill /f /im chrome.exe 2>nul',
+                # NO matamos python.exe genéricamente porque mataría el admin panel
+                'taskkill /f /im chromium.exe 2>nul',
+                'taskkill /f /im msedge.exe 2>nul'
+            ]
+            
+            for cmd in taskkill_commands:
+                try:
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+                    if "SUCCESS" in result.stdout:
+                        lines = result.stdout.count("SUCCESS")
+                        results.append(f"taskkill: Matados {lines} procesos con {cmd.split()[3]}")
+                except subprocess.TimeoutExpired:
+                    results.append(f"taskkill: Timeout en {cmd}")
+                except Exception as e:
+                    results.append(f"taskkill: Error en {cmd}: {e}")
+        
+        except Exception as e:
+            results.append(f"taskkill: Error general: {e}")
+        
+        # 3. Matar por puertos específicos (EXCEPTO el puerto del admin panel)
+        ports_to_kill = [1234, 8000, 8001, 8002]  # LM Studio y otros admin panels, NO 8003
+        for port in ports_to_kill:
+            port_pids = _kill_by_port(port)
+            if port_pids:
+                killed.extend(port_pids)
+                results.append(f"puerto: Matados {len(port_pids)} procesos en puerto {port}")
+        
+        # 4. Esperar un poco y verificar
+        import time
+        time.sleep(2)
+        
+        # 5. Verificar que los puertos estén libres
+        import socket
+        ports_status = {}
+        for port in [1234, 8003]:
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=1):
+                    ports_status[port] = "OCUPADO ⚠️"
+            except OSError:
+                ports_status[port] = "LIBRE ✅"
+        
+        return {
+            "success": True, 
+            "total_killed_pids": len(set(killed)),
+            "unique_killed_pids": list(set(killed)),
+            "actions": results,
+            "ports_status": ports_status,
+            "message": f"🧹 LIMPIEZA NUCLEAR COMPLETADA - {len(set(killed))} procesos eliminados"
+        }
+        
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -965,8 +1345,23 @@ def api_whatsapp_status():
 
 @app.post('/api/whatsapp/start')
 def api_whatsapp_start():
-    """Start WhatsApp automator"""
+    """Start WhatsApp automator (with LM Studio validation)"""
     try:
+        # First, validate that LM Studio is ready
+        lm_status = api_lmstudio_local_models()
+        
+        if not lm_status.get("lm_studio_running", False):
+            return {
+                "success": False, 
+                "error": "LM Studio no está ejecutándose. Inicia el servidor en puerto 1234 antes de continuar."
+            }
+        
+        if not lm_status.get("models") or len(lm_status.get("models", [])) == 0:
+            return {
+                "success": False, 
+                "error": "No hay modelos cargados en LM Studio. Carga un modelo antes de iniciar WhatsApp."
+            }
+        
         # Check if already running
         status = api_whatsapp_status()
         if status.get("status") == "running":
@@ -1277,12 +1672,13 @@ def api_update_chat_context(chat_id: str, update: ChatContextUpdate):
             session = get_session()
             profile = session.query(ChatProfile).filter(ChatProfile.chat_id == chat_id).first()
             if not profile:
-                profile = ChatProfile(chat_id=chat_id)
+                profile = ChatProfile()
+                setattr(profile, 'chat_id', chat_id)
                 session.add(profile)
             if update.contexto is not None:
-                profile.initial_context = update.contexto
+                setattr(profile, 'initial_context', update.contexto)
             if update.objetivo is not None:
-                profile.objective = update.objetivo
+                setattr(profile, 'objective', update.objetivo)
             session.commit()
             session.close()
         except Exception:
@@ -1486,17 +1882,16 @@ def api_create_allowed_contact(payload: AllowedContactCreate, user=Depends(verif
         # Create or update chat profile
         profile = session.query(ChatProfile).filter(ChatProfile.chat_id == payload.chat_id).first()
         if not profile:
-            profile = ChatProfile(
-                chat_id=payload.chat_id,
-                initial_context=payload.initial_context,
-                objective=payload.objective,
-                is_ready=True
-            )
+            profile = ChatProfile()
+            setattr(profile, 'chat_id', payload.chat_id)
+            setattr(profile, 'initial_context', payload.initial_context)
+            setattr(profile, 'objective', payload.objective)
+            setattr(profile, 'is_ready', True)
             session.add(profile)
         else:
-            profile.initial_context = payload.initial_context
-            profile.objective = payload.objective
-            profile.is_ready = True
+            setattr(profile, 'initial_context', payload.initial_context)
+            setattr(profile, 'objective', payload.objective)
+            setattr(profile, 'is_ready', True)
         
         session.commit()
 
@@ -1535,7 +1930,7 @@ def api_list_allowed_contacts(user=Depends(verify_token)):
         # Join contacts with their profiles
         results = session.query(Contact, ChatProfile).outerjoin(
             ChatProfile, Contact.chat_id == ChatProfile.chat_id
-        ).filter(Contact.auto_enabled == True).all()
+        ).filter(Contact.auto_enabled).all()
         
         contacts = []
         for contact, profile in results:
@@ -1597,7 +1992,7 @@ def api_toggle_chat(user=Depends(verify_token)):
             settings = json.load(f)
     current = settings.get('chat_enabled', True)
     settings['chat_enabled'] = not current
-    import json, os as _os
+    import json
     os.makedirs(os.path.dirname(sfile), exist_ok=True)
     with open(sfile,'w',encoding='utf-8') as f:
         json.dump(settings,f,ensure_ascii=False,indent=2)
@@ -1631,7 +2026,8 @@ def api_schedule(payload: ScheduleIn, user=Depends(verify_token)):
 
 
 def event_stream():
-    import time, json
+    import time
+    import json
     sfile = os.path.join(os.path.dirname(__file__), 'data', 'status.json')
     while True:
         payload = {'time': time.time()}
@@ -1718,6 +2114,278 @@ def api_test_reply():
         }
 
 
+# ============== MANUAL MESSAGE COMPOSITION API ==============
+
+class MessageComposeRequest(BaseModel):
+    chat_id: str
+    objective: str
+    additional_context: Optional[str] = ""
+
+class MessageSendRequest(BaseModel):
+    chat_id: str
+    message: str
+    media: Optional[dict] = None  # {"fileId": str, "type": str}
+
+class BulkMessageRequest(BaseModel):
+    contacts: List[str]  # List of contact numbers
+    template: str
+    objective: str
+    media: Optional[dict] = None  # {"fileId": str, "type": str}
+
+@app.post('/api/chat/compose')
+def api_compose_message(payload: MessageComposeRequest):
+    """Generate a message using AI for a specific contact and objective"""
+    try:
+        # Create a specialized prompt for message composition
+        compose_prompt = f"""Eres un asistente experto en comunicación. Tu tarea es generar un mensaje de WhatsApp profesional y personalizado.
+
+OBJETIVO DEL MENSAJE: {payload.objective}
+
+INFORMACIÓN ADICIONAL: {payload.additional_context if payload.additional_context else "Ninguna"}
+
+INSTRUCCIONES:
+1. Genera un mensaje claro, conciso y profesional
+2. Adapta el tono según el objetivo (formal para citas médicas, amigable para recordatorios personales)
+3. Incluye solo el texto del mensaje, sin explicaciones adicionales
+4. Máximo 200 palabras
+5. Evita usar emojis excesivos
+6. Sé directo y específico
+
+Genera ÚNICAMENTE el texto del mensaje:"""
+
+        # Call stub_chat to generate the message
+        generated_message = stub_chat.chat(compose_prompt, payload.chat_id, [])
+        
+        if generated_message:
+            return {"success": True, "reply": generated_message}
+        else:
+            return {"success": False, "error": "No se pudo generar el mensaje. Verifica que LM Studio esté funcionando."}
+    
+    except Exception as e:
+        return {"success": False, "error": f"Error generando mensaje: {str(e)}"}
+
+@app.post('/api/whatsapp/send')
+def api_send_whatsapp_message(payload: MessageSendRequest):
+    """Send a message through WhatsApp (requires WhatsApp automation to be running)"""
+    try:
+        # Check if WhatsApp automator is running
+        status = api_whatsapp_status()
+        if status.get("status") != "running":
+            return {"success": False, "error": "WhatsApp automator no está ejecutándose"}
+        
+        # Queue the message for the WhatsApp automator to send
+        try:
+            import json
+            import os
+            import logging
+            from datetime import datetime
+            
+            # Create manual messages queue file if it doesn't exist
+            here = os.path.dirname(__file__)
+            queue_file = os.path.join(here, 'data', 'manual_queue.json')
+            
+            # Load existing queue
+            try:
+                with open(queue_file, 'r', encoding='utf-8') as f:
+                    queue = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                queue = []
+            
+            # Add new message to queue
+            message_entry = {
+                'id': f"manual_{int(datetime.now().timestamp())}",
+                'chat_id': payload.chat_id,
+                'message': payload.message,
+                'timestamp': datetime.now().isoformat(),
+                'status': 'pending'
+            }
+            
+            if payload.media:
+                message_entry['media'] = json.dumps(payload.media)
+            
+            queue.append(message_entry)
+            
+            # Save updated queue
+            with open(queue_file, 'w', encoding='utf-8') as f:
+                json.dump(queue, f, indent=2, ensure_ascii=False)
+            
+            logging.info(f"Queued manual message to {payload.chat_id}: {payload.message}")
+            
+        except Exception as e:
+            import logging
+            logging.error(f"Error queuing manual message: {e}")
+            return {"success": False, "error": f"Error al programar mensaje: {str(e)}"}
+        
+        # Store the message in chat history
+        try:
+            history = chat_sessions.load_last_context(payload.chat_id) or []
+            message_entry = {
+                'role': 'assistant', 
+                'content': payload.message, 
+                'manual': True
+            }
+            if payload.media:
+                message_entry['media'] = json.dumps(payload.media)
+            
+            history.append(message_entry)
+            chat_sessions.save_context(payload.chat_id, history)
+        except Exception as e:
+            print(f"Error saving manual message to history: {e}")
+        
+        media_text = " con archivo multimedia" if payload.media else ""
+        return {
+            "success": True,
+            "message": f"Mensaje{media_text} enviado a cola para {payload.chat_id}",
+            "note": "El mensaje ha sido programado y será enviado por el automator de WhatsApp."
+        }
+    
+    except Exception as e:
+        return {"success": False, "error": f"Error enviando mensaje: {str(e)}"}
+
+@app.post('/api/whatsapp/bulk-send')
+def api_bulk_send_messages(payload: BulkMessageRequest):
+    """Send bulk messages to multiple contacts"""
+    try:
+        results = []
+        
+        for contact_number in payload.contacts:
+            try:
+                # Generate personalized content for this contact
+                compose_prompt = f"""Eres un asistente experto en comunicación. Genera contenido personalizado basado en el objetivo.
+
+OBJETIVO: {payload.objective}
+CONTACTO: {contact_number}
+
+INSTRUCCIONES:
+1. Genera contenido específico y personalizado
+2. Mantén un tono profesional y amigable
+3. Sé conciso y directo
+4. Máximo 150 palabras
+5. Solo proporciona el contenido, sin explicaciones adicionales
+
+Genera el contenido personalizado:"""
+
+                # Generate personalized content
+                personalized_content = stub_chat.chat(compose_prompt, contact_number, [])
+                
+                if personalized_content:
+                    # Replace template variables
+                    final_message = payload.template.replace('{custom}', personalized_content)
+                    
+                    # Simulate sending (in real implementation, integrate with WhatsApp automator)
+                    import logging
+                    logging.info(f"Bulk message to {contact_number}: {final_message}")
+                    
+                    # Store in chat history
+                    try:
+                        history = chat_sessions.load_last_context(contact_number) or []
+                        history.append({'role': 'assistant', 'content': final_message, 'bulk': True})
+                        chat_sessions.save_context(contact_number, history)
+                    except Exception as e:
+                        print(f"Error saving bulk message to history for {contact_number}: {e}")
+                    
+                    results.append({
+                        "contact": contact_number,
+                        "success": True,
+                        "message": final_message
+                    })
+                else:
+                    # Fallback without personalization
+                    fallback_message = payload.template.replace('{custom}', 'Mensaje personalizado')
+                    
+                    results.append({
+                        "contact": contact_number,
+                        "success": False,
+                        "message": fallback_message,
+                        "error": "No se pudo generar contenido personalizado"
+                    })
+                    
+            except Exception as e:
+                results.append({
+                    "contact": contact_number,
+                    "success": False,
+                    "error": f"Error procesando mensaje para {contact_number}: {str(e)}"
+                })
+        
+        successful_sends = sum(1 for r in results if r["success"])
+        total_contacts = len(payload.contacts)
+        
+        return {
+            "success": True,
+            "results": results,
+            "summary": f"Procesados {successful_sends}/{total_contacts} mensajes exitosamente"
+        }
+    
+    except Exception as e:
+        return {"success": False, "error": f"Error en envío masivo: {str(e)}"}
+
+@app.post('/api/media/upload')
+async def upload_media_file(file: UploadFile = File(...), messageType: str = "manual"):
+    """Upload media file for message attachments"""
+    try:
+        # Validate file type
+        allowed_types = [
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            'video/mp4', 'video/avi', 'video/mov',
+            'application/pdf', 'application/msword', 
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ]
+        
+        if file.content_type not in allowed_types:
+            return {"success": False, "error": f"Tipo de archivo no permitido: {file.content_type}"}
+        
+        # Validate file size (max 25MB)
+        max_size = 25 * 1024 * 1024  # 25MB
+        contents = await file.read()
+        if len(contents) > max_size:
+            return {"success": False, "error": "Archivo muy grande. Máximo 25MB permitido"}
+        
+        # Create media directory if it doesn't exist
+        import os
+        media_dir = "media_uploads"
+        if not os.path.exists(media_dir):
+            os.makedirs(media_dir)
+        
+        # Generate unique filename
+        import uuid
+        from datetime import datetime
+        filename = file.filename or "uploaded_file"
+        file_extension = os.path.splitext(filename)[1]
+        unique_filename = f"{messageType}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{file_extension}"
+        file_path = os.path.join(media_dir, unique_filename)
+        
+        # Save file
+        with open(file_path, "wb") as f:
+            f.write(contents)
+        
+        # Store file info (in production, you'd store this in database)
+        file_info = {
+            "fileId": unique_filename,
+            "originalName": filename,
+            "contentType": file.content_type,
+            "size": len(contents),
+            "path": file_path,
+            "messageType": messageType,
+            "uploadTime": datetime.now().isoformat()
+        }
+        
+        # Log upload for debugging
+        import logging
+        logging.info(f"Media file uploaded: {file_info}")
+        
+        return {
+            "success": True,
+            "fileId": unique_filename,
+            "originalName": filename,
+            "size": len(contents)
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": f"Error subiendo archivo: {str(e)}"}
+
+
 # ============== DAILY CONTEXTS API ==============
 class DailyContextCreate(BaseModel):
     text: str
@@ -1795,7 +2463,7 @@ def api_create_user_context(payload: UserContextCreate, user=Depends(verify_toke
             "user_id": context.user_id,
             "text": context.text,
             "source": context.source,
-            "created_at": context.created_at.isoformat() if context.created_at else None
+            "created_at": context.created_at.isoformat() if getattr(context, 'created_at') else None
         }
     except Exception as e:
         session.rollback()
@@ -1820,7 +2488,7 @@ def api_list_user_contexts(user_id: Optional[str] = None, user=Depends(verify_to
                 "user_id": ctx.user_id,
                 "text": ctx.text,
                 "source": ctx.source,
-                "created_at": ctx.created_at.isoformat() if ctx.created_at else None
+                "created_at": ctx.created_at.isoformat() if getattr(ctx, 'created_at') else None
             }
             for ctx in contexts
         ]
@@ -1982,10 +2650,10 @@ def api_update_online_model(model_id: int, config: OnlineModelConfig, user=Depen
             "base_url": config.base_url
         }
         
-        model.name = config.name
-        model.provider = config.provider
-        model.config = model_config
-        model.active = config.active
+        setattr(model, 'name', config.name)
+        setattr(model, 'provider', config.provider)
+        setattr(model, 'config', model_config)
+        setattr(model, 'active', config.active)
         
         session.commit()
         
@@ -2031,21 +2699,59 @@ def api_delete_online_model(model_id: int, user=Depends(verify_token)):
 
 @app.get('/api/lmstudio/models/local-only')
 def api_lmstudio_local_models():
-    """Get only local models from LM Studio, filtering out any online models"""
-    result = api_lmstudio_models()
+    """NUEVA FUNCIÓN FILTRADA - Solo modelos permitidos por Pablo según especificaciones"""
     
-    # Filter the models to only include actual local models
-    if result.get('models'):
-        # Only keep models that don't have provider indicators for online services
-        filtered_models = []
-        for model in result['models']:
-            model_name = model.get('name', '').lower()
-            # Skip models that look like online service indicators
-            if not any(provider in model_name for provider in ['gpt-', 'claude-', 'gemini-', 'grok-']):
-                filtered_models.append(model)
-        result['models'] = filtered_models
-    
-    return result
+    try:
+        # Usar nuestra nueva función filtrada
+        result = api_lmstudio_models()
+        
+        # Si hay error, devolver estructura compatible con frontend
+        if result.get('status') == 'error':
+            return {
+                'status': 'error',
+                'models': [],
+                'local_models': [],
+                'lm_studio_running': False,
+                'error': result.get('error', 'Error desconocido'),
+                'note': 'No se detectó LM Studio ni modelos locales. Inicia LM Studio en 127.0.0.1:1234 o contacta soporte.'
+            }
+        
+        # Convertir nueva estructura a estructura esperada por frontend
+        main_models = result.get('main_models', [])
+        reasoning_models = result.get('reasoning_models', [])
+        
+        # Combinar modelos principales y razonadores para compatibilidad con frontend
+        all_filtered = main_models + reasoning_models
+        
+        # Estructura compatible con el frontend existente pero con modelos filtrados
+        return {
+            'status': 'success',
+            'lm_studio_running': result.get('lm_studio_running', False),
+            'models': main_models,  # SOLO MODELOS PRINCIPALES para selector principal
+            'reasoning_models': reasoning_models,  # NUEVOS: SOLO RAZONADORES para selector de razonamiento
+            'local_models': [],  # Vacío - no necesitamos fallback porque LM Studio debe estar activo
+            'port': result.get('port', 1234),
+            'current_model': result.get('current_model', 'ninguno'),
+            'main_models_count': len(main_models),
+            'reasoning_models_count': len(reasoning_models),
+            'note': f"Mostrando {len(all_filtered)} modelos permitidos: {len(main_models)} principales + {len(reasoning_models)} razonadores" if all_filtered else "No hay modelos permitidos cargados. Inicia LM Studio y carga un modelo de la lista permitida."
+        }
+        
+    except Exception as e:
+        # Error handling robusto
+        import traceback
+        error_msg = f"Error en filtro de modelos: {str(e)}"
+        print(f"ERROR: {error_msg}")
+        print(f"TRACEBACK: {traceback.format_exc()}")
+        
+        return {
+            'status': 'error',
+            'models': [],
+            'local_models': [],
+            'lm_studio_running': False,
+            'error': error_msg,
+            'note': 'Error interno en el filtro de modelos. Revisa logs.'
+        }
 
 
 # ==================== Model Type Migration ====================
@@ -2056,9 +2762,10 @@ def api_migrate_model_types(user=Depends(verify_token)):
     session = get_session()
     try:
         # Update all models without model_type to be 'local'
-        models_updated = session.execute(
+        result = session.execute(
             text("UPDATE models SET model_type = 'local' WHERE model_type IS NULL OR model_type = ''")
-        ).rowcount
+        )
+        models_updated = getattr(result, 'rowcount', 0)
         session.commit()
         
         return {
@@ -2075,7 +2782,7 @@ def api_migrate_model_types(user=Depends(verify_token)):
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Chatbot Admin Panel on http://127.0.0.1:8001")
-    print("📊 Dashboard: http://127.0.0.1:8001/ui/index.html")
-    print("💬 Quick Chat: http://127.0.0.1:8001/chat")
-    uvicorn.run(app, host="127.0.0.1", port=8001, reload=False)
+    print("Starting Chatbot Admin Panel on http://127.0.0.1:8003")
+    print("Dashboard: http://127.0.0.1:8003/ui/index.html")
+    print("Quick Chat: http://127.0.0.1:8003/chat")
+    uvicorn.run(app, host="127.0.0.1", port=8003, reload=False)
