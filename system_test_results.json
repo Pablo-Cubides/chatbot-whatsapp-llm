@@ -1,0 +1,56 @@
+{
+  "tests_passed": 7,
+  "tests_failed": 3,
+  "tests_details": [
+    {
+      "test": "Web UI Exists",
+      "status": "PASS",
+      "details": "Features found: Contact Management, Model Selection, Message Composition, Bulk Messaging, Manual Send"
+    },
+    {
+      "test": "Database Structure",
+      "status": "PASS",
+      "details": "Contacts: 0, Profiles: 0, Conversations: 0"
+    },
+    {
+      "test": "Model Manager",
+      "status": "FAIL",
+      "details": "ModelManager error: 'ModelManager' object has no attribute 'select_model_for_chat'"
+    },
+    {
+      "test": "Message Generation",
+      "status": "FAIL",
+      "details": "No response generated"
+    },
+    {
+      "test": "Manual Message API",
+      "status": "PASS",
+      "details": "All required API endpoints exist"
+    },
+    {
+      "test": "Bulk Messaging Queue",
+      "status": "PASS",
+      "details": "Queue file exists with 1 items"
+    },
+    {
+      "test": "Bulk Messaging Structure",
+      "status": "PASS",
+      "details": "Queue structure valid: True"
+    },
+    {
+      "test": "WhatsApp Integration",
+      "status": "PASS",
+      "details": "Found functions: process_manual_queue, send_manual_message, fetch_new_message"
+    },
+    {
+      "test": "Contact Management",
+      "status": "FAIL",
+      "details": "Contact management error: cannot import name 'get_allowed_contacts' from 'chat_sessions' (/home/runner/work/chatbot-whatsapp-llm/chatbot-whatsapp-llm/chat_sessions.py)"
+    },
+    {
+      "test": "API Health Check",
+      "status": "PASS",
+      "details": "Working endpoints: / (200), /health (404), /api/health (404), /api/system/status (404), /ui/index.html (200)"
+    }
+  ]
+}
