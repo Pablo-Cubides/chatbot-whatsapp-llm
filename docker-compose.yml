@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    image: chatbot-citas:latest
+    container_name: chatbot-citas
+    ports:
+      - "8014:8014"
+      - "3000:3000"
+    environment:
+      - OPEN_BROWSER=0
+      - USE_DEV_FRONTEND=0
+    restart: unless-stopped
+    shm_size: '1gb'
