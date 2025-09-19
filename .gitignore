@@ -63,6 +63,28 @@ playwright/.auth/
 playwright/.cache/
 *.har
 
+# Node
+node_modules/
+Frontend/node_modules/
+
+# Next.js/.next caches
+.next/
+Frontend/.next/
+
+# Environment and keys
+*.key
+
+# Editor files
+.DS_Store
+
+# Test artifacts
+tests/reports/
+
+# Build output
+dist/
+build/
+
 # Windows specific
 *.bat
 *.ps1
+
