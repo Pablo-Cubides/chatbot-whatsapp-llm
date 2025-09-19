@@ -14,6 +14,28 @@ class ModelManager:
     def __init__(self):
         self.session = None
 
+    def select_model_for_chat(self, chat_id: str, message_count: int = 1) -> str:
+        """Alias for choose_model_for_conversation for backward compatibility"""
+        return self.choose_model_for_conversation(chat_id, message_count)
+
+    def get_reasoner_model(self) -> str:
+        """Get the model configured for reasoning tasks"""
+        session = get_session()
+        try:
+            # Look for a reasoner-specific model first
+            reasoner_model = session.query(ModelConfig).filter(
+                ModelConfig.active == True,
+                ModelConfig.name.ilike('%reasoner%')
+            ).first()
+            if reasoner_model:
+                return reasoner_model.name
+            
+            # Fall back to first active model
+            default = session.query(ModelConfig).filter(ModelConfig.active == True).first()
+            return default.name if default else "default"
+        finally:
+            session.close()
+
     def choose_model_for_conversation(self, chat_id: str, message_count: int) -> str:
         """Evalúa las reglas y devuelve el provider/name del modelo a usar.
 
