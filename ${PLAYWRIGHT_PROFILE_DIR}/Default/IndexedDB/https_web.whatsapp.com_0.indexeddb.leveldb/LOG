@@ -1,0 +1,13 @@
+2025/09/22-11:45:59.274 1a4c Reusing MANIFEST D:\Mis aplicaciones\Chatbot_Citas\chatbot-whatsapp-llm\${PLAYWRIGHT_PROFILE_DIR}\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/22-11:45:59.288 1a4c Recovering log #89
+2025/09/22-11:45:59.374 1a4c Reusing old log D:\Mis aplicaciones\Chatbot_Citas\chatbot-whatsapp-llm\${PLAYWRIGHT_PROFILE_DIR}\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000089.log 
+2025/09/22-11:46:00.238 4fec Level-0 table #94: started
+2025/09/22-11:46:00.265 4fec Level-0 table #94: 759260 bytes OK
+2025/09/22-11:46:00.267 4fec Delete type=0 #89
+2025/09/22-11:46:00.267 4fec Manual compaction at level-0 from '\x00(\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00)\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/22-11:46:03.443 d04 Compacting 1@1 + 1@2 files
+2025/09/22-11:46:03.567 d04 Generated table #95@1: 36540 keys, 1531514 bytes
+2025/09/22-11:46:03.567 d04 Compacted 1@1 + 1@2 files => 1531514 bytes
+2025/09/22-11:46:03.569 d04 compacted to: files[ 0 0 1 0 0 0 0 ]
+2025/09/22-11:46:03.570 d04 Delete type=2 #91
+2025/09/22-11:46:03.570 d04 Delete type=2 #94

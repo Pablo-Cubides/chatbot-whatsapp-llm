@@ -16,7 +16,6 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
-import { OnlineApisPage } from './OnlineApisPage'
 
 interface MainPageProps {
   systemStatus: any
@@ -31,7 +30,7 @@ export function MainPage({ systemStatus, onStatusChange }: MainPageProps) {
   const [loading, setLoading] = useState(false)
   const [lmStudioStatus, setLmStudioStatus] = useState<any>(null)
   const [whatsappStatus, setWhatsappStatus] = useState<any>(null)
-  const [activeTab, setActiveTab] = useState<'main' | 'reasoner' | 'online-apis'>('main')
+  const [activeTab, setActiveTab] = useState<'main' | 'reasoner'>('main')
 
   useEffect(() => {
     loadModels()
@@ -99,11 +98,15 @@ export function MainPage({ systemStatus, onStatusChange }: MainPageProps) {
 
     setLoading(true)
     try {
-      await apiService.startLMStudio()
-      toast.success('Iniciando LM Studio...')
-      setTimeout(updateStatuses, 3000)
-    } catch (error) {
-      toast.error('Error al iniciar LM Studio')
+      const response = await apiService.startLMStudio()
+      if (response.status === 'success') {
+        toast.success(response.message || 'Iniciando LM Studio...')
+      } else {
+        toast.error(response.message || 'Error al iniciar LM Studio')
+      }
+      await updateStatuses()
+    } catch (error: any) {
+      toast.error(error.message || 'Error al iniciar LM Studio')
     } finally {
       setLoading(false)
     }
@@ -114,7 +117,7 @@ export function MainPage({ systemStatus, onStatusChange }: MainPageProps) {
     try {
       await apiService.stopLMStudioServer()
       toast.success('Deteniendo LM Studio...')
-      setTimeout(updateStatuses, 2000)
+      await updateStatuses()
     } catch (error) {
       toast.error('Error al detener LM Studio')
     } finally {
@@ -167,9 +170,7 @@ export function MainPage({ systemStatus, onStatusChange }: MainPageProps) {
     // Verificar si LM Studio está corriendo (para modo local) o si hay API configurada (para online)
     if (modelMode === 'local') {
       // Verificar múltiples indicadores de que LM Studio está funcionando
-      const isLMStudioRunning = lmStudioStatus?.status?.includes('running') || 
-                               lmStudioStatus?.lm_studio?.is_running ||
-                               lmStudioStatus?.lm_studio?.status === 'running'
+      const isLMStudioRunning = lmStudioStatus?.status === 'running' || lmStudioStatus?.status === 'healthy'
       
       if (!isLMStudioRunning) {
         toast.error('Primero inicia el servidor de LM Studio')
@@ -363,7 +364,7 @@ export function MainPage({ systemStatus, onStatusChange }: MainPageProps) {
                 </button>
                 <button
                   onClick={handleStopLMStudio}
-                  disabled={loading || !lmStudioStatus?.status?.includes('running')}
+                  disabled={loading || !(lmStudioStatus?.status === 'running' || lmStudioStatus?.status === 'healthy')}
                   className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
                   <StopIcon className="h-4 w-4 inline mr-1" />
@@ -417,16 +418,6 @@ export function MainPage({ systemStatus, onStatusChange }: MainPageProps) {
                 }`}
               >
                 Modelo Reasoning
-              </button>
-              <button
-                onClick={() => setActiveTab('online-apis')}
-                className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'online-apis'
-                    ? 'border-purple-500 text-purple-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                APIs Online
               </button>
             </nav>
           </div>
@@ -513,10 +504,6 @@ export function MainPage({ systemStatus, onStatusChange }: MainPageProps) {
                 </p>
               </div>
             </div>
-          )}
-
-          {activeTab === 'online-apis' && (
-            <OnlineApisPage />
           )}
         </div>
       </div>

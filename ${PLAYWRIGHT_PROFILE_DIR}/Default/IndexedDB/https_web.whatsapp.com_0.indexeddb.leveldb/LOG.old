@@ -1,0 +1,33 @@
+2025/09/22-02:50:30.214 35cc Reusing MANIFEST D:\Mis aplicaciones\Chatbot_Citas\chatbot-whatsapp-llm\${PLAYWRIGHT_PROFILE_DIR}\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/22-02:50:30.215 35cc Recovering log #78
+2025/09/22-02:50:30.236 35cc Reusing old log D:\Mis aplicaciones\Chatbot_Citas\chatbot-whatsapp-llm\${PLAYWRIGHT_PROFILE_DIR}\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000078.log 
+2025/09/22-02:50:31.120 a4 Level-0 table #84: started
+2025/09/22-02:50:31.156 a4 Level-0 table #84: 258319 bytes OK
+2025/09/22-02:50:31.159 a4 Delete type=0 #78
+2025/09/22-02:50:31.160 35cc Manual compaction at level-0 from '\x00%\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00&\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/22-02:50:31.163 35cc Level-0 table #86: started
+2025/09/22-02:50:31.186 35cc Level-0 table #86: 377 bytes OK
+2025/09/22-02:50:31.188 35cc Delete type=0 #83
+2025/09/22-02:50:31.188 35cc Manual compaction at level-0 from '\x00&\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00'\x00\x00\x00' @ 0 : 0; will stop at '\x00&\x00\x00\x05' @ 74620 : 0
+2025/09/22-02:50:31.188 35cc Compacting 1@0 + 1@1 files
+2025/09/22-02:50:31.207 35cc Generated table #87@0: 8159 keys, 157408 bytes
+2025/09/22-02:50:31.207 35cc Compacted 1@0 + 1@1 files => 157408 bytes
+2025/09/22-02:50:31.209 35cc compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/09/22-02:50:31.209 35cc Delete type=2 #86
+2025/09/22-02:50:31.210 35cc Manual compaction at level-0 from '\x00&\x00\x00\x05' @ 74620 : 0 .. '\x00'\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/22-02:50:32.686 7994 Compacting 1@1 + 1@2 files
+2025/09/22-02:50:32.702 7994 Generated table #88@1: 16508 keys, 555706 bytes
+2025/09/22-02:50:32.702 7994 Compacted 1@1 + 1@2 files => 555706 bytes
+2025/09/22-02:50:32.703 7994 compacted to: files[ 0 0 1 0 0 0 0 ]
+2025/09/22-02:50:32.703 7994 Delete type=2 #81
+2025/09/22-02:50:32.703 7994 Delete type=2 #84
+2025/09/22-02:50:32.704 7994 Delete type=2 #87
+2025/09/22-02:50:48.867 7994 Level-0 table #90: started
+2025/09/22-02:50:48.889 7994 Level-0 table #90: 1154715 bytes OK
+2025/09/22-02:50:48.891 7994 Delete type=0 #85
+2025/09/22-02:50:48.896 a4 Compacting 1@1 + 1@2 files
+2025/09/22-02:50:48.924 a4 Generated table #91@1: 26761 keys, 1236357 bytes
+2025/09/22-02:50:48.924 a4 Compacted 1@1 + 1@2 files => 1236357 bytes
+2025/09/22-02:50:48.926 a4 compacted to: files[ 0 0 1 0 0 0 0 ]
+2025/09/22-02:50:48.926 a4 Delete type=2 #88
+2025/09/22-02:50:48.926 a4 Delete type=2 #90

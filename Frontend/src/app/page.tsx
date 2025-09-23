@@ -7,7 +7,7 @@ import { MainPage } from '@/components/pages/MainPage'
 import { ConfigPage } from '@/components/pages/ConfigPage'
 import { ContactsPage } from '@/components/pages/ContactsPage'
 import { StatsPage } from '@/components/pages/StatsPage'
-import { SettingsPage } from '@/components/pages/SettingsPage'
+import { SettingsPage } from '@/components/pages/settingspage'
 import toast from 'react-hot-toast'
 
 type Page = 'main' | 'config' | 'contacts' | 'stats' | 'settings'

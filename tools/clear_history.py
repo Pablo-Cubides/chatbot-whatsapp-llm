@@ -17,10 +17,12 @@ def main():
 
     if args.all:
         n = clear_all_conversation_histories()
-        print(f"Cleared ALL histories: {n} rows")
+        import logging
+        logging.getLogger(__name__).info("Cleared ALL histories: %s rows", n)
     else:
         n = clear_conversation_history(args.chat_id)
-        print(f"Cleared chat '{args.chat_id}': {n} rows")
+        import logging
+        logging.getLogger(__name__).info("Cleared chat '%s': %s rows", args.chat_id, n)
 
 if __name__ == '__main__':
     main()

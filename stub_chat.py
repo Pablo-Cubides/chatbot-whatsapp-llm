@@ -1,29 +1,96 @@
 # stub_chat.py
 
+from openai import OpenAI
+import requests
+import logging
 import json
 import os
-from openai import OpenAI
-import logging
+from settings import settings # ADDED THIS LINE
 
 log = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 1) Carga global de la plantilla payload.json
-# ──────────────────────────────────────────────────────────────────────────────
+# Project dir helper
 HERE = os.path.dirname(__file__)
-PAYLOAD_PATH = os.path.join(HERE, "payload.json")
 
-with open(PAYLOAD_PATH, encoding="utf-8") as f:
-    base_payload = json.load(f)
+# Determine base_payload safely: prefer settings.reasoner when available,
+# otherwise try to load `payload_reasoner.json` from the project, or fall back
+# to a minimal payload to keep imports safe in environments without pydantic.
+def _load_base_payload():
+    try:
+        # If settings.reasoner exists and has model_dump (Pydantic), use it
+        if hasattr(settings, 'reasoner'):
+            reasoner = getattr(settings, 'reasoner')
+            # If it's a pydantic model, prefer model_dump
+            if hasattr(reasoner, 'model_dump'):
+                return reasoner.model_dump()
+            # Otherwise, if it's a dict-like object, return as-is
+            if isinstance(reasoner, dict):
+                return reasoner
+    except Exception:
+        pass
+
+    # Try to load from payload_reasoner.json in project root
+    here = os.path.dirname(__file__)
+    fp = os.path.join(here, 'payload_reasoner.json')
+    try:
+        with open(fp, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        # Minimal safe fallback payload
+        return {
+            "model": "gpt-3.5",
+            "temperature": 0.7,
+            "max_tokens": 2048,
+            "messages": []
+        }
+
+
+base_payload = _load_base_payload()
 # Ahora base_payload tiene keys como "model", "temperature", "max_tokens", etc.
-# y su lista original de mensajes (p. ej. el system prompt base).
 
 # Inicializa el cliente de LM Studio con timeout
-client = OpenAI(
-    base_url="http://127.0.0.1:1234/v1",
-    api_key="lm-studio",
-    timeout=120.0  # 120 segundos timeout para consultas complejas
-)
+_lm_client = None
+def get_lm_client():
+    global _lm_client
+    if _lm_client is not None:
+        return _lm_client
+
+    lm_port = getattr(settings, 'lm_studio_port', 1234)
+    lm_api_key = getattr(settings, 'lm_studio_api_key', os.getenv('OPENAI_API_KEY', None))
+    
+    # If lm_api_key is "lm-studio", treat it as None for local LM Studio instances
+    if lm_api_key == "lm-studio":
+        lm_api_key = None
+
+    _lm_client = OpenAI(
+        base_url=f"http://127.0.0.1:{lm_port}/v1",
+        api_key=lm_api_key,
+        timeout=120.0
+    )
+    return _lm_client
+
+
+def _lmstudio_models_list_via_http(port: int, api_key: str | None):
+    """Return list of model ids from LM Studio via direct HTTP call. Doesn't require an API key for local instances."""
+    url = f"http://127.0.0.1:{port}/v1/models"
+    headers = {}
+    if api_key:
+        headers['Authorization'] = f"Bearer {api_key}"
+    resp = requests.get(url, headers=headers, timeout=5)
+    resp.raise_for_status()
+    data = resp.json()
+    return [m.get('id') for m in data.get('data', [])]
+
+
+def _lmstudio_chat_via_http(port: int, payload: dict, api_key: str | None):
+    """Send chat/completions to LM Studio via HTTP and return parsed JSON response."""
+    url = f"http://127.0.0.1:{port}/v1/chat/completions"
+    headers = {'Content-Type': 'application/json'}
+    if api_key:
+        headers['Authorization'] = f"Bearer {api_key}"
+    resp = requests.post(url, headers=headers, json=payload, timeout=120)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def chat(user_message: str, chat_id: str, history: list) -> str:
@@ -37,34 +104,12 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
     payload = base_payload.copy()
     payload["messages"] = list(base_payload.get("messages", []))
 
-    # Detectar el modelo y su límite de tokens
-    model_token_limits = {
-        # Modelos locales LM Studio típicos
-        "phi-4": 4096,
-        "meta-llama-3.1-8b-instruct": 4096,
-        "nemotron-mini-4b-instruct": 4096,
-        # Modelos OpenAI
-        "gpt-3.5-turbo": 4096,
-        "gpt-3.5-turbo-16k": 16384,
-        "gpt-4": 8192,
-        "gpt-4-32k": 32768,
-        "gpt-4-turbo": 128000,
-        # Puedes agregar más modelos y sus límites aquí
-    }
-    model_name = str(payload.get("model", "phi-4"))
-    # Buscar límite por nombre exacto o por prefijo
-    max_model_tokens = 4096  # default
-    for k, v in model_token_limits.items():
-        if model_name == k or model_name.startswith(k):
-            max_model_tokens = v
-            break
-
     # Asegurar parámetros seguros por si vienen fuera de rango en payload.json
     try:
-        mt = int(payload.get("max_tokens", 2048) or 2048)
-        payload["max_tokens"] = max(16, min(mt, max_model_tokens))
+        mt = int(settings.reasoner.max_tokens)
+        payload["max_tokens"] = max(16, mt) # Simplified, assuming settings.reasoner.max_tokens is already validated
     except Exception:
-        payload["max_tokens"] = min(2048, max_model_tokens)
+        payload["max_tokens"] = 2048 # Fallback if settings.reasoner.max_tokens is problematic
 
     # 2) Inyecta perfil/estrategia y Docs locales como system prompts previos al historial
     try:
@@ -341,17 +386,106 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
 
         # Verificar que el modelo existe antes de hacer la llamada
         try:
-            models_response = client.models.list()
-            available_models = [model.id for model in models_response.data]
-            if payload.get("model") not in available_models:
-                log.warning(f"⚠️  Modelo {payload.get('model')} no disponible. Modelos disponibles: {available_models}")
-                if available_models:
-                    # Si hay otros modelos disponibles, usar el primero
-                    log.info(f"📝 Usando modelo alternativo: {available_models[0]}")
-                    payload["model"] = available_models[0]
+            # Prefer direct HTTP call to LM Studio when possible (local instances do not require API key)
+            lm_port = getattr(settings, 'lm_studio_port', 1234)
+            lm_api_key = getattr(settings, 'lm_studio_api_key', None) or os.getenv('OPENAI_API_KEY', None)
+            try:
+                available_models = _lmstudio_models_list_via_http(lm_port, lm_api_key)
+            except Exception:
+                # fallback to OpenAI client if HTTP fails
+                _client = get_lm_client()
+                if _client is None:
+                    raise RuntimeError('LM client not configured; set settings.lm_studio_api_key or OPENAI_API_KEY')
+                models_response = _client.models.list()
+                available_models = [model.id for model in models_response.data]
+
+            requested_model = payload.get("model")
+
+            def _normalize_mid(mid: str) -> str:
+                import re
+                if not mid:
+                    return ""
+                m = mid.lower()
+                # replace separators with hyphen
+                m = re.sub(r'[\s_/\\]+', '-', m)
+                # remove suffix tokens like q4_k_m or similar technical tags
+                m = re.sub(r'-q\d.*$', '', m)
+                m = re.sub(r'[^a-z0-9\-\.]', '', m)
+                # collapse duplicate hyphens
+                while '--' in m:
+                    m = m.replace('--', '-')
+                return m.strip('-')
+
+            def _best_direct_match(requested: str, candidates: list) -> str | None:
+                if not requested:
+                    return None
+                nr = _normalize_mid(requested)
+                # 1) exact normalized match
+                for c in candidates:
+                    if _normalize_mid(c) == nr:
+                        return c
+                # 2) contains or prefix matches both ways
+                for c in candidates:
+                    nc = _normalize_mid(c)
+                    if nr.startswith(nc) or nc.startswith(nr) or nc in nr or nr in nc:
+                        return c
+                return None
+
+            # Priority function - avoid embedding models and prefer instruct/chat names
+            def get_model_priority(model_id: str) -> int:
+                mid_l = (model_id or '').lower()
+                if any(k in mid_l for k in ('embed', 'embedding', 'vector')):
+                    return 100
+                if 'instruct' in mid_l:
+                    return 1
+                if 'chat' in mid_l:
+                    return 2
+                if any(k in mid_l for k in ('gpt', 'llama', 'phi', 'nemotron', 'qwen', 'deepseek')):
+                    return 3
+                return 5
+
+            if requested_model not in available_models:
+                log.warning(f"⚠️  Modelo '{requested_model}' no disponible. Modelos disponibles: {available_models}")
+                if not available_models:
+                    log.error("❌ No hay modelos disponibles en LM Studio.")
+                    return ""
+
+                # Filter chat-capable models (reject embedding-only identifiers)
+                def _is_chat_model(mid: str) -> bool:
+                    if not mid:
+                        return False
+                    m = mid.lower()
+                    if any(tok in m for tok in ('embed', 'embedding', 'vector')):
+                        return False
+                    return True
+
+                chat_models = [m for m in available_models if _is_chat_model(m)]
+
+                # Try direct/fuzzy match to the requested model first
+                direct = _best_direct_match(str(requested_model or ""), available_models)
+                if direct and _is_chat_model(direct):
+                    best_model = direct
+                    log.info(f"📝 Se encontró coincidencia directa/fuzzy para el solicitado: {best_model}")
+                    payload["model"] = best_model
                 else:
-                    log.error("❌ No hay modelos disponibles en LM Studio")
-                    return ""  # No responder en lugar de enviar mensaje de error
+                    # Preferred models list (choose from these if present)
+                    PREFERRED_MODELS = [
+                        'openai/gpt-oss-20b', 'phi-4', 'deepseek-r1-distill-qwen-7b', 'nemotron-mini-4b-instruct'
+                    ]
+                    for pm in PREFERRED_MODELS:
+                        if pm in chat_models:
+                            payload["model"] = pm
+                            log.info(f"📝 Usando modelo preferido: {pm}")
+                            break
+                    else:
+                        # fallback: pick highest-priority chat-capable model
+                        sorted_models = sorted(chat_models, key=get_model_priority)
+                        if sorted_models:
+                            payload["model"] = sorted_models[0]
+                            log.info(f"📝 Usando el mejor modelo alternativo disponible: {sorted_models[0]}")
+                        else:
+                            log.error("❌ No se encontraron modelos de chat adecuados en LM Studio.")
+                            return ""
         except Exception as model_check_error:
             log.error(f"❌ Error verificando modelos disponibles: {model_check_error}")
             log.info("💡 Solución: Asegúrate de que LM Studio esté ejecutándose en puerto 1234 con un modelo cargado")
@@ -360,27 +494,224 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
         # -------------------------------------------------------------
         # Envío directo al modelo SIN reducción de tokens
         # -------------------------------------------------------------
-        
         try:
             log.info("🚀 Enviando payload completo al modelo sin reducción de tokens")
-            response = client.chat.completions.create(**payload)
-            assistant_reply = response.choices[0].message.content
-            log.info("✅ Respuesta exitosa del modelo")
-            # Post-procesado para detectar respuestas genéricas o prohibidas
+            lm_port = getattr(settings, 'lm_studio_port', 1234)
+            lm_api_key = getattr(settings, 'lm_studio_api_key', None) or os.getenv('OPENAI_API_KEY', None)
+
+            # Try HTTP path first (local LM Studio doesn't require an API key)
+            try:
+                resp_json = _lmstudio_chat_via_http(lm_port, payload, lm_api_key)
+            except Exception as http_exc:
+                # If HTTP failed and there's no API key, return empty (can't fallback)
+                if not lm_api_key:
+                    log.error(f"LM Studio HTTP chat failed and no API key available to fallback: {http_exc}")
+                    return ""
+                # Otherwise try client library (API key available)
+                _client = get_lm_client()
+                if _client is None:
+                    raise RuntimeError('LM client not configured; set settings.lm_studio_api_key or OPENAI_API_KEY')
+                response = _client.chat.completions.create(**payload)
+                resp_json = response.__dict__ if hasattr(response, '__dict__') else response
+
+            # Robustly extract assistant text from varied LM Studio/OpenAI response shapes
+            def _extract_text_from_response(obj) -> str:
+                """Extract assistant text from many LM Studio / OpenAI-like shapes.
+
+                This function is intentionally defensive: LM Studio and various adapters
+                return content in different keys and nested lists. The extractor tries
+                a variety of well-known shapes and falls back to a DFS search for the
+                first non-empty string leaf.
+                """
+                def safe_strip(s):
+                    try:
+                        return s.strip()
+                    except Exception:
+                        return s
+
+                def extract_from_primitive(p):
+                    if p is None:
+                        return ""
+                    if isinstance(p, str):
+                        return p.strip()
+                    if isinstance(p, (int, float)):
+                        return str(p)
+                    return ""
+
+                def extract_from_dict(d):
+                    # Common direct text keys
+                    for k in ('content', 'text', 'message', 'output', 'response', 'body'):
+                        if k in d:
+                            v = d[k]
+                            res = extract_any(v)
+                            if res:
+                                return res
+
+                    # Some LM Studio responses embed content as a list of blocks
+                    if 'content' in d and isinstance(d['content'], list):
+                        for item in d['content']:
+                            # item could be {'type': 'output_text', 'text': '...'}
+                            if isinstance(item, dict) and 'text' in item:
+                                txt = extract_any(item.get('text'))
+                                if txt:
+                                    return txt
+                            # item could be a primitive string
+                            txt = extract_any(item)
+                            if txt:
+                                return txt
+
+                    # HuggingFace/other shapes: 'parts' or 'segments'
+                    for list_key in ('parts', 'segments', 'pieces'):
+                        if list_key in d and isinstance(d[list_key], list):
+                            parts = []
+                            for it in d[list_key]:
+                                parts.append(extract_any(it))
+                            txt = "\n".join([p for p in parts if p])
+                            if txt:
+                                return txt
+
+                    # Try any nested value
+                    for v in d.values():
+                        res = extract_any(v)
+                        if res:
+                            return res
+                    return ""
+
+                def extract_from_list(lst):
+                    parts = []
+                    for item in lst:
+                        res = extract_any(item)
+                        if res:
+                            parts.append(res)
+                    return "\n".join(parts).strip()
+
+                def extract_any(x):
+                    if x is None:
+                        return ""
+                    if isinstance(x, str):
+                        return x.strip()
+                    if isinstance(x, (int, float)):
+                        return str(x)
+                    if isinstance(x, dict):
+                        return extract_from_dict(x)
+                    if isinstance(x, list):
+                        return extract_from_list(x)
+                    return ""
+
+                try:
+                    if not obj:
+                        return ""
+
+                    # If response is a raw string
+                    if isinstance(obj, str):
+                        return obj.strip()
+
+                    # Standard OpenAI-like choices path
+                    if isinstance(obj, dict):
+                        choices = obj.get('choices')
+                        if isinstance(choices, list) and choices:
+                            # Try to assemble from choices in order
+                            for choice in choices:
+                                # common: choice.message.content can be str or dict
+                                if isinstance(choice, dict):
+                                    # message -> content or parts
+                                    msg = choice.get('message')
+                                    if msg is not None:
+                                        # sometimes message is {'content': [{'type':'output_text','text':'...'}]}
+                                        if isinstance(msg, dict):
+                                            # First try content key
+                                            if 'content' in msg:
+                                                res = extract_any(msg['content'])
+                                                if res:
+                                                    return res
+                                            # then possible 'parts'
+                                            res = extract_any(msg)
+                                            if res:
+                                                return res
+
+                                    # streaming delta
+                                    delta = choice.get('delta')
+                                    if delta:
+                                        res = extract_any(delta)
+                                        if res:
+                                            return res
+
+                                    # other direct keys
+                                    for k in ('text', 'output', 'response'):
+                                        if k in choice:
+                                            res = extract_any(choice[k])
+                                            if res:
+                                                return res
+
+                        # Some runtimes return 'output' as top-level list
+                        out = obj.get('output') or obj.get('results')
+                        if isinstance(out, list) and out:
+                            for item in out:
+                                res = extract_any(item)
+                                if res:
+                                    return res
+
+                        # data[] path (LLM studio for embeddings or other apis)
+                        data = obj.get('data')
+                        if isinstance(data, list) and data:
+                            for d in data:
+                                res = extract_any(d)
+                                if res:
+                                    return res
+
+                        # fallback common keys
+                        for k in ('result', 'response', 'message', 'content'):
+                            if k in obj:
+                                res = extract_any(obj[k])
+                                if res:
+                                    return res
+
+                    # Last resort: DFS to find first non-empty string leaf
+                    def _find_first_string_leaf(o):
+                        if isinstance(o, str) and o.strip():
+                            return o.strip()
+                        if isinstance(o, dict):
+                            for v in o.values():
+                                res = _find_first_string_leaf(v)
+                                if res:
+                                    return res
+                        if isinstance(o, list):
+                            for it in o:
+                                res = _find_first_string_leaf(it)
+                                if res:
+                                    return res
+                        return None
+
+                    leaf = _find_first_string_leaf(obj)
+                    return leaf or ""
+                except Exception:
+                    return ""
+
+            assistant_reply = _extract_text_from_response(resp_json)
+            log.info("✅ Respuesta exitosa del modelo (parseada)")
+
+            # If parsing produced no assistant text, dump the raw response (truncated) for debugging
+            if not assistant_reply or not str(assistant_reply).strip():
+                try:
+                    raw = json.dumps(resp_json, ensure_ascii=False)
+                except Exception:
+                    raw = str(resp_json)
+                log.debug(f"RAW LM STUDIO RESPONSE (truncated 2000 chars): {raw[:2000]}")
+
+            # Post-process checks
             def looks_generic(txt: str) -> bool:
                 lower = txt.lower()
                 generic_markers = [
-                    "estoy aquí para ayudarte", "en qué puedo asistirte", "como asistente virtual", 
+                    "estoy aquí para ayudarte", "en qué puedo asistirte", "como asistente virtual",
                     "no tengo una identidad", "no tengo identidad", "soy un asistente virtual",
                     "dentro de mis capacidades", "según mis capacidades"
                 ]
                 return any(m in lower for m in generic_markers)
-            
+
             def reveals_artificial(txt: str) -> bool:
-                """Detecta frases que revelan naturaleza artificial/técnica"""
                 lower = txt.lower().strip()
                 reveal_markers = [
-                    "usuario:", "- usuario", "usuario no aporte", "no aporte", 
+                    "usuario:", "- usuario", "usuario no aporte", "no aporte",
                     "información relevante sobre el usuario", "no hay información previa",
                     "no tengo información", "base de datos", "como sistema", "como modelo",
                     "como ia", "como asistente", "dentro de mis capacidades", "según mis capacidades",
@@ -392,118 +723,99 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
                     "escribe un mensaje que comience", "chat actual:", "no hay nada",
                     "mensaje de bienvenida", "escribe un mensaje"
                 ]
-                
-                # Detectar patrón específico "USUARIO" (con o sin :)
                 if txt.strip().startswith('USUARIO') or ' USUARIO ' in txt or txt.endswith('USUARIO'):
-                    log.warning(f"⚠️ Patrón USUARIO detectado en: '{txt[:100]}...'")
                     return True
-                
-                # Detectar patrón "CHAT ACTUAL:" específicamente
                 if txt.strip().startswith('CHAT ACTUAL:') or 'chat actual:' in lower:
-                    log.warning(f"⚠️ Patrón CHAT ACTUAL: detectado en: '{txt[:100]}...'")
                     return True
-                
-                # Detectar respuestas que parecen metadatos del sistema
                 metadata_patterns = ["no aporte", "información previa", "datos de contexto"]
                 if any(pattern in lower for pattern in metadata_patterns):
-                    log.warning(f"⚠️ Respuesta parece metadato del sistema: '{txt[:100]}...'")
                     return True
-                
-                # Detectar respuestas muy cortas que parecen errores
                 if len(txt.strip()) < 15 and any(word in lower for word in ["ninguno", "fragmentos", "datos"]):
-                    log.warning(f"⚠️ Respuesta sospechosamente corta detectada: '{txt}'")
                     return True
-                
-                # Detectar si parece una instrucción del sistema
                 if any(instruction in lower for instruction in ["escribe un mensaje", "proporciona", "genera"]):
-                    log.warning(f"⚠️ Respuesta parece instrucción del sistema: '{txt[:100]}...'")
                     return True
-                    
-                result = any(m in lower for m in reveal_markers)
-                if result:
-                    log.warning(f"⚠️ Marcador artificial detectado en: '{txt[:100]}...'")
-                return result
+                return any(m in lower for m in reveal_markers)
 
             if assistant_reply and (looks_generic(assistant_reply) or reveals_artificial(assistant_reply)):
                 log.warning("⚠️ Respuesta problemática detectada (genérica o revela naturaleza artificial). Reintentando.")
-                # Forzar reintento inyectando un mensaje system correctivo
+            elif assistant_reply and not looks_generic(assistant_reply) and not reveals_artificial(assistant_reply):
+                # Good reply — return immediately
+                return assistant_reply
+                # Build retry payload with corrective system
                 corrective_system = {"role": "system", "content": (
-                    "CORRECCIÓN URGENTE: La respuesta anterior fue inaceptable porque:\n"
-                    "- Usó términos prohibidos ('USUARIO:', 'CHAT ACTUAL:', 'información relevante', 'asistente', etc.)\n"
-                    "- Sonó robótica/artificial en lugar de humana\n"
-                    "- JAMÁS uses prefijos como 'USUARIO:', 'CHAT ACTUAL:' ni menciones 'información relevante'\n"
-                    "- JAMÁS des instrucciones como 'Escribe un mensaje que comience'\n"
-                    "Responde de nuevo como Andrés de forma completamente humana:\n"
-                    "- Si te preguntan qué te gusta hacer, comparte hobbies reales del perfil (ejercicio, música, baile, enseñanza, emprendimiento)\n"
-                    "- Si no conoces algo específico de la persona, di algo como 'No me has contado sobre eso' o 'Cuéntame más'\n"
-                    "- Nunca uses: 'USUARIO:', 'CHAT ACTUAL:', 'usuario', 'información relevante', 'asistente', 'IA', 'modelo', 'base de datos'\n"
-                    "- Usa tono auténtico, seguro y ligeramente coqueto/atractivo según la guía\n"
-                    "- Ejemplo correcto: 'Me gusta el ejercicio, la música y la danza. También disfruto enseñar en la universidad.'\n"
-                    "- SIEMPRE responde como una persona real hablando naturalmente\n"
+                    "CORRECCIÓN URGENTE: La respuesta anterior fue inaceptable. Reintenta siguiendo las reglas sin prefijos técnicos."
                 )}
-                # Construir nuevo payload manteniendo contexto + último user
                 retry_payload = base_payload.copy()
                 retry_payload["model"] = payload.get("model")
                 retry_payload["temperature"] = payload.get("temperature", 0.7)
                 retry_payload["max_tokens"] = payload.get("max_tokens", 512)
-                # Tomar solo systems + último user
                 systems = [m for m in payload["messages"] if m.get("role") == "system"]
                 last_user = None
                 for m in reversed(payload["messages"]):
                     if m.get("role") == "user":
                         last_user = m
                         break
-                retry_msgs = systems[-3:]  # los últimos 3 systems relevantes
+                retry_msgs = systems[-3:]
                 retry_msgs.append(corrective_system)
                 if last_user:
                     retry_msgs.append(last_user)
                 retry_payload["messages"] = retry_msgs
+
+                # Attempt retry via HTTP first, fallback to client only if API key exists
                 try:
-                    response2 = client.chat.completions.create(**retry_payload)
-                    assistant_reply2 = response2.choices[0].message.content
+                    try:
+                        resp2 = _lmstudio_chat_via_http(lm_port, retry_payload, lm_api_key)
+                    except Exception as http_exc2:
+                        if not lm_api_key:
+                            log.error(f"LM Studio HTTP retry failed and no API key available to fallback: {http_exc2}")
+                            return ""
+                        _client = get_lm_client()
+                        if _client is None:
+                            raise RuntimeError('LM client not configured; set settings.lm_studio_api_key or OPENAI_API_KEY')
+                        response2 = _client.chat.completions.create(**retry_payload)
+                        resp2 = response2.__dict__ if hasattr(response2, '__dict__') else response2
+
+                    # Use the same robust extractor for the retry response
+                    assistant_reply2 = _extract_text_from_response(resp2)
+                    if not assistant_reply2 or not str(assistant_reply2).strip():
+                        try:
+                            raw2 = json.dumps(resp2, ensure_ascii=False)
+                        except Exception:
+                            raw2 = str(resp2)
+                        log.debug(f"RAW LM STUDIO RETRY RESPONSE (truncated 2000 chars): {raw2[:2000]}")
+
                     if assistant_reply2 and not looks_generic(assistant_reply2) and not reveals_artificial(assistant_reply2):
                         log.info("✅ Reintento correctivo exitoso")
                         return assistant_reply2
-                    else:
-                        log.warning("⚠️ Reintento aún problemático, devolviendo respuesta de emergencia")
-                        # Respuesta de emergencia humana específica según contexto
-                        last_user_msg = last_user.get("content", "").lower() if last_user else ""
-                        if "que te gusta" in last_user_msg or "qué te gusta" in last_user_msg:
-                            emergency_response = "Me gusta hacer muchas cosas: ejercicio en el gimnasio, bailar salsa y bachata, escuchar música, enseñar en la universidad, leer sobre nuevas tecnologías... ¿Y tú qué haces en tu tiempo libre?"
-                        elif "quien eres" in last_user_msg or "quién eres" in last_user_msg:
-                            emergency_response = "Soy Andrés, ingeniero químico y docente universitario. Me gusta el ejercicio, la música y siempre estoy aprendiendo algo nuevo. ¿Y tú?"
-                        elif "cambios" in last_user_msg:
-                            emergency_response = "Siempre estoy en movimiento, mejorando tanto personal como profesionalmente. ¿Qué cambios estás buscando tú?"
-                        elif len(last_user_msg.strip()) < 10:  # Mensaje muy corto
-                            emergency_response = "¡Hola! ¿Cómo estás? Cuéntame, ¿qué tal tu día?"
-                        elif "hola" in last_user_msg or "buenos" in last_user_msg:
-                            emergency_response = "¡Hola! Un gusto saludarte. ¿Cómo has estado? Yo aquí, aprovechando el día para descansar un poco después del viaje."
-                        elif any(word in last_user_msg for word in ["bien", "mal", "todo", "normal"]):
-                            emergency_response = "Me alegra saber de ti. Yo estoy bien, disfrutando de estos días de descanso en casa. ¿Qué planes tienes para hoy?"
-                        else:
-                            emergency_response = "Me parece interesante lo que dices... cuéntame más. A mí me gusta mantenerme activo y siempre aprender cosas nuevas."
-                        return emergency_response
+                    # else fallthrough to emergency responses below
                 except Exception as re_err:
                     log.error(f"❌ Error en reintento correctivo: {re_err}")
-                    # Respuesta de emergencia si falla todo
-                    return "Me gusta mantenerme activo, aprender cosas nuevas y disfrutar de buena música. También disfruto enseñar en la universidad. ¿Qué tal tú?"
-            return assistant_reply or ""
+
+                # Emergency human-friendly fallback
+                last_user_msg = last_user.get("content", "").lower() if last_user else ""
+                if "que te gusta" in last_user_msg or "qué te gusta" in last_user_msg:
+                    return "Me gusta hacer muchas cosas: ejercicio, bailar y escuchar música. ¿Y tú?"
+                if "quien eres" in last_user_msg or "quién eres" in last_user_msg:
+                    return "Soy Andrés, ingeniero y docente. ¿Y tú?"
+                if len(last_user_msg.strip()) < 10:
+                    return "¡Hola! ¿Cómo estás? Cuéntame algo sobre ti."
+                return ""
         except Exception as e:
             error_msg = str(e)
             log.error(f"❌ Error enviando al modelo: {error_msg}")
-            
-            # Si es error de contexto, informar para cambiar modelo
             if "context length" in error_msg or "overflows" in error_msg or "4096" in error_msg:
                 log.error("🔴 ERROR DE LÍMITE DE CONTEXTO: El modelo actual no soporta el contexto completo.")
                 log.error("💡 SOLUCIÓN: Cambiar a un modelo con mayor capacidad de contexto (32k+ tokens)")
                 log.error("📊 Modelos recomendados: Claude, GPT-4-32k, o modelos locales con mayor contexto")
                 return "⚠️ Error: El contexto es demasiado grande para este modelo. Necesita cambiar a un modelo con mayor capacidad de contexto."
-            
             return ""
     except Exception as e:
         error_msg = str(e)
         log.error(f"Error en stub_chat.chat (bloque externo): {error_msg}")
         return ""
+
+    # Ensure we always return a string on all code paths
+    return ""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -512,7 +824,10 @@ def chat(user_message: str, chat_id: str, history: list) -> str:
 def test_connection():
     """Test básico de conexión con LM Studio"""
     try:
-        models = client.models.list()
+        _client = get_lm_client()
+        if _client is None:
+            raise RuntimeError('LM client not configured; set settings.lm_studio_api_key or OPENAI_API_KEY')
+        models = _client.models.list()
         log.info("✓ Conexión exitosa con LM Studio")
         log.info(f"Modelos disponibles: {[m.id for m in models.data]}")
         return True

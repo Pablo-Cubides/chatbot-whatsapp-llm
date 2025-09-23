@@ -104,6 +104,7 @@ class ChatCounter(Base):
     assistant_replies_count = Column(Integer, default=0)
     strategy_version = Column(Integer, default=0)
     last_reasoned_at = Column(DateTime, nullable=True)
+    last_reply_at = Column(DateTime, nullable=True)
 
 
 class ChatStrategy(Base):

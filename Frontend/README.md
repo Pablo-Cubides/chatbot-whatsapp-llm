@@ -240,3 +240,50 @@ Este proyecto está bajo la licencia MIT. Ver `LICENSE` para más detalles.
 ---
 
 **Desarrollado con ❤️ para automatizar y mejorar la comunicación por WhatsApp**
+
+---
+
+## 🧪 Testing (actualizado)
+
+Hemos añadido una suite de tests unitarios e integrados usando Jest y React Testing Library para asegurar calidad en el Frontend. A continuación se explica la configuración y cómo ejecutar las pruebas.
+
+### ¿Qué cubren los tests añadidos?
+- `src/__tests__/CostManagementDashboard.test.tsx` — cubre la carga del dashboard, estados de carga/errores y la interacción con el modal de creación de presupuestos.
+- `src/__tests__/ServiceStatusMonitor.test.tsx` — prueba actualizaciones en tiempo real simulando eventos de `socket.io-client`.
+- `src/__tests__/ContactsPage.test.tsx` — cubre formularios en `Contacts` (agregar contacto y envío de mensaje individual), incluyendo mocks a la API y archivos multimedia.
+- `src/__tests__/Navigation.test.tsx` — verifica la navegación principal (sidebar/topbar) y que el estado de la aplicación (Providers) persista al navegar.
+
+### Configuración clave (resumen)
+- Usamos `jest` + `ts-jest` para transpilar TypeScript/TSX en tests.
+- `jest.setup.js` carga `@testing-library/jest-dom` y mocks necesarios (por ejemplo `next/image`).
+- `tsconfig.jest.json` contiene la configuración TypeScript usada por `ts-jest` para pruebas (módulo `commonjs`, `jsx: react-jsx`).
+
+### Cómo ejecutar los tests
+En PowerShell (desde la carpeta `Frontend`):
+
+```pwsh
+# Instalar dependencias (si aún no lo has hecho)
+npm install
+
+# Ejecutar tests (rápido)
+npm test
+
+# Ejecutar tests en modo vigilancia
+npm run test:watch
+
+# Cobertura
+npm run test:coverage
+```
+
+### Problemas comunes y soluciones (qué solucionamos en esta rama)
+- `Module ts-jest in the transform option was not found` — Asegúrate de que `ts-jest` esté en `devDependencies` y ejecutar `npm install`.
+- `Cannot use import statement outside a module` en `jest.setup.js` — El setup se convirtió a CommonJS (`require`) para compatibilidad con Jest.
+- `Cannot find module '@testing-library/jest-dom/extend-expect'` — Usar `@testing-library/jest-dom` moderno y requerir `@testing-library/jest-dom` en `jest.setup.js`.
+- Errores por imports `next/image` o `next/link` — Agregamos mocks ligeros en `jest.setup.js` o en tests individuales para evitar problemas de SSR/SVG y hacer que los tests sean deterministas.
+- `act()` warnings — Algunos tests muestran advertencias por actualizaciones asíncronas; usamos `waitFor` y selectores `findBy` donde es necesario. Si deseas, puedo limpiar estas advertencias en una pasada aparte cambiando los tests para envolver actualizaciones en `act` o reestructurarlos.
+
+### Extensiones recomendadas y buenas prácticas
+- Ejecuta `npm run type-check` regularmente para atrapar problemas de tipo antes de testear.
+- Para tests que interactúan con navegación Next.js, hemos preferido mocks controlados de `next/link` en vez de añadir `next-router-mock` como dependencia, manteniendo los tests ligeros.
+
+Si quieres que añada la documentación en un archivo separado `README_TESTING.md` o que actualice la documentación principal con más detalles (por ejemplo ejemplos de mocking avanzado o CI config), lo hago a continuación.

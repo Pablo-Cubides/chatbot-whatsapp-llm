@@ -1,6 +1,5 @@
 import json
-import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from admin_db import initialize_schema, get_session
 from models import (
@@ -24,7 +23,7 @@ def save_context(chat_id, context):
     session = get_session()
     context_json = json.dumps(context, ensure_ascii=False)
     enc = encrypt_text(context_json)
-    conv = Conversation(chat_id=chat_id, context=enc, timestamp=datetime.utcnow())
+    conv = Conversation(chat_id=chat_id, context=enc, timestamp=datetime.now(timezone.utc))
     session.add(conv)
     session.commit()
     session.close()
@@ -41,7 +40,7 @@ def load_last_context(chat_id):
     session.close()
     if row:
         try:
-            dec = decrypt_text(row.context)
+            dec = decrypt_text(row.context)  # type: ignore
             return json.loads(dec)
         except Exception:
             return []
@@ -81,16 +80,16 @@ initialize_db()
 
 # ------------------------ Two-agent pipeline helpers ------------------------
 
-def add_or_update_contact(chat_id: str, name: str = None, auto_enabled: bool = True):
+def add_or_update_contact(chat_id: str, name: str = None, auto_enabled: bool = True):  # type: ignore
     session = get_session()
     try:
         c = session.get(Contact, chat_id)
         if not c:
             c = Contact(chat_id=chat_id)
             session.add(c)
-        c.name = name
-        c.auto_enabled = bool(auto_enabled)
-        c.updated_at = datetime.utcnow()
+        c.name = name  # type: ignore
+        c.auto_enabled = bool(auto_enabled)  # type: ignore
+        c.updated_at = datetime.now(timezone.utc)  # type: ignore
         session.commit()
     finally:
         session.close()
@@ -103,11 +102,11 @@ def upsert_profile(chat_id: str, initial_context: str, objective: str, instructi
         if not p:
             p = ChatProfile(chat_id=chat_id)
             session.add(p)
-        p.initial_context = initial_context or ""
-        p.objective = objective or ""
-        p.instructions = instructions or ""
-        p.is_ready = bool(is_ready)
-        p.updated_at = datetime.utcnow()
+        p.initial_context = initial_context or ""  # type: ignore
+        p.objective = objective or ""  # type: ignore
+        p.instructions = instructions or ""  # type: ignore
+        p.is_ready = bool(is_ready)  # type: ignore
+        p.updated_at = datetime.now(timezone.utc)  # type: ignore
         # ensure a counter exists
         ctr = session.get(ChatCounter, chat_id)
         if not ctr:
@@ -143,9 +142,9 @@ def increment_reply_counter(chat_id: str) -> int:
         if not ctr:
             ctr = ChatCounter(chat_id=chat_id, assistant_replies_count=0)
             session.add(ctr)
-        ctr.assistant_replies_count = int(ctr.assistant_replies_count or 0) + 1
+        ctr.assistant_replies_count = int(ctr.assistant_replies_count or 0) + 1  # type: ignore
         session.commit()
-        return ctr.assistant_replies_count
+        return ctr.assistant_replies_count  # type: ignore
     finally:
         session.close()
 
@@ -157,7 +156,7 @@ def reset_reply_counter(chat_id: str):
         if not ctr:
             ctr = ChatCounter(chat_id=chat_id)
             session.add(ctr)
-        ctr.assistant_replies_count = 0
+        ctr.assistant_replies_count = 0  # type: ignore
         session.commit()
     finally:
         session.close()
@@ -167,7 +166,7 @@ def get_reply_counter(chat_id: str) -> int:
     session = get_session()
     try:
         ctr = session.get(ChatCounter, chat_id)
-        return int(ctr.assistant_replies_count or 0) if ctr else 0
+        return int(ctr.assistant_replies_count or 0) if ctr else 0  # type: ignore
     finally:
         session.close()
 
@@ -177,7 +176,7 @@ def get_active_strategy(chat_id: str):
     try:
         s = (
             session.query(ChatStrategy)
-            .filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active == True)
+            .filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active)  # type: ignore
             .order_by(ChatStrategy.version.desc(), ChatStrategy.created_at.desc())
             .first()
         )
@@ -186,11 +185,11 @@ def get_active_strategy(chat_id: str):
         session.close()
 
 
-def activate_new_strategy(chat_id: str, strategy_text: str, source_snapshot: str = None) -> int:
+def activate_new_strategy(chat_id: str, strategy_text: str, source_snapshot: str = None) -> int:  # type: ignore
     session = get_session()
     try:
         # deactivate previous
-        session.query(ChatStrategy).filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active == True).update({"is_active": False})
+        session.query(ChatStrategy).filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active).update({"is_active": False})  # type: ignore
         # next version
         last = (
             session.query(ChatStrategy)
@@ -198,7 +197,7 @@ def activate_new_strategy(chat_id: str, strategy_text: str, source_snapshot: str
             .order_by(ChatStrategy.version.desc())
             .first()
         )
-        next_ver = (last.version + 1) if last else 1
+        next_ver = (last.version + 1) if last else 1  # type: ignore
         s = ChatStrategy(chat_id=chat_id, version=next_ver, strategy_text=strategy_text, source_snapshot=source_snapshot, is_active=True)
         session.add(s)
         # update counters
@@ -206,10 +205,9 @@ def activate_new_strategy(chat_id: str, strategy_text: str, source_snapshot: str
         if not ctr:
             ctr = ChatCounter(chat_id=chat_id)
             session.add(ctr)
-        from datetime import datetime as _dt
-        ctr.strategy_version = next_ver
-        ctr.last_reasoned_at = _dt.utcnow()
+        ctr.strategy_version = next_ver  # type: ignore
+        ctr.last_reasoned_at = datetime.now(timezone.utc)  # type: ignore
         session.commit()
-        return next_ver
+        return next_ver  # type: ignore
     finally:
         session.close()

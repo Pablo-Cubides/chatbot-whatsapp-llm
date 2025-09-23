@@ -45,12 +45,7 @@ const menuItems = [
     icon: ChartBarIcon,
     description: 'Métricas y análisis'
   },
-  {
-    id: 'settings' as Page,
-    name: 'Configuración Global',
-    icon: AdjustmentsHorizontalIcon,
-    description: 'Configuración del sistema y comportamiento del bot'
-  }
+  
 ]
 
 export function Sidebar({ currentPage, onPageChange, systemStatus }: SidebarProps) {

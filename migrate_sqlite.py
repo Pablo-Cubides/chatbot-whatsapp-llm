@@ -10,6 +10,9 @@ from admin_db import initialize_schema, get_engine
 from models import Conversation
 from sqlalchemy.orm import Session
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def read_legacy_rows(db_path="chatbot_context.db"):
@@ -32,11 +35,11 @@ def migrate():
     engine = get_engine()
     rows = read_legacy_rows()
     if not rows:
-        print("No legacy rows found or table missing. Schema created/ensured.")
+        logger.info("No legacy rows found or table missing. Schema created/ensured.")
         return
 
     with Session(engine) as session:
-        existing = { (c.chat_id, c.timestamp.isoformat() if c.timestamp else None) for c in session.query(Conversation).all() }
+        existing = { (c.chat_id, c.timestamp.isoformat() if c.timestamp is not None else None) for c in session.query(Conversation).all() }
         inserted = 0
         for rid, chat_id, timestamp, context in rows:
             key = (chat_id, timestamp)
@@ -48,14 +51,15 @@ def migrate():
                 from datetime import datetime
                 try:
                     timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                except:
+                except Exception:
                     timestamp = datetime.utcnow()
             conv = Conversation(chat_id=chat_id, timestamp=timestamp, context=context)
             session.add(conv)
             inserted += 1
         session.commit()
-    print(f"Migration finished. Inserted {inserted} rows.")
+    logger.info(f"Migration finished. Inserted {inserted} rows.")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     migrate()

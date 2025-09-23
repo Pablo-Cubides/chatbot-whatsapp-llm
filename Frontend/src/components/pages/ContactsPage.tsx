@@ -15,7 +15,8 @@ import {
   ArrowPathIcon,
   PhotoIcon,
   DocumentIcon,
-  XMarkIcon
+  XMarkIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
 
@@ -36,6 +37,10 @@ export function ContactsPage() {
     context: '',
     generatedMessage: ''
   })
+
+  // Estados para edición de contacto
+  const [showEditForm, setShowEditForm] = useState(false)
+  const [editingContact, setEditingContact] = useState<any>(null)
 
   // Estados para multimedia
   const [showMediaUpload, setShowMediaUpload] = useState(false)
@@ -129,6 +134,29 @@ export function ContactsPage() {
       loadContacts()
     } catch (error) {
       toast.error('Error al eliminar contacto')
+    }
+  }
+
+  const handleEditContact = (contact: any) => {
+    setEditingContact(contact)
+    setShowEditForm(true)
+  }
+
+  const handleSaveEditContact = async () => {
+    if (!editingContact) return
+
+    try {
+      await apiService.updateAllowedContact(editingContact.chat_id, {
+        perfil: editingContact.contact_name,
+        context: editingContact.context || '',
+        objective: editingContact.objective || ''
+      })
+      toast.success('Contacto actualizado exitosamente')
+      setShowEditForm(false)
+      setEditingContact(null)
+      loadContacts()
+    } catch (error) {
+      toast.error('Error al actualizar contacto')
     }
   }
 
@@ -794,6 +822,14 @@ export function ContactsPage() {
                     </button>
                     
                     <button
+                      onClick={() => handleEditContact(contact)}
+                      className="p-2 text-green-500 hover:bg-green-100 rounded-lg transition-all duration-200"
+                      title="Editar contacto"
+                    >
+                      <PencilIcon className="h-4 w-4" />
+                    </button>
+                    
+                    <button
                       onClick={() => handleRemoveContact(contact.chat_id)}
                       className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-all duration-200"
                       title="Eliminar contacto"
@@ -848,6 +884,84 @@ export function ContactsPage() {
               </button>
               <button
                 onClick={() => setSingleMessage({ contactId: '', message: '' })}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-all duration-200"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Formulario de edición de contacto */}
+      {showEditForm && editingContact && (
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Editar Contacto</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nombre del Contacto
+              </label>
+              <input
+                type="text"
+                value={editingContact.contact_name || ''}
+                onChange={(e) => setEditingContact({ ...editingContact, contact_name: e.target.value })}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Perfil
+              </label>
+              <textarea
+                value={editingContact.perfil || ''}
+                onChange={(e) => setEditingContact({ ...editingContact, perfil: e.target.value })}
+                rows={3}
+                placeholder="Información del perfil del contacto..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Contexto
+              </label>
+              <textarea
+                value={editingContact.context || ''}
+                onChange={(e) => setEditingContact({ ...editingContact, context: e.target.value })}
+                rows={3}
+                placeholder="Contexto adicional del contacto..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Objetivo
+              </label>
+              <textarea
+                value={editingContact.objective || ''}
+                onChange={(e) => setEditingContact({ ...editingContact, objective: e.target.value })}
+                rows={3}
+                placeholder="Objetivo de la conversación..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveEditContact}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all duration-200 flex items-center"
+              >
+                <PencilIcon className="h-4 w-4 mr-1" />
+                Guardar Cambios
+              </button>
+              <button
+                onClick={() => {
+                  setShowEditForm(false)
+                  setEditingContact(null)
+                }}
                 className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-all duration-200"
               >
                 Cancelar

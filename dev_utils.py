@@ -7,6 +7,7 @@ Automatiza tareas comunes de desarrollo
 import sys
 import json
 import os
+import logging
 from pathlib import Path
 from datetime import datetime
 
@@ -20,20 +21,19 @@ def clean_manual_queue():
                 data = json.load(f)
             
             if data and isinstance(data, list):
-                print(f"✅ Cola limpiada. Se eliminaron {len(data)} mensajes.")
+                logging.getLogger(__name__).info(f"✅ Cola limpiada. Se eliminaron {len(data)} mensajes.")
             else:
-                print("✅ Cola ya estaba vacía.")
-                
+                logging.getLogger(__name__).info("✅ Cola ya estaba vacía.")
         except Exception as e:
-            print(f"⚠️ Error leyendo cola existente: {e}")
+            logging.getLogger(__name__).warning(f"⚠️ Error leyendo cola existente: {e}")
     
     # Crear archivo vacío
     try:
         with open(queue_file, 'w', encoding='utf-8') as f:
             json.dump([], f, ensure_ascii=False, indent=2)
-        print(f"✅ Archivo {queue_file} reiniciado.")
+        logging.getLogger(__name__).info(f"✅ Archivo {queue_file} reiniciado.")
     except Exception as e:
-        print(f"❌ Error limpiando cola: {e}")
+        logging.getLogger(__name__).error(f"❌ Error limpiando cola: {e}")
 
 def add_manual_message(chat_id, message):
     """Agregar un mensaje manual a la cola."""
@@ -47,7 +47,7 @@ def add_manual_message(chat_id, message):
         else:
             queue = []
     except Exception as e:
-        print(f"⚠️ Error leyendo cola: {e}")
+        logging.getLogger(__name__).warning(f"⚠️ Error leyendo cola: {e}")
         queue = []
     
     # Agregar nuevo mensaje
@@ -64,16 +64,16 @@ def add_manual_message(chat_id, message):
     try:
         with open(queue_file, 'w', encoding='utf-8') as f:
             json.dump(queue, f, ensure_ascii=False, indent=2)
-        print(f"✅ Mensaje agregado a la cola para {chat_id}")
+        logging.getLogger(__name__).info(f"✅ Mensaje agregado a la cola para {chat_id}")
     except Exception as e:
-        print(f"❌ Error guardando cola: {e}")
+        logging.getLogger(__name__).error(f"❌ Error guardando cola: {e}")
 
 def clean_logs(keep_lines=50):
     """Limpia los logs manteniendo solo las últimas N líneas"""
     log_file = Path("logs/automation.log")
     
     if not log_file.exists():
-        print("❌ Archivo de logs no encontrado")
+        logging.getLogger(__name__).error("❌ Archivo de logs no encontrado")
         return
     
     try:
@@ -81,7 +81,7 @@ def clean_logs(keep_lines=50):
             lines = f.readlines()
         
         if len(lines) <= keep_lines:
-            print(f"✅ Logs no necesitan limpieza ({len(lines)} líneas)")
+            logging.getLogger(__name__).info(f"✅ Logs no necesitan limpieza ({len(lines)} líneas)")
             return
         
         # Mantener solo las últimas líneas
@@ -89,18 +89,16 @@ def clean_logs(keep_lines=50):
         
         with open(log_file, 'w', encoding='utf-8') as f:
             f.writelines(keep_lines_data)
-        
-        print(f"✅ Logs limpiados: {len(lines)} → {len(keep_lines_data)} líneas")
-        
+        logging.getLogger(__name__).info(f"✅ Logs limpiados: {len(lines)} → {len(keep_lines_data)} líneas")
     except Exception as e:
-        print(f"❌ Error limpiando logs: {e}")
+        logging.getLogger(__name__).error(f"❌ Error limpiando logs: {e}")
 
 def show_recent_logs(lines=50):
     """Muestra las últimas N líneas de los logs"""
     log_file = Path("logs/automation.log")
     
     if not log_file.exists():
-        print("❌ Archivo de logs no encontrado")
+        logging.getLogger(__name__).error("❌ Archivo de logs no encontrado")
         return
     
     try:
@@ -109,22 +107,22 @@ def show_recent_logs(lines=50):
         
         recent_lines = all_lines[-lines:]
         
-        print(f"📋 ÚLTIMAS {len(recent_lines)} LÍNEAS DE LOGS:")
-        print("=" * 80)
+        logging.getLogger(__name__).info(f"📋 ÚLTIMAS {len(recent_lines)} LÍNEAS DE LOGS:")
+        logging.getLogger(__name__).info("=" * 80)
         
         for line in recent_lines:
-            print(line.rstrip())
-        print("=" * 80)
+            logging.getLogger(__name__).info(line.rstrip())
+        logging.getLogger(__name__).info("=" * 80)
         
     except Exception as e:
-        print(f"❌ Error leyendo logs: {e}")
+        logging.getLogger(__name__).error(f"❌ Error leyendo logs: {e}")
 
 def analyze_logs():
     """Analiza los logs buscando patrones problemáticos"""
     log_file = Path("logs/automation.log")
     
     if not log_file.exists():
-        print("❌ Archivo de logs no encontrado")
+        logging.getLogger(__name__).error("❌ Archivo de logs no encontrado")
         return
     
     try:
@@ -142,43 +140,42 @@ def analyze_logs():
             "⚠️ Respuesta artificial detectada": "Sistema de filtros activado"
         }
         
-        print("🔍 ANÁLISIS DE LOGS:")
-        print("=" * 50)
-        
+        logging.getLogger(__name__).info("🔍 ANÁLISIS DE LOGS:")
+        logging.getLogger(__name__).info("=" * 50)
+
         found_issues = False
         for pattern, description in problems.items():
             if pattern in content:
                 count = content.count(pattern)
-                print(f"⚠️  {pattern}: {count} veces - {description}")
+                logging.getLogger(__name__).warning(f"⚠️  {pattern}: {count} veces - {description}")
                 found_issues = True
         
         if not found_issues:
-            print("✅ No se encontraron patrones problemáticos en los logs")
+            logging.getLogger(__name__).info("✅ No se encontraron patrones problemáticos en los logs")
         
         # Verificar última respuesta
         lines = content.split('\n')
         for line in reversed(lines):
             if "reply generado:" in line:
-                print("\n📤 Última respuesta generada:")
-                print(f"   {line}")
+                logging.getLogger(__name__).info("\n📤 Última respuesta generada:")
+                logging.getLogger(__name__).info(f"   {line}")
                 break
         
-        print("=" * 50)
-        
+        logging.getLogger(__name__).info("=" * 50)
     except Exception as e:
-        print(f"❌ Error analizando logs: {e}")
+        logging.getLogger(__name__).error(f"❌ Error analizando logs: {e}")
 
 def main():
     """Función principal"""
     if len(sys.argv) < 2:
-        print("🛠️ UTILIDADES DE DESARROLLO - CHATBOT WHATSAPP LLM")
-        print("\nUso:")
-        print("  python dev_utils.py clean [líneas]    - Limpiar logs (default: 50 líneas)")
-        print("  python dev_utils.py show [líneas]     - Mostrar logs recientes (default: 50)")
-        print("  python dev_utils.py analyze           - Analizar logs buscando problemas")
-        print("  python dev_utils.py clear-queue       - Limpiar cola de mensajes manuales")
-        print("  python dev_utils.py add-manual        - Agregar mensaje manual a la cola")
-        print("  python dev_utils.py prep              - Preparar para desarrollo (clean + show + analyze)")
+        logging.getLogger(__name__).info("🛠️ UTILIDADES DE DESARROLLO - CHATBOT WHATSAPP LLM")
+        logging.getLogger(__name__).info("\nUso:")
+        logging.getLogger(__name__).info("  python dev_utils.py clean [líneas]    - Limpiar logs (default: 50 líneas)")
+        logging.getLogger(__name__).info("  python dev_utils.py show [líneas]     - Mostrar logs recientes (default: 50)")
+        logging.getLogger(__name__).info("  python dev_utils.py analyze           - Analizar logs buscando problemas")
+        logging.getLogger(__name__).info("  python dev_utils.py clear-queue       - Limpiar cola de mensajes manuales")
+        logging.getLogger(__name__).info("  python dev_utils.py add-manual        - Agregar mensaje manual a la cola")
+        logging.getLogger(__name__).info("  python dev_utils.py prep              - Preparar para desarrollo (clean + show + analyze)")
         return
     
     command = sys.argv[1].lower()
@@ -203,17 +200,18 @@ def main():
         add_manual_message(chat_id, message)
     
     elif command == "prep":
-        print("🚀 PREPARANDO ENTORNO DE DESARROLLO...")
-        print("\n1. Limpiando logs...")
+        logging.getLogger(__name__).info("🚀 PREPARANDO ENTORNO DE DESARROLLO...")
+        logging.getLogger(__name__).info("\n1. Limpiando logs...")
         clean_logs(50)
-        print("\n2. Mostrando logs recientes...")
+        logging.getLogger(__name__).info("\n2. Mostrando logs recientes...")
         show_recent_logs(50)
-        print("\n3. Analizando problemas...")
+        logging.getLogger(__name__).info("\n3. Analizando problemas...")
         analyze_logs()
-        print("\n✅ Entorno preparado. Ahora ejecuta: python clean_start.py")
+        logging.getLogger(__name__).info("\n✅ Entorno preparado. Ahora ejecuta: python clean_start.py")
     
     else:
-        print(f"❌ Comando desconocido: {command}")
+        logging.getLogger(__name__).error(f"❌ Comando desconocido: {command}")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     main()

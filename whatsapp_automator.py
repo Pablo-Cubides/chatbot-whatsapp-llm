@@ -5,55 +5,36 @@ import logging
 import logging.handlers
 import os
 import time
-from string import Template
+from datetime import datetime, timedelta
+# from string import Template  # not used
 from playwright.sync_api import sync_playwright
-from dotenv import load_dotenv
 import chat_sessions
 from stub_chat import chat as stub_chat
 from admin_db import get_session
-from models import Conversation
+from models import Conversation, ChatCounter
 from model_manager import ModelManager
-import os as _os
+from settings import settings
+
+# Public API exported from this module. Tests and external callers
+# import these names from `whatsapp_automator` so expose them here
+# to help static analyzers and attribute access checks.
+__all__ = [
+    'setup_logging',
+    'fetch_new_message',
+    'send_reply',
+    'send_reply_with_typing',
+    '_get_message_input',
+    'cleanup_search_and_return_to_normal',
+    'send_manual_message',
+    'exit_chat_safely',
+    'process_manual_queue',
+    'main',
+]
 
 # --------------------------------------------
 # Definición de logger
 # --------------------------------------------
 log = logging.getLogger(__name__)
-
-def load_config() -> dict:
-    here = os.path.dirname(__file__)
-    fp = os.path.join(here, "config", "playwright_config.json")
-    raw = open(fp, encoding="utf-8").read()
-    
-    # Definir valores por defecto para las variables de entorno
-    env_defaults = {
-        'PLAYWRIGHT_PROFILE_DIR': './data/whatsapp-profile',
-        'WHATSAPP_URL': 'https://web.whatsapp.com/',
-        'MESSAGE_CHECK_INTERVAL': '2'
-    }
-    
-    # Crear un diccionario combinando variables de entorno y valores por defecto
-    env_vars = {}
-    for key, default_value in env_defaults.items():
-        env_vars[key] = os.environ.get(key, default_value)
-    
-    try:
-        filled = Template(raw).substitute(env_vars)
-        cfg = json.loads(filled)
-    except (KeyError, ValueError) as e:
-        log.warning(f"Error al procesar configuración: {e}. Usando valores por defecto.")
-        # Configuración por defecto si falla el archivo
-        cfg = {
-            "userDataDir": "./data/whatsapp-profile",
-            "whatsappUrl": "https://web.whatsapp.com/",
-            "headless": False,
-            "messageCheckInterval": "2",
-            "maxRetries": 3,
-            "navigationTimeout": 30000
-        }
-    
-    log.debug(f"Configuración cargada: {cfg}")
-    return cfg
 
 def setup_logging(log_path: str) -> None:
     if not log_path:
@@ -175,8 +156,26 @@ def setup_logging(log_path: str) -> None:
     )
     log.info("=== WhatsApp Automator iniciado ===")
 
-# Registro de últimas respuestas para evitar bucles
-LAST_REPLIED = {}
+
+def _get_message_check_interval() -> float:
+    """Return a safe numeric message check interval (seconds).
+    Tries multiple config locations and coerces to float. Falls back to 5s.
+    """
+    try:
+        # Prefer playwright nested setting
+        val = None
+        try:
+            val = getattr(settings.playwright, 'message_check_interval')
+        except Exception:
+            val = getattr(settings, 'message_check_interval', None)
+        if val is None:
+            return 5.0
+        return max(0.1, float(val))
+    except Exception:
+        return 5.0
+
+
+
 
 def fetch_new_message(page, respond_to_all=False):
     """VERSIÓN ULTRA SIMPLE: SOLO responde si hay badge numérico Y último mensaje del usuario"""
@@ -228,12 +227,28 @@ def fetch_new_message(page, respond_to_all=False):
             if not chat_id:
                 continue
                 
-            # PASO 4: Anti-bucle (cooldown)
+            # PASO 4: Anti-bucle (cooldown) con base de datos
             try:
-                last_time = LAST_REPLIED.get(chat_id, 0)
-                if time.time() - last_time < 120:  # 2 minutos
-                    log.info(f"– {chat_id} en cooldown, saltar")
-                    continue
+                session = get_session()
+                counter = session.query(ChatCounter).filter(ChatCounter.chat_id == chat_id).first()
+                # counter is a SQLAlchemy model; static type checkers may warn about Column objects
+                if counter and counter.last_reply_at:  # type: ignore[truthy-bool]
+                    # Use configured cooldown from settings; fallback to 2 minutes if malformed
+                    cooldown_min = getattr(settings, 'automator_cooldown_minutes', 2)
+                    try:
+                        cooldown_delta = timedelta(minutes=float(cooldown_min))
+                    except Exception:
+                        # If parsing fails, fall back to the default from settings or 2 minutes
+                        try:
+                            fallback = float(getattr(settings, 'automator_cooldown_minutes', 2))
+                            cooldown_delta = timedelta(minutes=fallback)
+                        except Exception:
+                            cooldown_delta = timedelta(minutes=2)
+                    if datetime.utcnow() - counter.last_reply_at < cooldown_delta:  # type: ignore[arg-type]
+                        log.info(f"– {chat_id} en cooldown (>{cooldown_min}m), saltar")
+                        session.close()
+                        continue
+                session.close()
             except Exception as e:
                 log.debug(f"Error checking cooldown for {chat_id}: {e}")
                 pass
@@ -241,7 +256,7 @@ def fetch_new_message(page, respond_to_all=False):
             # PASO 5: Verificar permisos
             try:
                 if not respond_to_all:
-                    require = os.getenv("REQUIRE_CONTACT_PROFILE", "true").lower() == "true"
+                    require = settings.require_contact_profile
                     if require and not chat_sessions.is_ready_to_reply(chat_id):
                         log.info(f"– {chat_id} no habilitado, saltar")
                         continue
@@ -298,6 +313,7 @@ def fetch_new_message(page, respond_to_all=False):
     except Exception as e:
         log.error(f"Error en fetch_new_message: {e}")
         return None, None
+
 
 def _get_message_input(page):
     """Devuelve el locator de la caja de texto del compositor de mensajes."""
@@ -517,11 +533,19 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
             if chat_input.count() > 0:
                 log.debug("✅ Enter abrió el chat exitosamente")
                 # Enviar mensaje
+                # DEBUG: log the send_reply_with_typing call and result
+                try:
+                    log.debug("[wa-canonical] about to call send_reply_with_typing: %s", send_reply_with_typing)
+                except Exception:
+                    pass
                 message_sent = send_reply_with_typing(page, chat_id, message_text, per_char_delay)
+                try:
+                    log.debug("[wa-canonical] send_reply_with_typing returned: %s", message_sent)
+                except Exception:
+                    pass
                 
                 if message_sent:
                     log.info(f"✅ Mensaje manual enviado exitosamente a {chat_id}")
-                    # PASO ADICIONAL: Limpiar búsqueda y volver a ventana normal
                     cleanup_search_and_return_to_normal(page)
                     return True
                 else:
@@ -532,7 +556,6 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
         
         # ESTRATEGIA 2: Click en primera conversación
         conversation_selectors = [
-            # Selectores más específicos para elementos clickeables
             "div[data-testid='cell-frame-container'] div[role='gridcell']",
             "div[data-testid='cell-frame-container']",
             "div[role='listitem'] div[role='gridcell']",
@@ -547,10 +570,8 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
                 if count > 0:
                     log.debug(f"📋 Encontradas {count} conversaciones con: {selector}")
                     
-                    # Probar diferentes estrategias de click
                     click_success = False
                     
-                    # Estrategia A: Click normal
                     try:
                         conversations.first.click(timeout=3000)
                         click_success = True
@@ -558,7 +579,6 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
                     except Exception as e:
                         log.debug(f"❌ Click normal falló con {selector}: {e}")
                     
-                    # Estrategia B: Double click si el click normal no funcionó
                     if not click_success:
                         try:
                             conversations.first.dblclick(timeout=3000)
@@ -567,7 +587,6 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
                         except Exception as e:
                             log.debug(f"❌ Double click falló con {selector}: {e}")
                     
-                    # Estrategia C: Click con coordenadas específicas
                     if not click_success:
                         try:
                             conversations.first.click(position={"x": 50, "y": 30}, timeout=3000)
@@ -579,25 +598,20 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
                     if click_success:
                         page.wait_for_timeout(2000)  # Esperar más tiempo
                         
-                        # Verificar si se abrió el chat con múltiples indicadores
                         chat_opened = False
                         chat_indicators = [
-                            # Input de mensaje
                             "div[data-testid='conversation-compose-box-input']",
                             "footer div[contenteditable='true'][data-tab='10']",
                             "div[data-tab='10'][contenteditable='true']",
                             "footer div[role='textbox']",
                             "div[contenteditable='true'][role='textbox']",
                             
-                            # Header del chat
                             "header[data-testid='conversation-header']",
                             "div[data-testid='conversation-header']",
                             
-                            # Área de mensajes
                             "div[data-testid='conversation-panel-messages']",
                             "div[role='application'][data-tab='6']",
                             
-                            # Otros indicadores
                             "div[data-testid='conversation-panel-wrapper']",
                             "footer[data-testid='compose-box']"
                         ]
@@ -613,12 +627,10 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
                         
                         if chat_opened:
                             log.debug(f"✅ Chat abierto con selector: {selector}")
-                            # Enviar mensaje
                             message_sent = send_reply_with_typing(page, chat_id, message_text, per_char_delay)
                             
                             if message_sent:
                                 log.info(f"✅ Mensaje manual enviado exitosamente a {chat_id}")
-                                # PASO ADICIONAL: Limpiar búsqueda y volver a ventana normal
                                 cleanup_search_and_return_to_normal(page)
                                 return True
                             else:
@@ -643,12 +655,10 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
 def exit_chat_safely(page):
     """Sale del chat actual y vuelve a la lista principal."""
     try:
-        # ESC para salir
         page.keyboard.press("Escape")
         page.wait_for_timeout(200)
         log.debug("ESC presionado")
         
-        # Status -> Chats
         try:
             page.click("span[data-icon='status-outline']", timeout=3000)
             page.wait_for_timeout(400)
@@ -656,10 +666,8 @@ def exit_chat_safely(page):
             log.debug("Navegación Status -> Chats")
         except Exception as e:
             log.debug(f"Error in navigation Status -> Chats: {e}")
-            # Fallback: click en el sidebar
             page.click("#pane-side", timeout=3000)
             
-        # Verificar que no hay compositor activo
         composers = page.locator("footer div[contenteditable='true'][data-tab]")
         if composers.count() > 0:
             page.keyboard.press("Escape")
@@ -677,33 +685,27 @@ def process_manual_queue(page) -> bool:
         if not os.path.exists(queue_file):
             return False
         
-        # Cargar cola
         with open(queue_file, 'r', encoding='utf-8') as f:
             queue = json.load(f)
         
-        # Filtrar mensajes pendientes
         pending_messages = [msg for msg in queue if msg.get('status') == 'pending']
         
         if not pending_messages:
             return False
         
-        # Procesar el primer mensaje pendiente
         message = pending_messages[0]
         chat_id = message['chat_id']
         content = message['message']
         
         log.info(f"📤 Procesando mensaje manual para {chat_id}: {content[:50]}...")
         
-        # Enviar el mensaje
         try:
-            per_char = float(os.getenv("TYPING_PER_CHAR", "0.05"))
+            per_char = getattr(settings, 'typing_per_char', 0.05)
         except Exception:
             per_char = 0.05
-            
-        # Usar la nueva función que incluye navegación al chat
+
         success = send_manual_message(page, chat_id, content, per_char_delay=per_char)
         
-        # Marcar como enviado O como fallido (para evitar bucles infinitos)
         for msg in queue:
             if msg['id'] == message['id']:
                 if success:
@@ -716,7 +718,6 @@ def process_manual_queue(page) -> bool:
                     log.error(f"❌ Mensaje manual falló para {chat_id} - marcado como failed")
                 break
         
-        # Guardar cola actualizada (siempre, exitoso o fallido)
         with open(queue_file, 'w', encoding='utf-8') as f:
             json.dump(queue, f, indent=2, ensure_ascii=False)
         
@@ -726,22 +727,26 @@ def process_manual_queue(page) -> bool:
         log.error(f"❌ Error procesando cola manual: {e}")
         return False
 
+
 def main() -> None:
-    load_dotenv(override=True)
-    log_path = os.getenv("LOG_PATH")
+    log_path = settings.log_path
     if log_path:
         setup_logging(log_path)
-    log.debug("Variables de entorno cargadas")
-
-    cfg = load_config()
-    cfg["messageCheckInterval"] = int(cfg.get("messageCheckInterval", 2))
-    cfg["maxRetries"] = int(cfg.get("maxRetries", 3))
-    cfg["navigationTimeout"] = int(cfg.get("navigationTimeout", 30000))
+    log.debug("Configuración cargada desde settings.py")
 
     chat_sessions.initialize_db()
     log.info("Base de datos de contexto inicializada")
 
-    profile_dir = cfg["userDataDir"]
+    # Expand environment variables and provide safe fallback for profile dir
+    try:
+        raw_profile = getattr(settings.playwright, 'user_data_dir', None)
+    except Exception:
+        raw_profile = getattr(settings, 'playwright', None) and getattr(settings.playwright, 'user_data_dir', None)
+
+    if not raw_profile:
+        raw_profile = os.path.join(os.path.dirname(__file__), 'data', 'playwright_profile')
+
+    profile_dir = os.path.expandvars(str(raw_profile))
     # Verificar si es un archivo y eliminarlo si es necesario
     try:
         if os.path.exists(profile_dir):
@@ -759,24 +764,27 @@ def main() -> None:
             log.warning(f"Usando directorio temporal: {profile_dir}")
     log.debug(f"Perfil de Chromium: {profile_dir}")
 
-    keep_open = os.getenv("KEEP_AUTOMATOR_OPEN", "false").lower() == "true"
+    keep_open = settings.keep_automator_open
 
     with sync_playwright() as p:
+        log.info("Iniciando Playwright...")
         ctx = p.chromium.launch_persistent_context(
-            user_data_dir=profile_dir, headless=cfg["headless"]
+            user_data_dir=profile_dir, headless=settings.playwright.headless
         )
-        log.info(f"Browser iniciado. Headless={cfg['headless']}")
+        log.info(f"Contexto del navegador lanzado. Headless={settings.playwright.headless}, UserDataDir={profile_dir}")
         page = ctx.new_page()
+        log.info("Nueva página creada.")
         
         try:
-            page.goto(cfg["whatsappUrl"], timeout=cfg["navigationTimeout"])
-            log.info(f"Navegando a {cfg['whatsappUrl']}")
-            # Simplemente esperar a que aparezca el panel de chats
-            log.info("Esperando que cargue WhatsApp Web...")
-            page.wait_for_selector("#pane-side", timeout=30000)
-            log.info("WhatsApp Web cargado correctamente")
+            log.info(f"Navegando a {settings.playwright.whatsapp_url} con timeout {settings.playwright.navigation_timeout}ms...")
+            page.goto(settings.playwright.whatsapp_url, timeout=settings.playwright.navigation_timeout)
+            log.info(f"Navegación a {settings.playwright.whatsapp_url} completada.")
+            
+            log.info("Esperando selector #pane-side (WhatsApp Web cargado)...")
+            page.wait_for_selector("#pane-side", timeout=settings.playwright.navigation_timeout)
+            log.info("WhatsApp Web cargado correctamente (#pane-side encontrado).")
         except Exception:
-            log.exception("Error al cargar WhatsApp Web", exc_info=True)
+            log.exception("Error al cargar WhatsApp Web o encontrar el selector #pane-side.", exc_info=True)
             if not keep_open:
                 try:
                     ctx.close()
@@ -797,37 +805,36 @@ def main() -> None:
 
         try:
             while True:
-                load_dotenv(override=True)
-                toggle = os.getenv("AUTOMATION_ACTIVE", "true").lower()
+                # Safe toggle getter
+                try:
+                    toggle = bool(getattr(settings, 'automation_active', True))
+                except Exception:
+                    toggle = True
+
                 log.debug(f"Toggle AUTOMATION_ACTIVE={toggle}")
-                if toggle != "true":
+                if not toggle:
                     log.info("Automatización desactivada, durmiendo…")
-                    time.sleep(cfg["messageCheckInterval"])
+                    time.sleep(_get_message_check_interval())
                     continue
 
-                # Leer respond_to_all
-                respond_to_all = False
+                # Leer respond_to_all (safe)
                 try:
-                    settings_file = os.path.join(os.path.dirname(__file__), 'data', 'settings.json')
-                    if os.path.exists(settings_file):
-                        with open(settings_file, 'r', encoding='utf-8') as f:
-                            settings = json.load(f)
-                            respond_to_all = settings.get('respond_to_all', False)
+                    respond_to_all = bool(getattr(settings, 'respond_to_all', False))
                 except Exception:
-                    pass
-                
+                    respond_to_all = False
+
                 chat_id, incoming = fetch_new_message(page, respond_to_all)
                 log.debug(f"fetch_new_message retornó: {chat_id}, {incoming}")
-                
+
                 if not chat_id or incoming is None:
                     # No hay mensajes nuevos, verificar cola de mensajes manuales
                     manual_processed = process_manual_queue(page)
                     if manual_processed:
                         # Si se procesó un mensaje manual, continuar el ciclo inmediatamente
                         continue
-                    
+
                     log.debug("No hay nuevos mensajes, durmiendo…")
-                    time.sleep(cfg["messageCheckInterval"])
+                    time.sleep(_get_message_check_interval())
                     continue
 
                 log.info(f"[{chat_id}] Mensaje entrante: '{incoming}'")
@@ -876,7 +883,15 @@ def main() -> None:
                     log.debug("Salida segura del chat después de enviar mensaje")
                     
                     # Marcar tiempo de respuesta
-                    LAST_REPLIED[chat_id] = time.time()
+                    session = get_session()
+                    counter = session.query(ChatCounter).filter(ChatCounter.chat_id == chat_id).first()
+                    if not counter:
+                        counter = ChatCounter(chat_id=chat_id)
+                        session.add(counter)
+                    # Assign last reply time (SQLAlchemy-managed attribute)
+                    counter.last_reply_at = datetime.utcnow()  # type: ignore[attr-defined]
+                    session.commit()
+                    session.close()
                     
                 except Exception:
                     log.exception("Fallo enviando el mensaje a WhatsApp")
@@ -884,7 +899,7 @@ def main() -> None:
                 # Ejecutar reasoner si es necesario
                 try:
                     n = chat_sessions.increment_reply_counter(chat_id)
-                    threshold = int(_os.getenv('STRATEGY_REFRESH_EVERY', '10') or '10')
+                    threshold = settings.strategy_refresh_every
                     if n >= threshold:
                         chat_sessions.reset_reply_counter(chat_id)
                         try:
@@ -899,8 +914,8 @@ def main() -> None:
                 # Salir del chat de forma segura
                 exit_chat_safely(page)
 
-                log.debug(f"Durmiendo {cfg['messageCheckInterval']}s antes del próximo ciclo")
-                time.sleep(cfg["messageCheckInterval"])
+                log.debug(f"Durmiendo {settings.playwright.message_check_interval}s antes del próximo ciclo")
+                time.sleep(_get_message_check_interval())
 
         except KeyboardInterrupt:
             log.info("Interrupción manual recibida, cerrando…")

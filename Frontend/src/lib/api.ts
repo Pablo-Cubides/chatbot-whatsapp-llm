@@ -9,7 +9,7 @@ class ApiService {
       timeout: 10000, // Reducido de 30000 a 10000ms
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer admintoken',
+        // 'Authorization': 'Bearer admintoken', // TODO: Handle authentication dynamically (e.g., from login response)
       },
     })
 
@@ -154,6 +154,15 @@ class ApiService {
   async removeAllowedContact(chatId: string): Promise<any> {
     try {
       const response = await this.api.delete(`/api/allowed-contacts/${chatId}`)
+      return response.data
+    } catch (error: any) {
+      this.handleError(error)
+    }
+  }
+
+  async updateAllowedContact(chatId: string, contact: { perfil?: string; context?: string; objective?: string }): Promise<any> {
+    try {
+      const response = await this.api.put(`/api/allowed-contacts/${chatId}`, contact)
       return response.data
     } catch (error: any) {
       this.handleError(error)

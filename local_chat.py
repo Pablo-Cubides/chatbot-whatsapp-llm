@@ -5,6 +5,7 @@ Usage: python local_chat.py --chat-id <id>
 """
 import argparse
 import sys
+import logging
 from stub_chat import chat as model_chat
 from chat_sessions import load_last_context, save_context
 
@@ -13,7 +14,9 @@ parser.add_argument('--chat-id', default='local_user', help='chat id / user id t
 args = parser.parse_args()
 chat_id = args.chat_id
 
-print(f"Local chat client. Chat id: {chat_id}. Type Ctrl+C to exit.")
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+log.info(f"Local chat client. Chat id: {chat_id}. Type Ctrl+C to exit.")
 
 # Load last history (expected list of messages)
 history = load_last_context(chat_id) or []
@@ -24,11 +27,11 @@ try:
         if not user.strip():
             continue
         reply = model_chat(user, chat_id, history)
-        print('\nBot:', reply, '\n')
+        log.info('\nBot: %s\n', reply)
         # Append to history simple representation
         history.append({'role':'user','content':user})
         history.append({'role':'assistant','content':reply})
         save_context(chat_id, history)
 except KeyboardInterrupt:
-    print('\nBye')
+    log.info('\nBye')
     sys.exit(0)

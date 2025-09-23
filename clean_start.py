@@ -16,17 +16,23 @@ import signal
 import subprocess
 import webbrowser
 
+from settings import settings
+
 try:
     import requests
 except Exception:
     requests = None
 
 
-LOG_PREFIX = "[clean_start]"
+import logging
+
+# Use structured logging instead of printing to stdout
+_LOG = logging.getLogger(__name__)
 
 
 def log(msg: str):
-    print(f"{LOG_PREFIX} {msg}", flush=True)
+    # preserve existing helper name but route through logging
+    _LOG.info(msg)
 
 
 children = []
@@ -79,26 +85,50 @@ def wait_for_url(url: str, timeout: int = 30) -> bool:
 
 
 def start_backend(backend_dir: Path, python_exe: str = sys.executable) -> subprocess.Popen:
-    log("Starting backend (uvicorn fixed_server:app on 8014)")
-    cmd = [python_exe, "-m", "uvicorn", "fixed_server:app", "--host", "0.0.0.0", "--port", "8014", "--log-level", "info"]
+    port = settings.uvicorn_port
+    log(f"Starting backend (uvicorn fixed_server:app on {port})")
+    cmd = [python_exe, "-m", "uvicorn", "fixed_server:app", "--host", "0.0.0.0", "--port", str(port), "--log-level", "info"]
     p = subprocess.Popen(cmd, cwd=str(backend_dir), start_new_session=True)
     children.append(p)
     return p
 
 
-def start_frontend_static(build_dir: Path) -> subprocess.Popen:
-    log(f"Serving frontend static from {build_dir} on port 3000")
-    cmd = [sys.executable, "-m", "http.server", "3000", "--bind", "0.0.0.0"]
-    p = subprocess.Popen(cmd, cwd=str(build_dir), start_new_session=True)
+def start_frontend_prod(frontend_dir: Path) -> subprocess.Popen:
+    """Starts the Next.js production server."""
+    port = settings.frontend_port
+    log(f"Starting frontend in production mode (npm start) on port {port}")
+    is_windows = os.name == 'nt'
+    npm = "npm.cmd" if is_windows else "npm"
+    # The `start` script in package.json already specifies the port.
+    cmd = [npm, "start"]
+    # The CWD must be the Frontend directory where package.json lives.
+    p = subprocess.Popen(cmd, cwd=str(frontend_dir), start_new_session=True, shell=is_windows)
     children.append(p)
     return p
 
 
-def start_frontend_dev(frontend_dir: Path) -> subprocess.Popen:
+def start_frontend_dev(frontend_dir: Path) -> subprocess.Popen | None:
     log("Starting frontend in dev mode (npm run dev)")
     npm = "npm.cmd" if os.name == "nt" else "npm"
     cmd = [npm, "run", "dev"]
-    p = subprocess.Popen(cmd, cwd=str(frontend_dir), start_new_session=True)
+    # If the frontend port is already serving, skip launching a second dev server.
+    port = settings.frontend_port
+    try:
+        import requests
+        for host in ("127.0.0.1", "localhost"):
+            try:
+                r = requests.get(f"http://{host}:{port}", timeout=1)
+                if r.status_code < 500:
+                    log(f"Frontend already running on {host}:{port}; skipping npm launch")
+                    return None
+            except Exception:
+                pass
+    except Exception:
+        # If requests isn't available or probing fails, fall back to attempting to start.
+        pass
+
+    is_windows = os.name == 'nt'
+    p = subprocess.Popen(cmd, cwd=str(frontend_dir), start_new_session=True, shell=is_windows)
     children.append(p)
     return p
 
@@ -109,7 +139,8 @@ def main():
 
     root = Path(__file__).parent
     backend_dir = root
-    frontend_dir = root.parent / "Frontend"
+    # frontend lives inside repo under `Frontend`
+    frontend_dir = root / "Frontend"
 
     log("Starting clean start sequence")
 
@@ -121,20 +152,21 @@ def main():
     else:
         log("Backend ready")
 
-    use_dev = os.getenv("USE_DEV_FRONTEND", "0") == "1"
+    use_dev = settings.use_dev_frontend
     if use_dev:
         start_frontend_dev(frontend_dir)
     else:
-        build_dir = frontend_dir / "build"
+        # The Dockerfile places the built frontend in `frontend_build` at the root
+        build_dir = root / "frontend_build"
         if build_dir.exists():
-            start_frontend_static(build_dir)
+            start_frontend_prod(frontend_dir)
         else:
             log("Frontend build not found; falling back to dev server")
             start_frontend_dev(frontend_dir)
 
-    if os.getenv("OPEN_BROWSER", "1") == "1":
+    if settings.open_browser:
         try:
-            webbrowser.open("http://localhost:3000")
+            webbrowser.open(f"http://localhost:{settings.frontend_port}")
         except Exception:
             pass
 

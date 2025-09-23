@@ -38,26 +38,26 @@
         
         /* Tab Styles */
         .model-tabs { border-bottom: 2px solid #eee; }
-        .tab-button { 
-            background: transparent; 
-            border: none; 
-            padding: 12px 20px; 
-            cursor: pointer; 
+        .tab-button {
+            background: transparent;
+            border: none;
+            padding: 12px 20px;
+            cursor: pointer;
             border-bottom: 3px solid transparent;
             font-weight: 500;
             transition: all 0.3s;
             margin-right: 10px;
         }
-        .tab-button.active { 
-            border-bottom-color: #667eea; 
-            color: #667eea; 
+        .tab-button.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
             background: rgba(102, 126, 234, 0.1);
         }
-        .tab-button:hover:not(.active) { 
-            background: rgba(102, 126, 234, 0.05); 
+        .tab-button:hover:not(.active) {
+            background: rgba(102, 126, 234, 0.05);
         }
-        .tab-content { 
-            padding-top: 20px; 
+        .tab-content {
+            padding-top: 20px;
         }
         .online-model-item {
             border: 1px solid #eee;
@@ -747,7 +747,7 @@ Examples:
                 <input type="number" id="reason-messages" min="1" max="50" value="10">
                 
                 <label>
-                    <input type="checkbox" id="respond-to-all"> 
+                    <input type="checkbox" id="respond-to-all">
                     Responder a TODOS los mensajes (no solo contactos permitidos)
                 </label>
                 
@@ -845,7 +845,7 @@ Examples:
     </div>
 
     <script>
-    const API_TOKEN = 'Bearer admintoken';
+    // const API_TOKEN = 'Bearer admintoken'; // TODO: Handle authentication dynamically
         let currentChatId = null;
         let eventSource = null;
         let whatsappActive = false;
@@ -864,10 +864,10 @@ Examples:
         async function api(endpoint, options = {}) {
             // Build headers and auto-serialize JSON bodies when needed
             const headers = {
-                'Authorization': API_TOKEN,
                 'Content-Type': 'application/json',
                 ...(options.headers || {})
             };
+            // TODO: Add Authorization header dynamically if a token is available (e.g., from localStorage)
             const init = { ...options, headers };
             const ct = (headers['Content-Type'] || headers['content-type'] || '').toLowerCase();
             if (init.body && typeof init.body !== 'string' && ct.includes('application/json')) {
@@ -939,6 +939,7 @@ Examples:
                     method: 'PUT',
                     body: { respond_to_all: respondToAll }
                 });
+                
                 console.log('Respond to all setting saved:', respondToAll);
             } catch (error) {
                 console.error('Failed to save respond to all setting:', error);
@@ -1008,7 +1009,7 @@ Examples:
         // Load LM Studio models (local only)
         async function loadLMStudioModels() {
             try {
-                const response = await api('/api/lmstudio/models/local-only');
+                const response = await api('/api/lmstudio/models');
                 const select = document.getElementById('lm-models');
                 const selectReasoner = document.getElementById('reasoner-models');
                 const statusDiv = document.getElementById('lm-studio-status');
@@ -1076,7 +1077,7 @@ Examples:
                     statusDiv.innerHTML = '<span style="color: red;">❌ No se detectó LM Studio ni modelos locales en D:\\IA\\Texto\\Models</span>';
                     select.innerHTML = '<option>Sin modelos disponibles</option>';
                     selectReasoner.innerHTML = '<option>Sin modelos disponibles</option>';
-                    document.getElementById('model-status').innerHTML = 
+                    document.getElementById('model-status').innerHTML =
                         `<div style="color: red;">Inicia LM Studio en 127.0.0.1:1234 o coloca modelos .gguf en D:\\IA\\Texto\\Models</div>`;
                 }
             } catch (error) {
@@ -1149,7 +1150,7 @@ Examples:
         // Update WhatsApp button status based on LM Studio availability
         async function updateWhatsAppButtonStatus() {
             try {
-                const lmStudioCheck = await api('/api/lmstudio/models/local-only');
+                const lmStudioCheck = await api('/api/lmstudio/models');
                 const startButton = document.getElementById('start-whatsapp');
                 
                 if (!lmStudioCheck.lm_studio_running || !lmStudioCheck.models || lmStudioCheck.models.length === 0) {
@@ -1276,15 +1277,15 @@ Examples:
                     document.getElementById('current-model').textContent = response.new_model;
                     const source = opt?.dataset?.source || (opt?.textContent?.includes('(local)') ? 'local' : 'lmstudio');
                     const extra = source === 'local' ? ' (local)' : '';
-                    document.getElementById('model-status').innerHTML = 
+                    document.getElementById('model-status').innerHTML =
                         `<div style=\"color: green;\">✅ Modelo actualizado a: ${response.new_model}${extra}</div>`;
                 } else {
-                    document.getElementById('model-status').innerHTML = 
+                    document.getElementById('model-status').innerHTML =
                         `<div style="color: red;">❌ Error: ${response.error}</div>`;
                 }
             } catch (error) {
                 console.error('Failed to apply model change:', error);
-                document.getElementById('model-status').innerHTML = 
+                document.getElementById('model-status').innerHTML =
                     `<div style="color: red;">❌ Error de conexión</div>`;
             }
         }
@@ -1308,7 +1309,7 @@ Examples:
                     document.getElementById('reasoner-status').innerHTML = `<div style="color: red;">❌ Error: ${response.error}</div>`;
                 }
             } catch (e) {
-                document.getElementById('reasoner-status').innerHTML = '<div style="color: red;">❌ Error de conexión</div>';
+                document.getElementById('reasoner-status').innerHTML = '<div style="color: red;">❌ Error de conexión';
             }
         }
 
@@ -1577,9 +1578,9 @@ Examples:
                 if (response && response.length > 0) {
                     chatList.innerHTML = '';
                     response.forEach(contact => {
-                        const chatItem = document.createElement('div');
-                        chatItem.className = 'chat-item';
-                        chatItem.innerHTML = `
+                        const item = document.createElement('div');
+                        item.className = 'chat-item';
+                        item.innerHTML = `
                             <strong>${contact.name || contact.chat_id}</strong>
                             <br>
                             <small>ID: ${contact.chat_id}</small>

@@ -1,5 +1,9 @@
 # retrieve_and_chat.py (fragmento modificado)
-import json, faiss, pickle, numpy as np
+import json
+import faiss
+import pickle
+import numpy as np
+import logging
 from openai import OpenAI
 
 # Carga plantilla
@@ -23,8 +27,8 @@ res = client.embeddings.create(
 qemb = res.data[0].embedding
 
 # Recupera top‑3
-D, I = index.search(np.array([qemb],dtype="float32"), k=3)
-rag_context = "\n\n".join(docs[i]["text"] for i in I[0])
+D, idx = index.search(np.array([qemb],dtype="float32"), k=3)
+rag_context = "\n\n".join(docs[i]["text"] for i in idx[0])
 
 # Carga contexto diario
 with open("docs/Ultimo_contexto.txt", encoding="cp1252") as f:
@@ -40,4 +44,4 @@ payload["messages"] = [
 
 # Llama al API
 response = client.chat.completions.create(**payload)
-print("\nAsistente:\n", response.choices[0].message.content)
+logging.getLogger(__name__).info("\nAsistente:\n%s", response.choices[0].message.content)
