@@ -32,9 +32,9 @@ class AuthManager:
         self.algorithm = "HS256"
         self.access_token_expire_minutes = int(os.environ.get("JWT_EXPIRE_MINUTES", "1440"))  # 24 hours default
         
-        # Initialize users from environment or create default
+        # User Configuration
         self.users = self._initialize_users()
-        
+
     def _get_jwt_secret(self) -> str:
         """Obtener secret JWT desde variables de entorno con validación"""
         secret = os.environ.get("JWT_SECRET")
@@ -201,7 +201,7 @@ auth_manager = AuthManager()
 security = HTTPBearer(auto_error=False)
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """Dependency para obtener usuario actual autenticado"""
+    """Dependency para obtener usuario actual autenticado (JWT o legacy token)"""
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -209,15 +209,33 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    user = auth_manager.verify_token(credentials.credentials)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido o expirado",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    token = credentials.credentials
     
-    return user
+    # Intentar verificar como JWT primero
+    user = auth_manager.verify_token(token)
+    if user is not None:
+        return user
+    
+    # Fallback a legacy token si está habilitado
+    legacy_enabled = os.environ.get("LEGACY_TOKEN_ENABLED", "false").lower() == "true"
+    legacy_token = os.environ.get("LEGACY_ADMIN_TOKEN", "admintoken")
+    
+    if legacy_enabled and token == legacy_token:
+        logger.warning("⚠️ Uso de legacy token detectado. Migrar a JWT lo antes posible.")
+        return {
+            "sub": "admin",
+            "username": "admin",
+            "role": "admin",
+            "permissions": ["all"],
+            "legacy_auth": True
+        }
+    
+    # Token inválido
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token inválido o expirado",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """Dependency para endpoints que requieren rol admin"""
@@ -237,15 +255,6 @@ async def require_operator_or_admin(current_user: dict = Depends(get_current_use
             detail="Acceso denegado: se requiere rol de operador o administrador"
         )
     return current_user
-
-async def require_admin(user: dict = Depends(get_current_user)):
-    """Dependency que requiere rol admin"""
-    if user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Se requieren permisos de administrador"
-        )
-    return user
 
 # Modelos Pydantic para autenticación
 from pydantic import BaseModel

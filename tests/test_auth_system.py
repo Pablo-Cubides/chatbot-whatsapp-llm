@@ -95,7 +95,7 @@ class TestAuthManager:
     def test_verify_token_valid(self):
         """Test verificación de token válido"""
         user_data = {
-            'username': 'test_user',
+            'username': 'test_admin',
             'role': 'admin',
             'permissions': ['all']
         }
@@ -104,7 +104,7 @@ class TestAuthManager:
         result = self.auth_manager.verify_token(token)
         
         assert result is not None
-        assert result['sub'] == 'test_user'
+        assert result['sub'] == 'test_admin'
         assert 'exp' in result
         assert 'iat' in result
     
@@ -198,12 +198,12 @@ class TestAuthDependencies:
             'role': 'operator',
             'permissions': ['view']
         }
-        
+    
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(non_admin_user)
-        
+    
         assert exc_info.value.status_code == 403
-        assert "se requiere rol de administrador" in str(exc_info.value.detail)
+        assert "Se requieren permisos de administrador" in str(exc_info.value.detail)
     
     @pytest.mark.asyncio
     async def test_require_admin_success(self):
