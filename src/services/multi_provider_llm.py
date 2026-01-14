@@ -21,6 +21,7 @@ class LLMProvider(Enum):
     OLLAMA = "ollama"
     LM_STUDIO = "lmstudio"
     XAI = "xai"
+    GROK = "grok"  # Alias para xAI
 
 @dataclass
 class APIConfig:
@@ -31,6 +32,8 @@ class APIConfig:
     active: bool = True
     max_tokens: int = 2000
     temperature: float = 0.7
+    is_reasoning: bool = False  # Para distinguir modelos de razonamiento
+    is_free: bool = False       # Para identificar modelos gratuitos
     
 class MultiProviderLLM:
     def __init__(self):
@@ -41,65 +44,77 @@ class MultiProviderLLM:
     def load_configurations(self):
         """Carga configuraciones de todos los proveedores desde .env"""
         
-        # Gemini
+        # Gemini (Excelente relación calidad/precio, bueno para uso general)
         if os.getenv('GEMINI_API_KEY'):
             self.providers[LLMProvider.GEMINI] = APIConfig(
                 name="Google Gemini",
                 api_key=os.getenv('GEMINI_API_KEY'),
                 base_url="https://generativelanguage.googleapis.com/v1beta",
-                model=os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')
+                model=os.getenv('GEMINI_MODEL', 'gemini-1.5-flash'),
+                is_reasoning=False,
+                is_free=True  # 15 RPM gratuitas
             )
         
-        # OpenAI
+        # xAI Grok (Excelente para razonamiento y análisis crítico)
+        if os.getenv('XAI_API_KEY'):
+            self.providers[LLMProvider.XAI] = APIConfig(
+                name="xAI Grok",
+                api_key=os.getenv('XAI_API_KEY'),
+                base_url=os.getenv('XAI_BASE_URL', 'https://api.x.ai/v1'),
+                model=os.getenv('XAI_MODEL', 'grok-beta'),
+                is_reasoning=True,  # Excelente para razonamiento
+                is_free=True  # Límites generosos en beta
+            )
+        
+        # OpenAI (Mejor calidad general, pero más caro)
         if os.getenv('OPENAI_API_KEY'):
             self.providers[LLMProvider.OPENAI] = APIConfig(
                 name="OpenAI",
                 api_key=os.getenv('OPENAI_API_KEY'),
                 base_url=os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-                model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+                model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
+                is_reasoning=True,  # GPT-4 es bueno para razonamiento
+                is_free=False  # Pago después del crédito inicial
             )
         
-        # Claude
+        # Claude (Excelente para análisis profundo)
         if os.getenv('CLAUDE_API_KEY'):
             self.providers[LLMProvider.CLAUDE] = APIConfig(
                 name="Anthropic Claude",
                 api_key=os.getenv('CLAUDE_API_KEY'),
                 base_url="https://api.anthropic.com",
-                model=os.getenv('CLAUDE_MODEL', 'claude-3-haiku-20240307')
+                model=os.getenv('CLAUDE_MODEL', 'claude-3-haiku-20240307'),
+                is_reasoning=True,
+                is_free=False
             )
         
-        # Ollama (Local)
+        # Ollama (Local, completamente gratuito)
         if self._check_ollama_available():
             self.providers[LLMProvider.OLLAMA] = APIConfig(
                 name="Ollama (Local)",
                 api_key=None,
                 base_url=os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434'),
-                model=os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
+                model=os.getenv('OLLAMA_MODEL', 'llama3.2:3b'),
+                is_reasoning=False,  # Modelos pequeños, menos razonamiento
+                is_free=True  # Completamente gratuito
             )
         
-        # LM Studio (Local)
+        # LM Studio (Local, completamente gratuito)
         if self._check_lmstudio_available():
             self.providers[LLMProvider.LM_STUDIO] = APIConfig(
                 name="LM Studio (Local)",
                 api_key=None,
                 base_url=os.getenv('LM_STUDIO_URL', 'http://127.0.0.1:1234/v1'),
-                model=os.getenv('LM_STUDIO_MODEL', 'nemotron-mini-4b-instruct')
+                model=os.getenv('LM_STUDIO_MODEL', 'nemotron-mini-4b-instruct'),
+                is_reasoning=False,
+                is_free=True  # Completamente gratuito
             )
         
-        # xAI Grok
-        if os.getenv('XAI_API_KEY'):
-            self.providers[LLMProvider.XAI] = APIConfig(
-                name="xAI Grok",
-                api_key=os.getenv('XAI_API_KEY'),
-                base_url="https://api.x.ai/v1",
-                model=os.getenv('XAI_MODEL', 'grok-beta')
-            )
-        
-        # Configurar orden de fallback
-        default_provider = os.getenv('DEFAULT_LLM_PROVIDER', 'gemini')
-        self._setup_fallback_order(default_provider)
+        # Configurar orden de fallback inteligente
+        self._setup_intelligent_fallback()
         
         logger.info(f"Configurados {len(self.providers)} proveedores de IA")
+        self._log_provider_capabilities()
     
     def _check_ollama_available(self) -> bool:
         """Verifica si Ollama está disponible"""
@@ -119,37 +134,97 @@ class MultiProviderLLM:
         except:
             return False
     
-    def _setup_fallback_order(self, default_provider: str):
-        """Configura el orden de fallback de proveedores"""
-        # Prioridad: Default -> Locales (gratis) -> Comerciales (pagos)
-        priority_order = [
-            default_provider,
-            'ollama',      # Local gratuito
-            'lmstudio',    # Local gratuito  
-            'gemini',      # Freemium generoso
-            'openai',      # Económico
-            'claude',      # Más caro
-            'xai'          # Beta
-        ]
+    def _setup_intelligent_fallback(self):
+        """Configura orden de fallback inteligente basado en benchmarks y uso"""
         
-        self.fallback_order = []
-        for provider_name in priority_order:
+        # Para conversaciones normales: Priorizar calidad/precio y velocidad
+        self.normal_fallback = []
+        self.reasoning_fallback = []
+        self.free_only_fallback = []
+        
+        # Orden personalizado desde .env o por defecto basado en benchmarks
+        fallback_order_env = os.getenv('AI_FALLBACK_ORDER', 'gemini,xai,openai,claude,ollama,lmstudio').split(',')
+        
+        # Clasificar proveedores por tipo
+        for provider_name in fallback_order_env:
             try:
+                if provider_name == 'grok':
+                    provider_name = 'xai'  # Alias
+                
                 provider = LLMProvider(provider_name)
-                if provider in self.providers and self.providers[provider].active:
-                    self.fallback_order.append(provider)
+                if provider not in self.providers or not self.providers[provider].active:
+                    continue
+                
+                config = self.providers[provider]
+                
+                # Para conversaciones normales
+                self.normal_fallback.append(provider)
+                
+                # Para razonamiento (solo modelos buenos en razonamiento)
+                if config.is_reasoning:
+                    self.reasoning_fallback.append(provider)
+                
+                # Para modo gratuito únicamente
+                if config.is_free:
+                    self.free_only_fallback.append(provider)
+                    
             except ValueError:
+                logger.warning(f"Proveedor desconocido en fallback order: {provider_name}")
                 continue
         
-        logger.info(f"Orden de fallback: {[p.value for p in self.fallback_order]}")
+        # Si no hay modelos de razonamiento, usar los normales
+        if not self.reasoning_fallback:
+            self.reasoning_fallback = self.normal_fallback.copy()
+        
+        # Asegurar que siempre haya fallback gratuito
+        if not self.free_only_fallback:
+            self.free_only_fallback = [p for p in self.normal_fallback if self.providers[p].is_free]
+        
+        logger.info(f"Fallback normal: {[p.value for p in self.normal_fallback]}")
+        logger.info(f"Fallback razonamiento: {[p.value for p in self.reasoning_fallback]}")
+        logger.info(f"Fallback gratuito: {[p.value for p in self.free_only_fallback]}")
+    
+    def _log_provider_capabilities(self):
+        """Log de capacidades de cada proveedor"""
+        for provider, config in self.providers.items():
+            capabilities = []
+            if config.is_reasoning:
+                capabilities.append("🧠 Razonamiento")
+            if config.is_free:
+                capabilities.append("🆓 Gratuito")
+            if not config.api_key:
+                capabilities.append("📍 Local")
+            
+            logger.info(f"✅ {config.name}: {', '.join(capabilities) if capabilities else 'Estándar'}")
+    
+    def get_fallback_order(self, use_case: str = "normal", free_only: bool = False) -> List[LLMProvider]:
+        """Retorna el orden de fallback según el caso de uso"""
+        
+        if free_only or os.getenv('ENABLE_FREE_MODELS_FALLBACK', 'false').lower() == 'true':
+            return self.free_only_fallback
+        elif use_case == "reasoning":
+            return self.reasoning_fallback
+        else:
+            return self.normal_fallback
     
     async def generate_response(self, 
                               messages: List[Dict[str, str]], 
                               business_context: Optional[Dict] = None,
+                              use_case: str = "normal",
+                              free_only: bool = False,
                               max_retries: int = 3) -> Dict[str, Any]:
         """Genera respuesta usando el proveedor disponible con fallback automático"""
         
-        for provider in self.fallback_order:
+        # Determinar si el admin habilitó solo modelos gratuitos
+        admin_free_only = os.getenv('ENABLE_FREE_MODELS_FALLBACK', 'false').lower() == 'true'
+        if admin_free_only:
+            free_only = True
+        
+        fallback_providers = self.get_fallback_order(use_case, free_only)
+        
+        logger.info(f"Usando caso: {use_case}, solo gratuitos: {free_only}")
+        
+        for provider in fallback_providers:
             try:
                 logger.info(f"Intentando con proveedor: {provider.value}")
                 result = await self._call_provider(provider, messages, business_context)
@@ -161,7 +236,9 @@ class MultiProviderLLM:
                         'response': result['response'],
                         'provider': provider.value,
                         'model': self.providers[provider].model,
-                        'tokens_used': result.get('tokens_used', 0)
+                        'tokens_used': result.get('tokens_used', 0),
+                        'is_free': self.providers[provider].is_free,
+                        'use_case': use_case
                     }
                 
             except Exception as e:
@@ -171,9 +248,10 @@ class MultiProviderLLM:
         # Si todos los proveedores fallan
         return {
             'success': False,
-            'error': 'Todos los proveedores de IA no están disponibles',
+            'error': f'Todos los proveedores para {use_case} no están disponibles',
             'response': self._get_fallback_response(business_context),
-            'provider': 'fallback'
+            'provider': 'fallback',
+            'use_case': use_case
         }
     
     async def _call_provider(self, 
@@ -336,14 +414,95 @@ class MultiProviderLLM:
             return {'success': False, 'error': str(e)}
     
     async def _call_claude(self, config: APIConfig, messages: List[Dict]) -> Dict:
-        """Llama a Claude API"""
-        # Implementación similar a OpenAI pero con formato de Claude
-        return {'success': False, 'error': 'Claude no implementado aún'}
+        """Llama a Claude API con formato correcto de Anthropic"""
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "X-Api-Key": config.api_key,
+                "anthropic-version": "2023-06-01"
+            }
+            
+            # Convertir mensajes al formato de Claude
+            claude_messages = []
+            system_message = ""
+            
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_message += msg["content"] + "\n"
+                else:
+                    claude_messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+            
+            payload = {
+                "model": config.model,
+                "messages": claude_messages,
+                "max_tokens": config.max_tokens,
+                "temperature": config.temperature
+            }
+            
+            if system_message.strip():
+                payload["system"] = system_message.strip()
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{config.base_url}/v1/messages",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        content = data.get('content', [])
+                        if content and len(content) > 0:
+                            text = content[0].get('text', '')
+                            return {
+                                'success': True,
+                                'response': text,
+                                'tokens_used': data.get('usage', {}).get('input_tokens', 0) + 
+                                             data.get('usage', {}).get('output_tokens', 0)
+                            }
+                    
+                    error_text = await response.text()
+                    return {'success': False, 'error': f"Claude API Error: {error_text}"}
+        
+        except Exception as e:
+            return {'success': False, 'error': f"Claude Exception: {str(e)}"}
     
     async def _call_xai(self, config: APIConfig, messages: List[Dict]) -> Dict:
         """Llama a xAI Grok API"""
-        # Implementación similar a OpenAI
-        return {'success': False, 'error': 'xAI no implementado aún'}
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {config.api_key}"
+            }
+            
+            payload = {
+                "model": config.model,
+                "messages": messages,
+                "temperature": config.temperature,
+                "max_tokens": config.max_tokens
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{config.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return {
+                            'success': True,
+                            'response': data['choices'][0]['message']['content'],
+                            'tokens_used': data.get('usage', {}).get('total_tokens', 0)
+                        }
+                    
+                    error_text = await response.text()
+                    return {'success': False, 'error': f"xAI Error: {error_text}"}
+        
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
     
     def _get_fallback_response(self, context: Optional[Dict] = None) -> str:
         """Respuesta de emergencia cuando todos los proveedores fallan"""
@@ -363,10 +522,38 @@ class MultiProviderLLM:
                 'provider': provider.value,
                 'model': config.model,
                 'active': config.active,
-                'local': provider in [LLMProvider.OLLAMA, LLMProvider.LM_STUDIO]
+                'local': provider in [LLMProvider.OLLAMA, LLMProvider.LM_STUDIO],
+                'is_free': config.is_free,
+                'is_reasoning': config.is_reasoning,
+                'capabilities': self._get_provider_capabilities(config)
             }
             for provider, config in self.providers.items()
         ]
+    
+    def _get_provider_capabilities(self, config: APIConfig) -> List[str]:
+        """Retorna lista de capacidades del proveedor"""
+        capabilities = []
+        if config.is_reasoning:
+            capabilities.append("Razonamiento")
+        if config.is_free:
+            capabilities.append("Gratuito")
+        if not config.api_key:
+            capabilities.append("Local")
+        return capabilities
+    
+    def get_providers_by_type(self, reasoning: bool = False, free_only: bool = False) -> List[Dict[str, Any]]:
+        """Retorna proveedores filtrados por tipo"""
+        all_providers = self.get_available_providers()
+        
+        filtered = []
+        for provider in all_providers:
+            if reasoning and not provider['is_reasoning']:
+                continue
+            if free_only and not provider['is_free']:
+                continue
+            filtered.append(provider)
+        
+        return filtered
 
 # Instancia global
 llm_manager = MultiProviderLLM()

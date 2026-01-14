@@ -4,7 +4,10 @@ from openai import OpenAI
 import faiss
 
 # 1) Inicializa cliente
-client = OpenAI(base_url="http://127.0.0.1:1234/v1", api_key="lm-studio")
+client = OpenAI(
+    base_url=os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234/v1"), 
+    api_key=os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
+)
 
 # 2) Carga y embebe cada documento
 docs, embs = [], []

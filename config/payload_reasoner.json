@@ -1,0 +1,26 @@
+{
+  "business_context": {
+    "name": "Mi Negocio",
+    "primary_goal": "Define aquí el objetivo principal con cada cliente (ej: generar ventas, agendar citas, brindar soporte)",
+    "conversion_keywords": [
+      "comprar",
+      "precio",
+      "costo",
+      "agendar",
+      "cita",
+      "contactar"
+    ]
+  },
+  "reasoning_objectives": [
+    "Identificar la intención del cliente",
+    "Evaluar el nivel de interés (frío/tibio/caliente)",
+    "Determinar el mejor enfoque para la conversación",
+    "Detectar oportunidades de conversión"
+  ],
+  "escalation_rules": [
+    "hablar con humano",
+    "persona real",
+    "no entiendes",
+    "estoy molesto"
+  ]
+}

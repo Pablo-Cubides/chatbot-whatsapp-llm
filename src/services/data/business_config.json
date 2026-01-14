@@ -1,0 +1,124 @@
+{
+  "business_info": {
+    "name": "Mi Negocio",
+    "description": "Coloca aquí la descripción de tu negocio, qué servicios ofreces, cuál es tu especialidad y qué te diferencia de la competencia",
+    "greeting": "¡Hola! Bienvenido/a a [NOMBRE_NEGOCIO]. ¿En qué puedo ayudarte hoy?",
+    "closing": "Gracias por contactarnos. ¡Que tengas un excelente día!",
+    "tone": "profesional_amigable",
+    "services": [
+      "Coloca aquí tus principales servicios o productos",
+      "Ejemplo: consultas, ventas, soporte técnico"
+    ],
+    "hours": "Lunes a Viernes 9:00 AM - 6:00 PM",
+    "contact_info": "Email: contacto@minegocio.com, Teléfono: +1-234-567-8900",
+    "website": "https://www.minegocio.com",
+    "location": "Ciudad, País"
+  },
+  "client_objectives": {
+    "primary_goal": "Define aquí el objetivo principal con cada cliente (ej: generar ventas, agendar citas, brindar soporte)",
+    "secondary_goals": [
+      "Objetivo secundario 1 (ej: recopilar información de contacto)",
+      "Objetivo secundario 2 (ej: fidelizar clientes existentes)"
+    ],
+    "conversion_keywords": [
+      "comprar",
+      "precio",
+      "costo",
+      "agendar",
+      "cita",
+      "contactar"
+    ],
+    "qualification_questions": [
+      "¿Cuál es tu nombre?",
+      "¿En qué puedo ayudarte específicamente?",
+      "¿Cuándo te gustaría que nos pongamos en contacto?"
+    ]
+  },
+  "conversation_flow": {
+    "greeting_variants": [
+      "¡Hola! 👋 Bienvenido/a a [NEGOCIO]",
+      "¡Buen día! Gracias por contactarnos",
+      "¡Hola! Me da mucho gusto saludarte"
+    ],
+    "fallback_responses": [
+      "Disculpa, no entendí tu consulta. ¿Podrías reformularla?",
+      "No estoy seguro de entender. ¿Podrías ser más específico?",
+      "Permíteme conectarte con un representante humano para mejor asistencia"
+    ],
+    "escalation_triggers": [
+      "hablar con humano",
+      "persona real",
+      "no entiendes",
+      "estoy molesto"
+    ]
+  },
+  "ai_behavior": {
+    "personality_traits": [
+      "Describe aquí cómo quieres que se comporte la IA",
+      "Ejemplo: profesional pero amigable, directo, detallista"
+    ],
+    "forbidden_topics": [
+      "Temas que la IA NO debe discutir",
+      "Ejemplo: política, religión, competencia"
+    ],
+    "response_length": "medium",
+    "use_emojis": true,
+    "formality_level": "casual_professional"
+  },
+  "business_rules": {
+    "working_hours": {
+      "enabled": true,
+      "schedule": {
+        "monday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "tuesday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "wednesday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "thursday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "friday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "saturday": {
+          "closed": true
+        },
+        "sunday": {
+          "closed": true
+        }
+      },
+      "outside_hours_message": "Gracias por contactarnos. Estamos fuera del horario de atención. Te responderemos lo antes posible en horario laboral."
+    },
+    "auto_responses": {
+      "thank_you": "¡Gracias por tu interés! ¿Te gustaría que te enviemos más información?",
+      "goodbye": "¡Hasta pronto! No dudes en contactarnos cuando necesites.",
+      "human_transfer": "Te voy a conectar con un representante humano que podrá ayudarte mejor."
+    }
+  },
+  "integrations": {
+    "calendar_booking": {
+      "enabled": false,
+      "service": "calendly",
+      "link": "https://calendly.com/tu-negocio"
+    },
+    "crm_integration": {
+      "enabled": false,
+      "service": "hubspot",
+      "webhook_url": ""
+    },
+    "payment_links": {
+      "enabled": false,
+      "service": "stripe",
+      "links": {}
+    }
+  }
+}

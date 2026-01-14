@@ -49,7 +49,7 @@ Este chatbot universal puede adaptarse a **cualquier tipo de negocio** para:
 - **Base de Datos Segura**: Integración con PostgreSQL/Supabase
 - **Cumplimiento GDPR**: Manejo responsable de datos personales
 
-## 🚀 **Instalación Rápida**
+## 🚀 **Instalación Rápida - Sistema Integrado**
 
 ### **Prerequisitos**
 ```bash
@@ -83,13 +83,45 @@ cp .env.example .env
 # Editar .env con tus APIs y configuración de negocio
 ```
 
-### **3. Iniciar Sistema**
+### **3. Iniciar Sistema Completo**
 ```bash
-# Inicio rápido
-python admin_panel.py
+# ⚡ NUEVO: Servidor Integrado con Todas las Características
+python main_server.py
 
-# Dashboard: http://localhost:8003/ui/index.html
+# 🌐 URLs de Acceso Completo:
+# Dashboard Principal:     http://localhost:8003/ui/index.html
+# Configurador Negocio:    http://localhost:8003/ui/business_config.html  
+# Chat de Prueba:          http://localhost:8003/ui/chat.html
+# Analytics Dashboard:     http://localhost:8003/ui/analytics.html
+# API Documentation:       http://localhost:8003/api/docs
 ```
+
+## 🎉 **¡NUEVO! Características Implementadas Recientemente**
+
+### 🔐 **Sistema de Autenticación Completo**
+- ✅ **JWT Authentication** - Tokens seguros con expiración
+- ✅ **Roles de Usuario** - Admin y Operador con permisos diferenciados
+- ✅ **Login Persistente** - Sesiones recordadas por 24 horas
+- ✅ **API Protegida** - Endpoints seguros con autorización
+
+### 💬 **Chat de Prueba en Tiempo Real**
+- ✅ **WebSocket Integration** - Chat en vivo para testing
+- ✅ **Interfaz Moderna** - UI responsive con typing indicators
+- ✅ **Conexión Automática** - Auto-reconecta en caso de desconexión
+- ✅ **Historial de Sesiones** - Guarda conversaciones de prueba
+
+### 📊 **Sistema de Analytics Avanzado**
+- ✅ **Dashboard Interactivo** - Métricas en tiempo real con Chart.js
+- ✅ **Base de Datos SQLite** - Almacenamiento local de métricas
+- ✅ **Múltiples Visualizaciones** - Gráficos de línea, barras y donut
+- ✅ **Auto-refresh** - Datos actualizados cada 30 segundos
+- ✅ **Exportar Datos** - Descarga de reportes en formato JSON
+
+### 🤖 **WhatsApp Integration Mejorada**
+- ✅ **Configuración Empresarial** - Integración con business_config
+- ✅ **Gestión de Estado** - Control completo del bot desde dashboard
+- ✅ **Monitoreo en Vivo** - Estado de conexión y actividad
+- ✅ **Logs Detallados** - Seguimiento completo de conversaciones
 
 ## ⚙️ **Configuración por Tipo de Negocio**
 
@@ -235,33 +267,54 @@ python admin_panel.py
 
 </div>
 
-## 🏗️ **System Architecture**
+## 🏗️ **Nueva Arquitectura del Sistema Integrado**
 
-### **Core Components**
+### **Core Components Actualizados**
 ```mermaid
 graph TB
-    A[WhatsApp Web] -->|Playwright Automation| B[Message Detector]
-    B --> C[Conversation Manager]
-    C --> D[LLM Processing Engine]
-    D --> E[Response Generator]
-    E --> F[WhatsApp Sender]
+    A[main_server.py] -->|FastAPI Integration| B[Authentication System]
+    A --> C[Chat System WebSocket]  
+    A --> D[Analytics System]
+    A --> E[WhatsApp System]
+    A --> F[Business Config Manager]
     
-    G[Admin Dashboard] -->|FastAPI| H[Manual Message Queue]
-    H --> I[Message Scheduler]
-    I --> F
+    B -->|JWT Tokens| G[Protected Endpoints]
+    C -->|Real-time| H[Chat Testing UI]
+    D -->|SQLite DB| I[Analytics Dashboard]
+    E -->|Playwright| J[WhatsApp Web]
+    F -->|JSON Config| K[AI Personalization]
     
-    J[RAG System] --> D
-    K[Context Manager] --> D
-    L[Reasoner Agent] --> D
+    L[Modern Web UI] -->|HTTPS/WSS| A
 ```
 
-### **Technology Stack**
-- **Backend**: Python 3.8+, FastAPI, SQLite, JSON-based storage
-- **Frontend**: HTML5, CSS3, JavaScript (Vanilla), Bootstrap 5
-- **Automation**: Playwright (Chromium), Browser session persistence
-- **AI Integration**: LM Studio, OpenAI API, Local LLMs (GGUF format)
-- **Vector Search**: FAISS, OpenAI Embeddings, RAG implementation
-- **Process Management**: Background workers, Queue systems, Task scheduling
+### **Technology Stack Actual**
+- **Backend**: Python 3.9+, FastAPI 2.0.0, SQLite, WebSockets
+- **Frontend**: HTML5, CSS3, JavaScript (Vanilla), Chart.js, Bootstrap 5
+- **Authentication**: JWT, bcrypt, role-based access control
+- **Real-time**: WebSocket connections, auto-reconnection, typing indicators
+- **Analytics**: SQLite database, time-series data, interactive charts
+- **Automation**: Playwright (Chromium), WhatsApp Web integration
+- **AI Integration**: Multi-provider LLM system with intelligent fallback
+
+### **Archivos del Sistema Integrado**
+```
+chatbot-whatsapp-llm/
+├── 🚀 main_server.py              # Servidor principal integrado (NUEVO)
+├── 🔐 auth_system.py             # Sistema de autenticación JWT (NUEVO)
+├── 💬 chat_system.py             # Chat en tiempo real WebSocket (NUEVO)
+├── 📊 analytics_system.py        # Sistema de analytics SQLite (NUEVO)
+├── 📱 whatsapp_system.py         # WhatsApp integration mejorada (NUEVO)
+├── 🏢 business_config_manager.py  # Gestor de configuración empresarial
+├── 🧠 multi_provider_llm.py      # Sistema multi-API inteligente
+├── ui/                           # Interfaces web modernas (ACTUALIZADA)
+│   ├── 🏠 index.html             # Dashboard principal con auth
+│   ├── ⚙️ business_config.html   # Configurador visual
+│   ├── 💬 chat.html              # Chat de prueba en tiempo real (NUEVO)
+│   └── 📊 analytics.html         # Dashboard analytics interactivo (NUEVO)
+└── data/                         # Datos persistentes
+    ├── business_config.json      # Configuración del negocio
+    └── analytics.db              # Base de datos analytics (NUEVO)
+```
 
 ## ✨ **Key Features & Technical Capabilities**
 

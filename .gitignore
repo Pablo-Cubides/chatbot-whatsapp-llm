@@ -1,24 +1,73 @@
-# Envs
-venv/
-.venv/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments
 .env
+.env.local
+.env.production
+.env.development
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
 # IDE
 .vscode/
+.idea/
+*.code-workspace
 
 # Logs
+*.log
 logs/
 data/logs/
-*.log
 automation.log
 
-# Caches/bytecode
-__pycache__/
-.pytest_cache/
-.cache/
-*.pyc
+# Temporary files
 *.tmp
 *.temp
+*~
 
 # Local data and profiles
 data/profile/
@@ -33,6 +82,8 @@ data/contacts_backup.json
 *.sqlite
 *.sqlite3
 chatbot_context.db
+analytics.db
+chatbot.db
 
 # Vector stores / embeddings / indices
 docs.index
@@ -51,9 +102,14 @@ docs.pkl
 Docs/
 backup_docs/
 Docs_original/
-payload.json
+config/secrets.json
 data/settings.json
 data/fernet.key
+
+# API Keys and secrets
+**/secrets.*
+**/*secret*
+**/api_keys.*
 
 # Conversations per chat
 contextos/
@@ -62,7 +118,19 @@ contextos/
 playwright/.auth/
 playwright/.cache/
 *.har
+.browsers/
+browser_profiles/
 
-# Windows specific
-*.bat
-*.ps1
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
+manual_queue.json
+scheduled.json
+contacts_backup.json
