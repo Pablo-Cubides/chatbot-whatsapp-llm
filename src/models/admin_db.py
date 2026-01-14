@@ -11,7 +11,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.pool import QueuePool, StaticPool
 from typing import Generator
 
-from models import Base
+from src.models.models import Base
 
 logger = logging.getLogger(__name__)
 

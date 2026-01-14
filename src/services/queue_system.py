@@ -12,7 +12,7 @@ from enum import Enum
 from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Enum as SQLEnum
 from sqlalchemy.orm import Session
 
-from models import Base
+from src.models.models import Base
 from src.models.admin_db import get_session
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class QueuedMessage(Base):
     retry_count = Column(Integer, default=0, nullable=False)
     max_retries = Column(Integer, default=3, nullable=False)
     error_message = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)  # campaign_id, media, etc.
+    extra_data = Column(JSON, nullable=True)  # campaign_id, media, etc.
 
 
 class Campaign(Base):
@@ -61,7 +61,7 @@ class Campaign(Base):
     total_messages = Column(Integer, default=0, nullable=False)
     sent_messages = Column(Integer, default=0, nullable=False)
     failed_messages = Column(Integer, default=0, nullable=False)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column(JSON, nullable=True)
 
 
 class QueueManager:
@@ -113,7 +113,7 @@ class QueueManager:
                 status=MessageStatus.PENDING,
                 priority=priority,
                 scheduled_at=when,
-                metadata=metadata or {},
+                extra_data=metadata or {},
                 max_retries=max_retries
             )
             
@@ -199,8 +199,8 @@ class QueueManager:
                 session.commit()
                 
                 # Actualizar campaign si aplica
-                if msg.metadata and msg.metadata.get('campaign_id'):
-                    self._update_campaign_stats(msg.metadata['campaign_id'], sent=True)
+                if msg.extra_data and msg.extra_data.get('campaign_id'):
+                    self._update_campaign_stats(msg.extra_data['campaign_id'], sent=True)
             
             session.close()
             return True
@@ -226,8 +226,8 @@ class QueueManager:
                 if msg.retry_count >= msg.max_retries:
                     msg.status = MessageStatus.FAILED
                     # Actualizar campaign
-                    if msg.metadata and msg.metadata.get('campaign_id'):
-                        self._update_campaign_stats(msg.metadata['campaign_id'], failed=True)
+                    if msg.extra_data and msg.extra_data.get('campaign_id'):
+                        self._update_campaign_stats(msg.extra_data['campaign_id'], failed=True)
                 else:
                     msg.status = MessageStatus.RETRY
                     # Reprogramar para dentro de X minutos
@@ -253,7 +253,9 @@ class QueueManager:
         try:
             session = get_session()
             
-            campaign_id = f"camp_{int(datetime.utcnow().timestamp())}"
+            # Generar ID único con microsegundos para evitar colisiones
+            timestamp = int(datetime.utcnow().timestamp() * 1000000)
+            campaign_id = f"camp_{timestamp}"
             
             campaign = Campaign(
                 campaign_id=campaign_id,
@@ -261,7 +263,7 @@ class QueueManager:
                 status="active",
                 created_by=created_by,
                 total_messages=total_messages,
-                metadata=metadata or {}
+                extra_data=metadata or {}
             )
             
             session.add(campaign)
@@ -299,7 +301,7 @@ class QueueManager:
                 "failed_messages": campaign.failed_messages,
                 "pending_messages": campaign.total_messages - campaign.sent_messages - campaign.failed_messages,
                 "success_rate": (campaign.sent_messages / campaign.total_messages * 100) if campaign.total_messages > 0 else 0,
-                "metadata": campaign.metadata
+                "metadata": campaign.extra_data  # Mantener 'metadata' en API por compatibilidad
             }
             
             session.close()
@@ -330,11 +332,15 @@ class QueueManager:
             if campaign:
                 campaign.status = "cancelled"
             
-            # Cancelar mensajes pendientes
-            session.query(QueuedMessage).filter(
-                QueuedMessage.metadata['campaign_id'].astext == campaign_id,
+            # Cancelar mensajes pendientes de esta campaña
+            # Obtener todos los mensajes pendientes y filtrar por campaign_id
+            pending_messages = session.query(QueuedMessage).filter(
                 QueuedMessage.status.in_([MessageStatus.PENDING, MessageStatus.RETRY])
-            ).update({"status": MessageStatus.CANCELLED})
+            ).all()
+            
+            for msg in pending_messages:
+                if msg.extra_data and msg.extra_data.get('campaign_id') == campaign_id:
+                    msg.status = MessageStatus.CANCELLED
             
             session.commit()
             session.close()
@@ -396,7 +402,7 @@ class QueueManager:
             "scheduled_at": msg.scheduled_at.isoformat() if msg.scheduled_at else None,
             "created_at": msg.created_at.isoformat(),
             "retry_count": msg.retry_count,
-            "metadata": msg.metadata
+            "metadata": msg.extra_data  # Mantener 'metadata' en API por compatibilidad
         }
     
     def _backup_to_json(self, msg: QueuedMessage):

@@ -12,7 +12,7 @@ from enum import Enum
 from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Boolean
 from sqlalchemy.orm import Session
 
-from models import Base
+from src.models.models import Base
 from src.models.admin_db import get_session
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class AlertRule(Base):
     severity = Column(String(20), default=AlertSeverity.MEDIUM, nullable=False)
     actions = Column(JSON, nullable=False)  # ['create_alert', 'mark_human_needed', 'notify_webhook']
     schedule = Column(JSON, nullable=True)  # horario activo
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     created_by = Column(String(100), nullable=False)
 
@@ -67,7 +67,7 @@ class Alert(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     resolved_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    extra_data = Column(JSON, nullable=True)
 
 
 class AlertManager:
@@ -223,7 +223,7 @@ class AlertManager:
                 message_text=message_text,
                 severity=severity,
                 status="open",
-                metadata=metadata or {}
+                extra_data=metadata or {}
             )
             
             session.add(alert)
@@ -336,7 +336,7 @@ class AlertManager:
                 severity=severity,
                 actions=actions,
                 schedule=schedule,
-                metadata=metadata or {},
+                extra_data=metadata or {},
                 created_by=created_by
             )
             
@@ -429,7 +429,7 @@ class AlertManager:
             "created_at": alert.created_at.isoformat(),
             "resolved_at": alert.resolved_at.isoformat() if alert.resolved_at else None,
             "notes": alert.notes,
-            "metadata": alert.metadata
+            "metadata": alert.extra_data  # Mantener 'metadata' en API por compatibilidad
         }
     
     def _rule_to_dict(self, rule: AlertRule) -> Dict[str, Any]:
@@ -443,7 +443,7 @@ class AlertManager:
             "severity": rule.severity,
             "actions": rule.actions,
             "schedule": rule.schedule,
-            "metadata": rule.metadata,
+            "metadata": rule.extra_data,  # Mantener 'metadata' en API por compatibilidad
             "created_at": rule.created_at.isoformat(),
             "created_by": rule.created_by
         }

@@ -8,12 +8,111 @@ y este proyecto adhiere al [Versionado Semántico](https://semver.org/lang/es/).
 ## [Unreleased]
 
 ### Planeado
-- Integración con WhatsApp Cloud API oficial
-- Soporte para múltiples idiomas en la UI
-- Dashboard de métricas en tiempo real con WebSockets
 - Integración con CRM (HubSpot, Salesforce)
 - Sistema de plugins para extensiones
-- API webhooks para integraciones
+- Dashboard de métricas en tiempo real con WebSockets
+- Soporte para múltiples idiomas en la UI
+
+---
+
+## [3.0.0] - 2024-01-14
+
+### 🚀 ENTERPRISE FEATURES - Phases 0-7 Complete
+
+#### Phase 0: Configuración Base y Tests
+- **Pytest configurado**: `asyncio_mode = auto` para soporte completo de tests async
+- **Tests corregidos**: 3 tests en `test_auth_system.py` ahora funcionando correctamente
+- **Código limpiado**: Eliminada función duplicada `require_admin` en `auth_system.py`
+
+#### Phase 1: Autenticación Unificada y Auditoría
+- **Autenticación híbrida JWT + Legacy**: Soporte simultáneo para JWT y token legacy con flag `LEGACY_TOKEN_ENABLED`
+- **Sistema de auditoría completo**: `src/services/audit_system.py` con modelo `AuditLog`
+- **Endpoints de auditoría**: `/api/audit/logs` y `/api/audit/stats` para admin
+- **Auditoría automática**: Login, logout, bulk_send, config_change, alert_create, alert_assign, alert_resolve
+- **Tracking de IP**: Registro de IPs y user agents en todas las acciones
+
+#### Phase 2: Cola de Mensajes y Scheduler
+- **Sistema de cola unificado**: `src/services/queue_system.py` con modelo `QueuedMessage`
+- **Respaldo JSON**: Compatible con `manual_queue.json` existente
+- **Campañas masivas**: Modelo `Campaign` para seguimiento de envíos bulk
+- **Scheduler worker**: `src/workers/scheduler_worker.py` como proceso separado con APScheduler
+- **Endpoints de cola**: `/api/queue/pending`, `/api/queue/enqueue`, `/api/queue/{id}/status`
+- **Endpoints de campañas**: `/api/campaigns` (GET/POST), `/api/campaigns/{id}` (GET/DELETE), pause/resume/cancel
+- **Prioridades**: Sistema de prioridad (high/normal/low) para mensajes en cola
+
+#### Phase 3: Sistema de Alertas Inteligente
+- **Motor de reglas**: `src/services/alert_system.py` con 3 tipos (keyword, regex, sentiment)
+- **Modelos Alert y AlertRule**: SQLAlchemy con severidades (high/medium/low) y estados (open/assigned/resolved)
+- **Reglas por defecto**: Urgencias, quejas y palabras clave agresivas pre-configuradas
+- **Endpoints completos**: `/api/alerts` CRUD, `/api/alerts/{id}/assign`, `/api/alerts/{id}/resolve`
+- **Gestión de reglas**: `/api/alert-rules` para crear/editar/eliminar reglas
+- **Webhooks**: Notificaciones configurables via `ALERT_WEBHOOK_URL`
+
+#### Phase 4: WhatsApp Dual Mode (Web + Cloud API)
+- **Abstracción de providers**: `src/services/whatsapp_provider.py` con interfaz `WhatsAppProvider`
+- **Mensajes normalizados**: `NormalizedMessage` y `SendResult` para unificación
+- **WhatsApp Web Provider**: `src/services/whatsapp_web_provider.py` wrapper para Playwright existente
+- **WhatsApp Cloud Provider**: `src/services/whatsapp_cloud_provider.py` con Meta Graph API v17
+- **DualProvider**: Routing inteligente con fallback automático (primary/backup)
+- **Factory pattern**: `WhatsAppProviderFactory.create_from_env()` según `WHATSAPP_MODE`
+- **Webhooks Cloud API**: `/webhooks/whatsapp` GET (verify) y POST (receive)
+- **Descarga de media**: Soporte para images, videos, audio, documents de Cloud API
+
+#### Phase 5: Transcripción de Audio
+- **faster-whisper integrado**: `src/services/audio_transcriber.py` v1.0.0
+- **Caché inteligente**: SHA256-based cache en `data/transcription_cache/`
+- **Modelos configurables**: tiny/base/small/medium/large via `WHISPER_MODEL_SIZE`
+- **Límites de tamaño**: `MAX_AUDIO_FILE_SIZE_MB` configurable (default 25MB)
+- **Integración automática**: CloudProvider transcribe audios automáticamente
+- **Opcional**: Flag `AUDIO_TRANSCRIPTION_ENABLED` para activar/desactivar
+
+#### Phase 6: Dockerización Completa
+- **Multi-container setup**: 4 servicios en `docker-compose.yml`
+- **Dockerfile API**: Python 3.11-slim para FastAPI/admin panel (puerto 8003)
+- **Dockerfile.worker-web**: Playwright con chromium para WhatsApp Web automation
+- **Dockerfile.scheduler**: Worker separado para APScheduler con scheduled.json
+- **PostgreSQL containerizado**: postgres:15-alpine con volumes persistentes
+- **Health checks**: Endpoint `/healthz` y checks de postgres
+- **Volumes**: postgres_data, whatsapp-profile, data/, logs/
+- **Network**: Bridge network `chatbot-network` para comunicación inter-contenedores
+
+#### Phase 7: UI Enterprise Updates
+- **alerts.html**: Dashboard completo de alertas con filtros, asignación, resolución
+- **index.html mejorado**: 4 nuevos cards (Alertas, Campañas, Scheduler, WhatsApp Provider)
+- **Funciones JS**: `showCampaigns()`, `showScheduler()`, `showWhatsAppProvider()`
+- **Auto-refresh**: Actualización automática cada 30 segundos
+- **Estadísticas visuales**: Cards con totales, abiertas, asignadas, resueltas
+- **Modales de acción**: Asignar alertas y resolver con notas
+- **Provider status**: Visualización de modo activo (web/cloud/both) con estado de ambos
+
+#### Configuración y Variables de Entorno
+- **JWT_SECRET**: Nuevo requerimiento para tokens seguros
+- **JWT_EXPIRE_MINUTES**: Duración de tokens (default 1440 = 24h)
+- **LEGACY_TOKEN_ENABLED**: Flag para soporte híbrido (default true)
+- **WHATSAPP_MODE**: web/cloud/both para selección de provider
+- **WHATSAPP_CLOUD_TOKEN**: Token de Meta Business Platform
+- **WHATSAPP_PHONE_ID**: Phone ID de Cloud API
+- **VERIFY_TOKEN**: Token para verificación de webhooks
+- **AUDIO_TRANSCRIPTION_ENABLED**: Activar transcripción (default false)
+- **WHISPER_MODEL_SIZE**: Modelo de Whisper (default base)
+- **ALERTS_ENABLED**: Sistema de alertas (default true)
+- **ALERT_WEBHOOK_URL**: URL para notificaciones de alertas
+- **AUDIT_ENABLED**: Sistema de auditoría (default true)
+- **DATABASE_URL**: PostgreSQL opcional (default SQLite)
+
+### 🐛 Corregido
+- Tests async funcionando correctamente con pytest-asyncio
+- Función duplicada `require_admin` eliminada
+- Logger no definido en `admin_panel.py`
+
+### 🧪 Testing
+- **test_queue_system.py**: 10 tests para cola y campañas
+- **test_alert_system.py**: 11 tests para alertas y reglas
+- **test_audio_transcriber.py**: 9 tests para transcripción con mocks
+- **test_whatsapp_providers.py**: 15 tests para providers y DualProvider
+
+### 📚 Dependencias Agregadas
+- **faster-whisper==1.0.0**: Transcripción de audio local
 
 ---
 

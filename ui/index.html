@@ -399,6 +399,62 @@
                         <i class="fas fa-network-wired"></i> Gestionar APIs
                     </button>
                 </div>
+
+                <!-- Sistema de Alertas -->
+                <div class="card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <div class="card-icon">
+                        <i class="fas fa-bell"></i>
+                    </div>
+                    <div class="card-title">Sistema de Alertas</div>
+                    <div class="card-description">
+                        Monitorea alertas automáticas, gestiona prioridades y asigna tareas a tu equipo en tiempo real.
+                    </div>
+                    <a href="alerts.html" class="card-button" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fas fa-exclamation-triangle"></i> Ver Alertas
+                    </a>
+                </div>
+
+                <!-- Campañas y Cola -->
+                <div class="card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white;">
+                    <div class="card-icon">
+                        <i class="fas fa-paper-plane"></i>
+                    </div>
+                    <div class="card-title">Campañas Masivas</div>
+                    <div class="card-description">
+                        Crea y gestiona campañas de mensajes masivos, programa envíos y monitorea el estado de la cola.
+                    </div>
+                    <button class="card-button" onclick="showCampaigns()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fas fa-bullhorn"></i> Gestionar Campañas
+                    </button>
+                </div>
+
+                <!-- Scheduler y WhatsApp Provider -->
+                <div class="card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white;">
+                    <div class="card-icon">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <div class="card-title">Mensajes Programados</div>
+                    <div class="card-description">
+                        Programa mensajes para envío futuro y configura el provider de WhatsApp (Web/Cloud API).
+                    </div>
+                    <button class="card-button" onclick="showScheduler()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fas fa-calendar-alt"></i> Ver Programados
+                    </button>
+                </div>
+
+                <!-- Estado WhatsApp Provider -->
+                <div class="card" style="background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); color: white;">
+                    <div class="card-icon">
+                        <i class="fab fa-whatsapp"></i>
+                    </div>
+                    <div class="card-title">WhatsApp Provider</div>
+                    <div class="card-description">
+                        Configura y monitorea el proveedor de WhatsApp: Web (Playwright) o Cloud API oficial.
+                    </div>
+                    <button class="card-button" onclick="showWhatsAppProvider()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fas fa-cog"></i> Configurar Provider
+                    </button>
+                </div>
             </div>
 
             <!-- Acciones Rápidas -->
@@ -483,6 +539,122 @@
 
         function viewLogs() {
             window.open('/api/logs', '_blank');
+        }
+
+        // Funciones nuevas: Campañas, Scheduler, WhatsApp Provider
+        async function showCampaigns() {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/api/campaigns', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) throw new Error('No se pudieron cargar campañas');
+                
+                const campaigns = await response.json();
+                
+                let message = '📢 CAMPAÑAS ACTIVAS\n\n';
+                
+                if (campaigns.length === 0) {
+                    message += 'No hay campañas activas.\n\n';
+                } else {
+                    campaigns.forEach(c => {
+                        message += `📊 ${c.name}\n`;
+                        message += `   Estado: ${c.status}\n`;
+                        message += `   Enviados: ${c.sent_count}/${c.total_messages}\n`;
+                        message += `   Creada: ${new Date(c.created_at).toLocaleDateString()}\n\n`;
+                    });
+                }
+                
+                message += 'Ir a "Mensajes Programados" para crear campañas.\n';
+                alert(message);
+                
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        async function showScheduler() {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/api/queue/pending', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) throw new Error('No se pudo cargar la cola');
+                
+                const messages = await response.json();
+                
+                let message = '🕒 MENSAJES PROGRAMADOS\n\n';
+                
+                if (messages.length === 0) {
+                    message += 'No hay mensajes en la cola.\n\n';
+                } else {
+                    const scheduled = messages.filter(m => m.scheduled_at);
+                    
+                    message += `Total en cola: ${messages.length}\n`;
+                    message += `Programados: ${scheduled.length}\n\n`;
+                    
+                    scheduled.slice(0, 5).forEach(m => {
+                        message += `📱 ${m.phone}\n`;
+                        message += `   Programado: ${new Date(m.scheduled_at).toLocaleString()}\n`;
+                        message += `   Prioridad: ${m.priority || 'normal'}\n\n`;
+                    });
+                    
+                    if (scheduled.length > 5) {
+                        message += `... y ${scheduled.length - 5} más\n`;
+                    }
+                }
+                
+                message += '\n💡 Usa /api/queue/enqueue para agregar mensajes';
+                alert(message);
+                
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        async function showWhatsAppProvider() {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/api/whatsapp/provider/status', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) throw new Error('No se pudo obtener estado del provider');
+                
+                const status = await response.json();
+                
+                let message = '📱 WHATSAPP PROVIDER STATUS\n\n';
+                message += `Modo configurado: ${status.mode || 'unknown'}\n`;
+                message += `Provider activo: ${status.active_provider || 'ninguno'}\n\n`;
+                
+                if (status.primary) {
+                    message += '🔵 PRIMARY PROVIDER:\n';
+                    message += `   Tipo: ${status.primary.provider}\n`;
+                    message += `   Disponible: ${status.primary.available ? '✅' : '❌'}\n`;
+                    if (status.primary.phone_id) {
+                        message += `   Phone ID: ${status.primary.phone_id}\n`;
+                    }
+                    message += '\n';
+                }
+                
+                if (status.backup) {
+                    message += '🟢 BACKUP PROVIDER:\n';
+                    message += `   Tipo: ${status.backup.provider}\n`;
+                    message += `   Disponible: ${status.backup.available ? '✅' : '❌'}\n\n`;
+                }
+                
+                message += '\n💡 Configura WHATSAPP_MODE en .env:\n';
+                message += '   - "web" = Solo WhatsApp Web (Playwright)\n';
+                message += '   - "cloud" = Solo Cloud API oficial\n';
+                message += '   - "both" = Dual mode con fallback\n';
+                
+                alert(message);
+                
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
         }
 
         // Auto-refresh del estado cada 30 segundos

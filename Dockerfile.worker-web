@@ -1,0 +1,35 @@
+# Dockerfile para WhatsApp Web Worker (Playwright)
+FROM mcr.microsoft.com/playwright/python:v1.40.0-focal
+
+LABEL maintainer="Pablo Cubides"
+LABEL description="WhatsApp Web Automator Worker con Playwright"
+
+# Variables de entorno
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Crear directorio de trabajo
+WORKDIR /app
+
+# Copiar requirements
+COPY requirements.txt .
+
+# Instalar dependencias Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Instalar navegadores Playwright
+RUN playwright install chromium
+RUN playwright install-deps chromium
+
+# Copiar código
+COPY . .
+
+# Crear directorios necesarios
+RUN mkdir -p /app/data/whatsapp-profile /app/logs /app/config
+
+# Volumen para perfil de WhatsApp (persistencia de sesión)
+VOLUME ["/app/data/whatsapp-profile"]
+
+# Comando por defecto
+CMD ["python", "whatsapp_automator.py"]

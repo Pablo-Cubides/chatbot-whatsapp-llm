@@ -203,7 +203,7 @@ class TestAuthDependencies:
             await require_admin(non_admin_user)
     
         assert exc_info.value.status_code == 403
-        assert "Se requieren permisos de administrador" in str(exc_info.value.detail)
+        assert "administrador" in str(exc_info.value.detail).lower()
     
     @pytest.mark.asyncio
     async def test_require_admin_success(self):

@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy import Column, Integer, String, DateTime, Text, JSON
 from sqlalchemy.orm import Session
 
-from models import Base
+from src.models.models import Base
 from src.models.admin_db import get_session
 
 logger = logging.getLogger(__name__)

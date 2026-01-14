@@ -15,6 +15,9 @@ import asyncio
 import logging
 from datetime import datetime
 
+# Setup logger
+logger = logging.getLogger(__name__)
+
 from admin_db import initialize_schema, get_session
 from sqlalchemy import text
 from models import ModelConfig, Rule, AllowedContact, UserContext, DailyContext, Contact, ChatProfile, ChatCounter
@@ -37,6 +40,8 @@ from src.services.auth_system import auth_manager, security, get_current_user, r
 from src.services.audit_system import audit_manager, log_login, log_logout, log_bulk_send, log_config_change
 from src.services.queue_system import queue_manager
 from src.services.alert_system import alert_manager
+from src.services.whatsapp_provider import get_provider
+from src.services.whatsapp_cloud_provider import verify_webhook
 
 def ensure_bot_disabled_by_default():
     """Ensure respond_to_all is false by default on startup"""
@@ -1842,7 +1847,7 @@ class AllowedContactCreate(BaseModel):
     chat_id: str
     initial_context: Optional[str] = ""
     objective: Optional[str] = ""
-       perfil: Optional[str] = ""
+    perfil: Optional[str] = ""
 
 
 @app.post('/api/contacts')
@@ -2403,33 +2408,6 @@ Genera el contenido personalizado:"""
         
     except Exception as e:
         return {"success": False, "error": f"Error en bulk send: {str(e)}"}
-                    fallback_message = payload.template.replace('{custom}', 'Mensaje personalizado')
-                    
-                    results.append({
-                        "contact": contact_number,
-                        "success": False,
-                        "message": fallback_message,
-                        "error": "No se pudo generar contenido personalizado"
-                    })
-                    
-            except Exception as e:
-                results.append({
-                    "contact": contact_number,
-                    "success": False,
-                    "error": f"Error procesando mensaje para {contact_number}: {str(e)}"
-                })
-        
-        successful_sends = sum(1 for r in results if r["success"])
-        total_contacts = len(payload.contacts)
-        
-        return {
-            "success": True,
-            "results": results,
-            "summary": f"Procesados {successful_sends}/{total_contacts} mensajes exitosamente"
-        }
-    
-    except Exception as e:
-        return {"success": False, "error": f"Error en envío masivo: {str(e)}"}
 
 @app.post('/api/media/upload')
 async def upload_media_file(file: UploadFile = File(...), messageType: str = "manual"):
@@ -3268,6 +3246,87 @@ async def delete_alert_rule(
         return {"success": True, "message": "Regla eliminada"}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== WHATSAPP CLOUD API WEBHOOKS ==============
+
+@app.get('/webhooks/whatsapp')
+async def whatsapp_webhook_verify(request: Request):
+    """Verificación de webhook de WhatsApp Cloud API"""
+    try:
+        mode = request.query_params.get("hub.mode")
+        token = request.query_params.get("hub.verify_token")
+        challenge = request.query_params.get("hub.challenge")
+        
+        if not mode or not token:
+            raise HTTPException(status_code=400, detail="Missing parameters")
+        
+        verified_challenge = verify_webhook(mode, token, challenge)
+        
+        if verified_challenge:
+            return JSONResponse(content=int(verified_challenge), media_type="text/plain")
+        else:
+            raise HTTPException(status_code=403, detail="Verification failed")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en verificación de webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/webhooks/whatsapp')
+async def whatsapp_webhook_receive(request: Request):
+    """Recepción de mensajes de WhatsApp Cloud API"""
+    try:
+        body = await request.json()
+        
+        # Obtener provider
+        provider = get_provider()
+        
+        # Normalizar mensaje
+        normalized_msg = provider.receive_message(body)
+        
+        if not normalized_msg:
+            return {"status": "ok", "message": "No processable message"}
+        
+        logger.info(f"📨 Mensaje recibido via Cloud API de {normalized_msg.chat_id}")
+        
+        # Verificar alertas
+        if normalized_msg.text:
+            alert_manager.check_alert_rules(
+                normalized_msg.text,
+                normalized_msg.chat_id,
+                {"provider": "cloud"}
+            )
+        
+        # Procesar mensaje (integrar con el pipeline de chat)
+        # TODO: Llamar a stub_chat o el sistema de respuesta
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logger.error(f"❌ Error procesando webhook de WhatsApp: {e}")
+        # Retornar 200 para que Meta no reintente
+        return {"status": "error", "message": str(e)}
+
+
+@app.get('/api/whatsapp/provider/status')
+async def get_whatsapp_provider_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Obtener estado del proveedor de WhatsApp actual"""
+    try:
+        provider = get_provider()
+        status = provider.get_status()
+        
+        mode = os.environ.get("WHATSAPP_MODE", "web")
+        
+        return {
+            "mode": mode,
+            "status": status,
+            "available": provider.is_available()
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
