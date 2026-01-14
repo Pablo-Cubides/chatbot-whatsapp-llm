@@ -1,14 +1,22 @@
-from fastapi import FastAPI, Depends, HTTPException, Header, Request, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, Header, Request, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 import requests
 import subprocess
 import json
 import os
+import io
+import asyncio
+import logging
+from datetime import datetime
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 from admin_db import initialize_schema, get_session
 from sqlalchemy import text
@@ -18,6 +26,8 @@ import stub_chat
 from string import Template as StrTemplate
 from fastapi.staticfiles import StaticFiles
 from reasoner import update_chat_context_and_profile
+from multi_provider_llm import MultiProviderLLM, APIConfig
+from business_config_manager import BusinessConfigManager, business_config
 
 # Import psutil with fallback
 try:
@@ -25,6 +35,13 @@ try:
 except ImportError:
     psutil = None
 
+# Import auth dependencies
+from src.services.auth_system import auth_manager, security, get_current_user, require_admin
+from src.services.audit_system import audit_manager, log_login, log_logout, log_bulk_send, log_config_change
+from src.services.queue_system import queue_manager
+from src.services.alert_system import alert_manager
+from src.services.whatsapp_provider import get_provider
+from src.services.whatsapp_cloud_provider import verify_webhook
 
 def ensure_bot_disabled_by_default():
     """Ensure respond_to_all is false by default on startup"""
@@ -1265,7 +1282,7 @@ def api_set_reasoner_model(request: ReasonerModelChangeRequest):
     except Exception as e:
         return {"error": str(e), "success": False}
 
-@app.get('/api/current-model')
+@app.get('/api/current-model', dependencies=[Depends(security)])
 def api_get_current_model():
     """Get current model from payload.json"""
     try:
@@ -1279,7 +1296,7 @@ def api_get_current_model():
 class ModelChangeRequest(BaseModel):
     model: str
 
-@app.put('/api/current-model')
+@app.put('/api/current-model', dependencies=[Depends(security)])
 def api_set_current_model(request: ModelChangeRequest):
     """Update current model in payload.json"""
     try:
@@ -1304,7 +1321,7 @@ def api_set_current_model(request: ModelChangeRequest):
     except Exception as e:
         return {"error": str(e), "success": False}
 
-@app.get('/api/whatsapp/status')
+@app.get('/api/whatsapp/status', dependencies=[Depends(security)])
 def api_whatsapp_status():
     """Check if WhatsApp automator is running"""
     try:
@@ -1343,7 +1360,7 @@ def api_whatsapp_status():
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
-@app.post('/api/whatsapp/start')
+@app.post('/api/whatsapp/start', dependencies=[Depends(security)])
 def api_whatsapp_start():
     """Start WhatsApp automator (with LM Studio validation)"""
     try:
@@ -1422,7 +1439,7 @@ def api_whatsapp_start():
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.post('/api/whatsapp/stop')
+@app.post('/api/whatsapp/stop', dependencies=[Depends(security)])
 def api_whatsapp_stop():
     """Stop WhatsApp automator"""
     try:
@@ -1981,6 +1998,53 @@ def api_remove_allowed_contact(chat_id: str, user=Depends(verify_token)):
         session.close()
 
 
+@app.post('/api/auth/login', response_model=Dict[str, Any])
+async def api_login(request: Request, credentials: Dict[str, str]):
+    """Login con JWT y auditoría"""
+    username = credentials.get("username")
+    password = credentials.get("password")
+    
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Usuario y password requeridos")
+    
+    # Obtener IP del cliente
+    client_ip = request.client.host if request.client else None
+    
+    auth_result = auth_manager.authenticate_user(username, password)
+    if not auth_result:
+        # Log de intento fallido
+        log_login(username, "unknown", ip=client_ip, success=False, error="Credenciales inválidas")
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+        
+    access_token = auth_manager.create_access_token(auth_result)
+    
+    # Log de login exitoso
+    log_login(username, auth_result.get("role", "unknown"), ip=client_ip, success=True)
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_info": auth_result,
+        "expires_in": auth_manager.access_token_expire_minutes * 60
+    }
+
+@app.post('/api/auth/logout')
+async def api_logout(request: Request, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Logout con auditoría"""
+    client_ip = request.client.host if request.client else None
+    log_logout(
+        current_user.get("username", "unknown"),
+        current_user.get("role", "unknown"),
+        ip=client_ip
+    )
+    return {"message": "Logout exitoso"}
+
+@app.get('/api/auth/me', dependencies=[Depends(security)])
+async def api_me(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Obtener info del usuario actual"""
+    return current_user
+
+
 @app.post('/api/settings/chat/toggle')
 def api_toggle_chat(user=Depends(verify_token)):
     # flip a boolean in settings
@@ -2243,9 +2307,20 @@ def api_send_whatsapp_message(payload: MessageSendRequest):
         return {"success": False, "error": f"Error enviando mensaje: {str(e)}"}
 
 @app.post('/api/whatsapp/bulk-send')
-def api_bulk_send_messages(payload: BulkMessageRequest):
-    """Send bulk messages to multiple contacts"""
+async def api_bulk_send_messages(payload: BulkMessageRequest, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Send bulk messages to multiple contacts usando el sistema de cola"""
     try:
+        # Crear campaña
+        campaign_id = queue_manager.create_campaign(
+            name=f"Bulk {payload.objective[:50]}",
+            created_by=current_user.get("username", "unknown"),
+            total_messages=len(payload.contacts),
+            metadata={
+                "objective": payload.objective,
+                "template": payload.template
+            }
+        )
+        
         results = []
         
         for contact_number in payload.contacts:
@@ -2271,35 +2346,37 @@ Genera el contenido personalizado:"""
                 if personalized_content:
                     # Replace template variables
                     final_message = payload.template.replace('{custom}', personalized_content)
-                    
-                    # Simulate sending (in real implementation, integrate with WhatsApp automator)
-                    import logging
-                    logging.info(f"Bulk message to {contact_number}: {final_message}")
-                    
-                    # Store in chat history
-                    try:
-                        history = chat_sessions.load_last_context(contact_number) or []
-                        history.append({'role': 'assistant', 'content': final_message, 'bulk': True})
-                        chat_sessions.save_context(contact_number, history)
-                    except Exception as e:
-                        print(f"Error saving bulk message to history for {contact_number}: {e}")
-                    
-                    results.append({
-                        "contact": contact_number,
-                        "success": True,
-                        "message": final_message
-                    })
                 else:
                     # Fallback without personalization
-                    fallback_message = payload.template.replace('{custom}', 'Mensaje personalizado')
-                    
-                    results.append({
-                        "contact": contact_number,
-                        "success": False,
-                        "message": fallback_message,
-                        "error": "No se pudo generar contenido personalizado"
-                    })
-                    
+                    final_message = payload.template.replace('{custom}', 'contenido personalizado')
+                
+                # Encolar mensaje en lugar de enviar directo
+                message_id = queue_manager.enqueue_message(
+                    chat_id=contact_number,
+                    message=final_message,
+                    priority=0,
+                    metadata={
+                        "campaign_id": campaign_id,
+                        "bulk": True,
+                        "objective": payload.objective
+                    }
+                )
+                
+                # Store in chat history
+                try:
+                    history = chat_sessions.load_last_context(contact_number) or []
+                    history.append({'role': 'assistant', 'content': final_message, 'bulk': True, 'campaign_id': campaign_id})
+                    chat_sessions.save_context(contact_number, history)
+                except Exception as e:
+                    print(f"Error saving bulk message to history for {contact_number}: {e}")
+                
+                results.append({
+                    "contact": contact_number,
+                    "success": True,
+                    "message_id": message_id,
+                    "message": final_message
+                })
+                
             except Exception as e:
                 results.append({
                     "contact": contact_number,
@@ -2310,14 +2387,27 @@ Genera el contenido personalizado:"""
         successful_sends = sum(1 for r in results if r["success"])
         total_contacts = len(payload.contacts)
         
+        # Log de auditoría
+        log_bulk_send(
+            current_user.get("username", "unknown"),
+            current_user.get("role", "unknown"),
+            campaign_id,
+            total_contacts,
+            {"objective": payload.objective, "successful": successful_sends}
+        )
+        
         return {
             "success": True,
+            "campaign_id": campaign_id,
+            "total": total_contacts,
+            "successful": successful_sends,
+            "failed": total_contacts - successful_sends,
             "results": results,
-            "summary": f"Procesados {successful_sends}/{total_contacts} mensajes exitosamente"
+            "message": f"Campaña creada. {successful_sends}/{total_contacts} mensajes encolados correctamente."
         }
-    
+        
     except Exception as e:
-        return {"success": False, "error": f"Error en envío masivo: {str(e)}"}
+        return {"success": False, "error": f"Error en bulk send: {str(e)}"}
 
 @app.post('/api/media/upload')
 async def upload_media_file(file: UploadFile = File(...), messageType: str = "manual"):
@@ -2778,6 +2868,467 @@ def api_migrate_model_types(user=Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         session.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 🏢 RUTAS DE CONFIGURACIÓN DE NEGOCIO
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/business/config")
+async def get_business_config():
+    """Obtiene la configuración actual del negocio"""
+    try:
+        return JSONResponse(content=business_config.config)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/business/config")
+async def update_business_config(data: dict):
+    """Actualiza la configuración completa del negocio"""
+    try:
+        business_config.config = business_config._merge_configs(
+            business_config.get_default_config(), 
+            data
+        )
+        
+        if business_config.save_config(business_config.config):
+            return JSONResponse(content={
+                "success": True, 
+                "message": "Configuración actualizada exitosamente"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error guardando configuración")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/business/config/field")
+async def update_business_field(data: dict):
+    """Actualiza un campo específico de la configuración"""
+    try:
+        field_path = data.get("field")
+        value = data.get("value")
+        
+        if not field_path:
+            raise HTTPException(status_code=400, detail="Campo 'field' requerido")
+        
+        if business_config.update_field(field_path, value):
+            return JSONResponse(content={
+                "success": True, 
+                "message": f"Campo {field_path} actualizado"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error actualizando campo")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/business/fields")
+async def get_editable_fields():
+    """Obtiene la lista de campos editables con sus metadatos"""
+    try:
+        return JSONResponse(content=business_config.get_editable_fields())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/business/config/export")
+async def export_business_config():
+    """Exporta la configuración como archivo JSON"""
+    try:
+        config_json = business_config.export_config()
+        
+        return StreamingResponse(
+            io.StringIO(config_json),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=business_config.json"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/business/config/import")
+async def import_business_config(file: UploadFile = File(...)):
+    """Importa configuración desde archivo JSON"""
+    try:
+        if not file.filename.endswith('.json'):
+            raise HTTPException(status_code=400, detail="Solo se permiten archivos JSON")
+        
+        content = await file.read()
+        config_json = content.decode('utf-8')
+        
+        if business_config.import_config(config_json):
+            return JSONResponse(content={
+                "success": True, 
+                "message": "Configuración importada exitosamente"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error importando configuración")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/business/config/reset")
+async def reset_business_config():
+    """Reinicia la configuración a los valores por defecto"""
+    try:
+        default_config = business_config.get_default_config()
+        business_config.config = default_config
+        
+        if business_config.save_config(default_config):
+            return JSONResponse(content={
+                "success": True, 
+                "message": "Configuración reiniciada a valores por defecto"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error reiniciando configuración")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/business/preview")
+async def preview_business_config():
+    """Previsualiza cómo se verá el payload generado"""
+    try:
+        # Simular actualización de payloads sin guardar
+        config = business_config.config
+        business_info = config.get('business_info', {})
+        client_objectives = config.get('client_objectives', {})
+        ai_behavior = config.get('ai_behavior', {})
+        
+        preview_prompt = business_config._build_main_prompt(config)
+        
+        return JSONResponse(content={
+            "business_name": business_info.get('name'),
+            "description": business_info.get('description'),
+            "primary_goal": client_objectives.get('primary_goal'),
+            "generated_prompt": preview_prompt,
+            "personality": ai_behavior.get('personality_traits', []),
+            "services": business_info.get('services', [])
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== AUDIT SYSTEM API ==============
+
+@app.get('/api/audit/logs')
+async def get_audit_logs(
+    username: Optional[str] = None,
+    action: Optional[str] = None,
+    resource: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Obtener logs de auditoría (solo admin)"""
+    try:
+        logs = audit_manager.get_logs(
+            username=username,
+            action=action,
+            resource=resource,
+            limit=limit,
+            offset=offset
+        )
+        return {"logs": logs, "count": len(logs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get('/api/audit/stats')
+async def get_audit_stats(current_user: Dict[str, Any] = Depends(require_admin)):
+    """Obtener estadísticas de auditoría (solo admin)"""
+    try:
+        stats = audit_manager.get_stats()
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== CAMPAIGN MANAGEMENT API ==============
+
+@app.get('/api/campaigns/{campaign_id}')
+async def get_campaign_status(campaign_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Obtener estado de una campaña"""
+    try:
+        status = queue_manager.get_campaign_status(campaign_id)
+        if not status:
+            raise HTTPException(status_code=404, detail="Campaña no encontrada")
+        return status
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/api/campaigns/{campaign_id}/pause')
+async def pause_campaign(campaign_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Pausar una campaña"""
+    try:
+        success = queue_manager.pause_campaign(campaign_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Campaña no encontrada")
+        return {"success": True, "message": f"Campaña {campaign_id} pausada"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/api/campaigns/{campaign_id}/resume')
+async def resume_campaign(campaign_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Reanudar una campaña"""
+    try:
+        success = queue_manager.resume_campaign(campaign_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Campaña no encontrada")
+        return {"success": True, "message": f"Campaña {campaign_id} reanudada"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete('/api/campaigns/{campaign_id}')
+async def cancel_campaign(campaign_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Cancelar una campaña"""
+    try:
+        success = queue_manager.cancel_campaign(campaign_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Campaña no encontrada")
+        return {"success": True, "message": f"Campaña {campaign_id} cancelada"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== ALERT SYSTEM API ==============
+
+@app.get('/api/alerts')
+async def get_alerts(
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    chat_id: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Obtener alertas con filtros"""
+    try:
+        alerts = alert_manager.get_alerts(
+            status=status,
+            severity=severity,
+            chat_id=chat_id,
+            assigned_to=assigned_to,
+            limit=limit,
+            offset=offset
+        )
+        return {"alerts": alerts, "count": len(alerts)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put('/api/alerts/{alert_id}/assign')
+async def assign_alert(
+    alert_id: str,
+    assigned_to: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Asignar una alerta a un operador"""
+    try:
+        success = alert_manager.assign_alert(alert_id, assigned_to)
+        if not success:
+            raise HTTPException(status_code=404, detail="Alerta no encontrada")
+        return {"success": True, "message": f"Alerta asignada a {assigned_to}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put('/api/alerts/{alert_id}/resolve')
+async def resolve_alert(
+    alert_id: str,
+    notes: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Resolver una alerta"""
+    try:
+        success = alert_manager.resolve_alert(alert_id, notes)
+        if not success:
+            raise HTTPException(status_code=404, detail="Alerta no encontrada")
+        return {"success": True, "message": "Alerta resuelta"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get('/api/alert-rules')
+async def get_alert_rules(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Obtener todas las reglas de alerta"""
+    try:
+        rules = alert_manager.get_rules()
+        return {"rules": rules, "count": len(rules)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AlertRuleCreate(BaseModel):
+    name: str
+    rule_type: str
+    pattern: str
+    severity: str
+    actions: List[str]
+    enabled: Optional[bool] = True
+    schedule: Optional[Dict] = None
+    metadata: Optional[Dict] = None
+
+
+@app.post('/api/alert-rules')
+async def create_alert_rule(
+    rule: AlertRuleCreate,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Crear una regla de alerta (solo admin)"""
+    try:
+        rule_id = alert_manager.create_rule(
+            name=rule.name,
+            rule_type=rule.rule_type,
+            pattern=rule.pattern,
+            severity=rule.severity,
+            actions=rule.actions,
+            created_by=current_user.get("username", "unknown"),
+            enabled=rule.enabled,
+            schedule=rule.schedule,
+            metadata=rule.metadata
+        )
+        
+        if not rule_id:
+            raise HTTPException(status_code=500, detail="Error creando regla")
+        
+        return {"success": True, "rule_id": rule_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put('/api/alert-rules/{rule_id}')
+async def update_alert_rule(
+    rule_id: int,
+    updates: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Actualizar una regla de alerta (solo admin)"""
+    try:
+        success = alert_manager.update_rule(rule_id, **updates)
+        if not success:
+            raise HTTPException(status_code=404, detail="Regla no encontrada")
+        return {"success": True, "message": "Regla actualizada"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete('/api/alert-rules/{rule_id}')
+async def delete_alert_rule(
+    rule_id: int,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Eliminar una regla de alerta (solo admin)"""
+    try:
+        success = alert_manager.delete_rule(rule_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Regla no encontrada")
+        return {"success": True, "message": "Regla eliminada"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== WHATSAPP CLOUD API WEBHOOKS ==============
+
+@app.get('/webhooks/whatsapp')
+async def whatsapp_webhook_verify(request: Request):
+    """Verificación de webhook de WhatsApp Cloud API"""
+    try:
+        mode = request.query_params.get("hub.mode")
+        token = request.query_params.get("hub.verify_token")
+        challenge = request.query_params.get("hub.challenge")
+        
+        if not mode or not token:
+            raise HTTPException(status_code=400, detail="Missing parameters")
+        
+        verified_challenge = verify_webhook(mode, token, challenge)
+        
+        if verified_challenge:
+            return JSONResponse(content=int(verified_challenge), media_type="text/plain")
+        else:
+            raise HTTPException(status_code=403, detail="Verification failed")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en verificación de webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/webhooks/whatsapp')
+async def whatsapp_webhook_receive(request: Request):
+    """Recepción de mensajes de WhatsApp Cloud API"""
+    try:
+        body = await request.json()
+        
+        # Obtener provider
+        provider = get_provider()
+        
+        # Normalizar mensaje
+        normalized_msg = provider.receive_message(body)
+        
+        if not normalized_msg:
+            return {"status": "ok", "message": "No processable message"}
+        
+        logger.info(f"📨 Mensaje recibido via Cloud API de {normalized_msg.chat_id}")
+        
+        # Verificar alertas
+        if normalized_msg.text:
+            alert_manager.check_alert_rules(
+                normalized_msg.text,
+                normalized_msg.chat_id,
+                {"provider": "cloud"}
+            )
+        
+        # Procesar mensaje (integrar con el pipeline de chat)
+        # TODO: Llamar a stub_chat o el sistema de respuesta
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logger.error(f"❌ Error procesando webhook de WhatsApp: {e}")
+        # Retornar 200 para que Meta no reintente
+        return {"status": "error", "message": str(e)}
+
+
+@app.get('/api/whatsapp/provider/status')
+async def get_whatsapp_provider_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Obtener estado del proveedor de WhatsApp actual"""
+    try:
+        provider = get_provider()
+        status = provider.get_status()
+        
+        mode = os.environ.get("WHATSAPP_MODE", "web")
+        
+        return {
+            "mode": mode,
+            "status": status,
+            "available": provider.is_available()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from datetime import datetime
 from openai import OpenAI
 
@@ -7,11 +8,17 @@ from admin_db import get_session
 from models import Conversation
 import chat_sessions as cs
 
+# Configure logger
+logger = logging.getLogger(__name__)
+
 HERE = os.path.dirname(__file__)
 REASONER_PAYLOAD_PATH = os.environ.get("REASONER_PAYLOAD_PATH", os.path.join(HERE, "payload_reasoner.json"))
 
 # LM Studio client
-client = OpenAI(base_url="http://127.0.0.1:1234/v1", api_key="lm-studio")
+client = OpenAI(
+    base_url=os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234/v1"), 
+    api_key=os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
+)
 
 
 def _load_payload_template():
@@ -79,6 +86,11 @@ def run_reasoner_for_chat(chat_id: str) -> int:
     payload["messages"] = messages
 
     # Call LM Studio
+    client = get_lm_studio_client()
+    if client is None:
+        logger.error("LM Studio cliente no disponible")
+        return
+    
     resp = client.chat.completions.create(**payload)
     text = resp.choices[0].message.content
 
@@ -109,8 +121,21 @@ from chat_sessions import (
 HERE = os.path.dirname(__file__)
 REASONER_PAYLOAD_PATH = os.environ.get("REASONER_PAYLOAD_PATH", os.path.join(HERE, "payload_reasoner.json"))
 
-# Initialize LM Studio client (same host)
-client = OpenAI(base_url="http://127.0.0.1:1234/v1", api_key="lm-studio")
+# Initialize LM Studio client (same host) - lazy initialization
+_client = None
+
+def get_lm_studio_client():
+    global _client
+    if _client is None:
+        try:
+            _client = OpenAI(
+                base_url=os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234/v1"), 
+                api_key=os.environ.get("LM_STUDIO_API_KEY", "lm-studio")
+            )
+        except Exception as e:
+            logger.error(f"Error inicializando cliente LM Studio: {e}")
+            _client = None
+    return _client
 
 
 def _load_payload() -> Dict[str, Any]:
@@ -163,6 +188,11 @@ def run_reasoner_for_chat(chat_id: str) -> int:
     messages, snapshot = _build_reasoner_messages(chat_id)
     payload["messages"].extend(messages)
 
+    client = get_lm_studio_client()
+    if client is None:
+        logger.error("LM Studio cliente no disponible para update_chat_context_and_profile")
+        return
+        
     resp = client.chat.completions.create(**payload)
     strategy_text = resp.choices[0].message.content
 
@@ -233,6 +263,11 @@ def update_chat_context_and_profile(chat_id: str) -> dict:
     ])
 
     # 2) Call model
+    client = get_lm_studio_client()
+    if client is None:
+        logger.error("LM Studio cliente no disponible para reason_and_update_profile")
+        return
+        
     resp = client.chat.completions.create(**payload)
     txt = resp.choices[0].message.content or ""
 

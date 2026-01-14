@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: chatbot-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chatbot}
+      POSTGRES_USER: ${POSTGRES_USER:-chatbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chatbot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chatbot-network
+
+  # API y Admin Panel
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chatbot-app
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-chatbot}
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - chatbot-network
+
+  # Worker para WhatsApp Web (Playwright)
+  worker-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker-web
+    container_name: chatbot-worker-web
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-chatbot}
+      WHATSAPP_MODE: web
+    volumes:
+      - ./data/whatsapp-profile:/app/data/whatsapp-profile
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - app
+    restart: unless-stopped
+    networks:
+      - chatbot-network
+    # Configuración para GUI de Playwright (opcional)
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+    # Si necesitas acceso a X11 en Linux
+    # volumes:
+    #   - /tmp/.X11-unix:/tmp/.X11-unix
+
+  # Worker para Scheduler
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: chatbot-scheduler
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-chatbot}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - app
+    restart: unless-stopped
+    networks:
+      - chatbot-network
+
+  # Redis (opcional - para caché avanzado)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: chatbot-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - chatbot-network
+
+volumes:
+  postgres_data:
+    driver: local
+  # redis_data:
+  #   driver: local
+
+networks:
+  chatbot-network:
+    driver: bridge
