@@ -13,6 +13,7 @@ import json
 import os
 import io
 import logging
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -53,6 +54,13 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ Sistema de analytics no disponible: {e}")
     analytics_manager = None
+
+try:
+    from services.realtime_metrics import realtime_metrics
+    logger.info("✅ Sistema de métricas en tiempo real cargado")
+except ImportError as e:
+    logger.warning(f"⚠️ Sistema de métricas en tiempo real no disponible: {e}")
+    realtime_metrics = None
 
 try:
     from services.whatsapp_system import WhatsAppManager
@@ -394,6 +402,68 @@ async def get_system_logs(lines: int = 100):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ═══════════════════════════════════════════════════════════════
+# 📊 WEBSOCKET - MÉTRICAS EN TIEMPO REAL
+# ═══════════════════════════════════════════════════════════════
+
+@app.websocket("/ws/metrics")
+async def websocket_metrics(websocket: WebSocket):
+    """
+    WebSocket para métricas en tiempo real
+    Se actualiza cada 5 segundos con estadísticas en vivo
+    """
+    if not realtime_metrics:
+        await websocket.close(code=1011, reason="Sistema de métricas no disponible")
+        return
+    
+    await realtime_metrics.connect(websocket)
+    
+    try:
+        # Mantener conexión abierta
+        while True:
+            # Esperar cualquier mensaje del cliente (ping/pong)
+            data = await websocket.receive_text()
+            
+            # Si el cliente envía "ping", responder con "pong"
+            if data == "ping":
+                await websocket.send_json({"type": "pong"})
+    
+    except WebSocketDisconnect:
+        realtime_metrics.disconnect(websocket)
+        logger.info("Cliente WebSocket desconectado")
+    
+    except Exception as e:
+        logger.error(f"❌ Error en WebSocket: {e}")
+        realtime_metrics.disconnect(websocket)
+
+@app.on_event("startup")
+async def startup_event():
+    """Inicializar sistemas al arrancar"""
+    logger.info("🚀 Iniciando sistemas...")
+    
+    # Iniciar loop de broadcast de métricas
+    if realtime_metrics:
+        realtime_metrics.start_broadcast_loop()
+        logger.info("✅ Loop de métricas en tiempo real iniciado")
+    
+    # Limpiar métricas viejas periódicamente (cada hora)
+    async def cleanup_metrics_task():
+        while True:
+            await asyncio.sleep(3600)  # 1 hora
+            if realtime_metrics:
+                realtime_metrics.cleanup_old_metrics()
+    
+    asyncio.create_task(cleanup_metrics_task())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Limpiar al cerrar"""
+    logger.info("⏸️ Deteniendo sistemas...")
+    
+    if realtime_metrics:
+        realtime_metrics.stop_broadcast_loop()
+        logger.info("✅ Loop de métricas detenido")
+
 if __name__ == "__main__":
     print("\n" + "="*80)
     print("🚀 WHATSAPP AI CHATBOT - ADMIN PANEL COMPLETO")
@@ -408,6 +478,7 @@ if __name__ == "__main__":
     print(f"   ✅ Sistema de Autenticación: {'SÍ' if auth_manager else 'NO'}")
     print(f"   ✅ Chat en Tiempo Real: {'SÍ' if chat_manager else 'NO'}")
     print(f"   ✅ Analytics & Métricas: {'SÍ' if analytics_manager else 'NO'}")
+    print(f"   ✅ Métricas en Tiempo Real: {'SÍ' if realtime_metrics else 'NO'}")
     print(f"   ✅ WhatsApp Integration: {'SÍ' if whatsapp_manager else 'NO'}")
     print(f"   ✅ Multi-API LLM: {'SÍ' if multi_llm else 'NO'}")
     print("="*80)

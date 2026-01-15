@@ -1,6 +1,6 @@
 """
 📱 Sistema de WhatsApp Mejorado
-Integración completa con configuración de negocio y multi-API
+Integración completa con configuración de negocio, multi-API y análisis de imágenes
 """
 
 import asyncio
@@ -10,6 +10,23 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from playwright.async_api import async_playwright
 import re
+
+# Importar sistema de humanización
+try:
+    from src.services.humanized_responses import response_manager
+    from src.services.silent_transfer import silent_transfer_manager
+    HUMANIZATION_AVAILABLE = True
+except ImportError:
+    HUMANIZATION_AVAILABLE = False
+    logging.warning("⚠️ Sistema de humanización no disponible")
+
+# Importar sistema de análisis de imágenes
+try:
+    from src.services.image_analyzer import image_analyzer
+    IMAGE_ANALYSIS_AVAILABLE = True
+except ImportError:
+    IMAGE_ANALYSIS_AVAILABLE = False
+    logging.warning("⚠️ Sistema de análisis de imágenes no disponible")
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +155,7 @@ class WhatsAppManager:
                 await asyncio.sleep(5)
     
     async def _process_incoming_message(self):
-        """Procesar mensaje entrante"""
+        """Procesar mensaje entrante (con soporte para imágenes)"""
         try:
             # Obtener información del chat actual
             chat_info = await self._get_current_chat_info()
@@ -147,8 +164,50 @@ class WhatsAppManager:
             
             contact_name = chat_info.get("name")
             message_text = chat_info.get("last_message")
+            has_image = chat_info.get("has_image", False)
             
-            if not message_text or not contact_name:
+            if not contact_name:
+                return
+            
+            # Detectar y analizar imagen si existe
+            image_description = None
+            if has_image and IMAGE_ANALYSIS_AVAILABLE:
+                logger.info(f"📸 Detectada imagen en mensaje de {contact_name}")
+                
+                # Descargar imagen
+                image_bytes = await self._detect_and_download_image()
+                
+                if image_bytes:
+                    # Obtener contexto de conversación
+                    conversation_history = self.active_chats.get(contact_name, {}).get("messages", [])
+                    context = message_text if message_text else "El usuario envió una imagen"
+                    
+                    # Analizar imagen
+                    analysis = await image_analyzer.analyze_image(
+                        image_bytes=image_bytes,
+                        context=context,
+                        conversation_history=conversation_history[-5:]  # Últimos 5 mensajes
+                    )
+                    
+                    if analysis['success']:
+                        image_description = analysis['description']
+                        provider = analysis['provider']
+                        cached = analysis.get('cached', False)
+                        
+                        logger.info(f"✅ Imagen analizada ({provider}, cached={cached}): {image_description[:100]}...")
+                        
+                        # Combinar texto + descripción de imagen
+                        if message_text:
+                            message_text = f"{message_text}\n\n[Usuario envió imagen: {image_description}]"
+                        else:
+                            message_text = f"[Usuario envió imagen: {image_description}]"
+                    else:
+                        logger.error(f"❌ Error analizando imagen: {analysis.get('error')}")
+                        # Continuar con el mensaje de texto si existe
+                        if not message_text:
+                            message_text = "[Usuario envió una imagen pero no se pudo analizar]"
+            
+            if not message_text:
                 return
             
             # Verificar si ya procesamos este mensaje
@@ -156,7 +215,7 @@ class WhatsAppManager:
             if message_id in self.active_chats.get(contact_name, {}).get("processed_messages", set()):
                 return
             
-            logger.info(f"Procesando mensaje de {contact_name}: {message_text}")
+            logger.info(f"Procesando mensaje de {contact_name}: {message_text[:100]}...")
             
             # Inicializar chat si es necesario
             if contact_name not in self.active_chats:
@@ -179,7 +238,9 @@ class WhatsAppManager:
             self.active_chats[contact_name]["messages"].append({
                 "role": "user",
                 "content": message_text,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "has_image": has_image,
+                "image_description": image_description
             })
             
             # Generar respuesta
@@ -216,14 +277,82 @@ class WhatsAppManager:
                     const lastMessage = messages[messages.length - 1];
                     const messageText = lastMessage ? lastMessage.querySelector('.copyable-text span')?.textContent : null;
                     
+                    // Detectar si el último mensaje contiene imagen
+                    const hasImage = lastMessage ? lastMessage.querySelector('img[src^="blob:"]') !== null : false;
+                    
                     return {
                         name: contactName,
                         last_message: messageText,
-                        message_count: messages.length
+                        message_count: messages.length,
+                        has_image: hasImage
                     };
                 }
             """)
         except:
+            return None
+    
+    async def _detect_and_download_image(self) -> Optional[bytes]:
+        """
+        Detecta si el último mensaje contiene imagen y la descarga
+        
+        Returns:
+            bytes de la imagen o None si no hay imagen
+        """
+        try:
+            # Buscar elemento de imagen en el último mensaje
+            image_element = await self.page.query_selector(
+                '[data-testid="msg-container"]:last-child img[src^="blob:"]'
+            )
+            
+            if not image_element:
+                logger.debug("No se detectó imagen en el último mensaje")
+                return None
+            
+            # Obtener src (blob URL)
+            blob_url = await image_element.get_attribute('src')
+            if not blob_url:
+                return None
+            
+            logger.info(f"📸 Detectada imagen: {blob_url[:50]}...")
+            
+            # Descargar blob como bytes
+            image_bytes = await self.page.evaluate(f"""
+                async (blobUrl) => {{
+                    try {{
+                        const response = await fetch(blobUrl);
+                        const blob = await response.blob();
+                        
+                        // Convertir blob a array buffer
+                        const arrayBuffer = await blob.arrayBuffer();
+                        
+                        // Convertir a base64 para poder transferir
+                        const bytes = new Uint8Array(arrayBuffer);
+                        let binary = '';
+                        for (let i = 0; i < bytes.length; i++) {{
+                            binary += String.fromCharCode(bytes[i]);
+                        }}
+                        return btoa(binary);
+                    }} catch (e) {{
+                        console.error('Error descargando imagen:', e);
+                        return null;
+                    }}
+                }}
+            """, blob_url)
+            
+            if not image_bytes:
+                logger.error("❌ No se pudo descargar la imagen")
+                return None
+            
+            # Decodificar de base64
+            import base64
+            decoded_bytes = base64.b64decode(image_bytes)
+            
+            logger.info(f"✅ Imagen descargada: {len(decoded_bytes) / 1024:.2f}KB")
+            
+            return decoded_bytes
+            
+        except Exception as e:
+            logger.error(f"❌ Error detectando/descargando imagen: {e}")
             return None
     
     async def _generate_response(self, contact_name: str, message_text: str) -> Optional[str]:

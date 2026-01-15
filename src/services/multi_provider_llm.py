@@ -1,6 +1,7 @@
 """
 🤖 Gestor de APIs Multi-Proveedor para Chatbot Universal
 Maneja múltiples proveedores de IA con fallback automático
+Incluye sistema de humanización y detección de respuestas bot
 """
 
 import os
@@ -13,6 +14,19 @@ from enum import Enum
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Importar sistema de humanización
+try:
+    from services.humanized_responses import (
+        humanized_responses, 
+        sensitive_handler,
+        HumanizedTiming
+    )
+    from services.silent_transfer import silent_transfer_manager, TransferReason
+    HUMANIZATION_AVAILABLE = True
+except ImportError:
+    logger.warning("⚠️ Sistema de humanización no disponible")
+    HUMANIZATION_AVAILABLE = False
 
 class LLMProvider(Enum):
     GEMINI = "gemini"
@@ -213,39 +227,129 @@ class MultiProviderLLM:
                               use_case: str = "normal",
                               free_only: bool = False,
                               max_retries: int = 3) -> Dict[str, Any]:
-        """Genera respuesta usando el proveedor disponible con fallback automático"""
+        """
+        Genera respuesta usando el proveedor disponible con fallback automático
+        Incluye sistema de humanización y detección de respuestas bot
+        """
+        
+        # Obtener mensaje del usuario para análisis contextual
+        user_message = messages[-1]["content"] if messages else ""
+        chat_id = business_context.get("chat_id") if business_context else "unknown"
         
         # Determinar si el admin habilitó solo modelos gratuitos
         admin_free_only = os.getenv('ENABLE_FREE_MODELS_FALLBACK', 'false').lower() == 'true'
         if admin_free_only:
             free_only = True
         
-        fallback_providers = self.get_fallback_order(use_case, free_only)
+        # Para negocios sensibles, priorizar modelos sin censura
+        business_type = business_context.get("business_type") if business_context else None
+        if HUMANIZATION_AVAILABLE and business_type and sensitive_handler.is_sensitive_business(business_type):
+            logger.info(f"🔞 Negocio sensible detectado: {business_type} - Priorizando modelos sin censura")
+            preferred_models = sensitive_handler.get_preferred_models(business_type)
+            # Reordenar fallback para priorizar modelos sin censura
+            fallback_providers = self._reorder_for_sensitive(self.get_fallback_order(use_case, free_only), preferred_models)
+        else:
+            fallback_providers = self.get_fallback_order(use_case, free_only)
         
         logger.info(f"Usando caso: {use_case}, solo gratuitos: {free_only}")
         
+        # Intentar con cada proveedor
         for provider in fallback_providers:
             try:
                 logger.info(f"Intentando con proveedor: {provider.value}")
                 result = await self._call_provider(provider, messages, business_context)
                 
                 if result and result.get('success'):
+                    response_text = result['response']
+                    
+                    # VALIDACIÓN DE HUMANIZACIÓN
+                    if HUMANIZATION_AVAILABLE:
+                        # 1. Detectar negación ética
+                        is_ethical_refusal = humanized_responses.detect_llm_ethical_refusal(response_text)
+                        
+                        if is_ethical_refusal:
+                            logger.error(f"❌ NEGACIÓN ÉTICA detectada en {provider.value}")
+                            logger.error(f"   Respuesta: {response_text[:200]}")
+                            
+                            # Si no es un modelo sin censura, intentar con siguiente
+                            if provider.value not in ["ollama", "lmstudio", "grok"]:
+                                logger.info("   Intentando con siguiente proveedor...")
+                                continue
+                        
+                        # 2. Validar que no suene a bot
+                        validation = humanized_responses.validate_llm_response(response_text)
+                        
+                        if not validation['is_valid']:
+                            logger.warning(f"⚠️ Respuesta suena a BOT: {validation['issues']}")
+                            # Humanizar respuesta
+                            response_text = humanized_responses.humanize_response(response_text)
+                            logger.info(f"✅ Respuesta humanizada aplicada")
+                    
                     logger.info(f"✅ Respuesta exitosa de {provider.value}")
                     return {
                         'success': True,
-                        'response': result['response'],
+                        'response': response_text,
                         'provider': provider.value,
                         'model': self.providers[provider].model,
                         'tokens_used': result.get('tokens_used', 0),
                         'is_free': self.providers[provider].is_free,
-                        'use_case': use_case
+                        'use_case': use_case,
+                        'was_humanized': validation.get('is_valid', True) if HUMANIZATION_AVAILABLE else False,
                     }
                 
             except Exception as e:
                 logger.warning(f"❌ Error con {provider.value}: {str(e)}")
                 continue
         
-        # Si todos los proveedores fallan
+        # TODOS LOS PROVEEDORES FALLARON - Manejo inteligente con humanización
+        logger.error("❌ TODOS los proveedores LLM fallaron")
+        
+        if HUMANIZATION_AVAILABLE:
+            # Análisis contextual de la falla
+            error_response = humanized_responses.get_error_response(
+                user_message=user_message,
+                error_type="llm_failure",
+                conversation_history=messages,
+                context=business_context
+            )
+            
+            # ¿Requiere transferencia silenciosa?
+            if error_response["transfer_to_human"]:
+                logger.error(f"🔇 TRANSFERENCIA SILENCIOSA activada para: {user_message[:50]}")
+                
+                # Crear transferencia
+                transfer_id = silent_transfer_manager.create_transfer(
+                    chat_id=chat_id,
+                    reason=TransferReason.SIMPLE_QUESTION_FAIL,
+                    trigger_message=user_message,
+                    conversation_history=messages[-10:] if len(messages) > 10 else messages,
+                    metadata={
+                        "all_llms_failed": True,
+                        "attempted_providers": [p.value for p in fallback_providers],
+                    },
+                    notify_client=False  # SILENCIOSO
+                )
+                
+                return {
+                    'success': False,
+                    'response': None,  # NO responder
+                    'action': 'silent_transfer',
+                    'transfer_id': transfer_id,
+                    'error': 'LLM failure - silent transfer initiated',
+                }
+            
+            # Dar respuesta humanizada y marcar para reintento
+            logger.info(f"💬 Respuesta humanizada: {error_response['response']}")
+            return {
+                'success': True,  # Técnicamente "exitoso" porque damos respuesta
+                'response': error_response['response'],
+                'action': 'humanized_fallback',
+                'should_retry': error_response.get('should_retry', False),
+                'delay_before_response': error_response.get('delay_before_response', 0),
+                'provider': 'humanized_fallback',
+            }
+        
+        # Sin sistema de humanización, fallback tradicional
         return {
             'success': False,
             'error': f'Todos los proveedores para {use_case} no están disponibles',
@@ -253,6 +357,41 @@ class MultiProviderLLM:
             'provider': 'fallback',
             'use_case': use_case
         }
+    
+    def _reorder_for_sensitive(self, providers: List[LLMProvider], preferred: List[str]) -> List[LLMProvider]:
+        """
+        Reordena proveedores para priorizar modelos sin censura
+        SOLO usa modelos que estén REALMENTE disponibles
+        """
+        if not preferred:
+            return providers
+        
+        # Filtrar solo los proveedores que realmente están disponibles
+        available_providers = [p for p in providers if p in self.providers]
+        
+        prioritized = []
+        remaining = []
+        
+        for provider in available_providers:
+            if provider.value in preferred:
+                # Verificar que el modelo esté realmente disponible y activo
+                if self.providers[provider].active:
+                    prioritized.append(provider)
+                else:
+                    logger.debug(f"⚠️ {provider.value} está en preferred pero no está activo")
+            else:
+                remaining.append(provider)
+        
+        # Si no hay modelos preferidos disponibles, usar online
+        if not prioritized:
+            logger.info("⚠️ Modelos sin censura no disponibles, usando modelos online")
+            # Priorizar Grok/xAI si está disponible (menos censurado que OpenAI/Gemini)
+            if LLMProvider.XAI in remaining:
+                grok_index = remaining.index(LLMProvider.XAI)
+                remaining.insert(0, remaining.pop(grok_index))
+        
+        return prioritized + remaining
+
     
     async def _call_provider(self, 
                            provider: LLMProvider, 
