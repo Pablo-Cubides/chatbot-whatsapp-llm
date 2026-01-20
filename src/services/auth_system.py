@@ -255,16 +255,3 @@ async def require_operator_or_admin(current_user: dict = Depends(get_current_use
             detail="Acceso denegado: se requiere rol de operador o administrador"
         )
     return current_user
-
-# Modelos Pydantic para autenticación
-from pydantic import BaseModel
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user_info: Dict[str, Any]
-    expires_in: int

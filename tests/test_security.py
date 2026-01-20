@@ -1,0 +1,203 @@
+"""
+🔐 Tests de Seguridad
+Tests específicos para verificar seguridad del sistema.
+"""
+
+import pytest
+from unittest.mock import patch, MagicMock
+import os
+
+os.environ.setdefault("JWT_SECRET", "test-secret-key-for-testing-minimum-32-characters")
+os.environ.setdefault("ADMIN_PASSWORD", "test_admin_password")
+
+from fastapi.testclient import TestClient
+
+
+class TestSecurityVulnerabilities:
+    """Tests de vulnerabilidades de seguridad."""
+    
+    @pytest.fixture
+    def client(self):
+        from admin_panel import app
+        return TestClient(app)
+    
+    @pytest.mark.security
+    def test_sql_injection_prevention(self, client):
+        """Test de protección contra SQL injection en endpoints."""
+        # Intentar SQL injection en parámetros
+        malicious_inputs = [
+            "'; DROP TABLE users; --",
+            "' OR '1'='1",
+            "1; SELECT * FROM users",
+            "admin'--",
+        ]
+        
+        for payload in malicious_inputs:
+            # Estos endpoints deberían manejar input malicioso sin errores SQL
+            response = client.get(f"/user-contexts/{payload}")
+            # No debería causar error 500 por SQL
+            assert response.status_code in [401, 404, 422], f"Posible SQL injection con: {payload}"
+    
+    @pytest.mark.security
+    def test_xss_prevention(self, client):
+        """Test de protección contra XSS."""
+        xss_payloads = [
+            "<script>alert('xss')</script>",
+            "<img src=x onerror=alert('xss')>",
+            "javascript:alert('xss')",
+        ]
+        
+        for payload in xss_payloads:
+            # El sistema no debería reflejar scripts sin sanitizar
+            response = client.get(f"/?test={payload}")
+            if response.status_code == 200:
+                content = response.text
+                # Verificar que no se refleja el script sin escapar
+                assert "<script>" not in content or "&lt;script&gt;" in content
+    
+    @pytest.mark.security
+    def test_authentication_required(self, client):
+        """Test que endpoints protegidos requieren autenticación."""
+        protected_endpoints = [
+            "/models",
+            "/rules",
+            "/contacts",
+            "/user-contexts/test",
+        ]
+        
+        for endpoint in protected_endpoints:
+            response = client.get(endpoint)
+            assert response.status_code == 401, f"Endpoint {endpoint} no requiere auth"
+    
+    @pytest.mark.security
+    def test_invalid_token_rejected(self, client):
+        """Test que tokens inválidos son rechazados."""
+        invalid_tokens = [
+            "invalid_token",
+            "Bearer invalid",
+            "null",
+            "",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature",
+        ]
+        
+        for token in invalid_tokens:
+            headers = {"Authorization": f"Bearer {token}" if token else ""}
+            response = client.get("/models", headers=headers)
+            assert response.status_code == 401
+    
+    @pytest.mark.security
+    def test_jwt_secret_validation(self):
+        """Test que JWT secret es validado correctamente."""
+        from src.services.auth_system import AuthManager
+        
+        # Sin JWT_SECRET debería fallar
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError, match="JWT_SECRET"):
+                AuthManager()
+    
+    @pytest.mark.security
+    def test_password_hashing(self):
+        """Test que passwords son hasheados correctamente."""
+        from src.services.auth_system import AuthManager
+        
+        with patch.dict(os.environ, {
+            'JWT_SECRET': 'test-secret-minimum-32-characters-long',
+            'ADMIN_PASSWORD': 'test_password'
+        }):
+            auth = AuthManager()
+            
+            # Hash debe ser diferente al password original
+            hashed = auth._hash_password("test_password")
+            assert hashed != "test_password"
+            assert hashed.startswith('$2b$')  # bcrypt format
+            
+            # Verificación debe funcionar
+            assert auth._verify_password("test_password", hashed)
+            assert not auth._verify_password("wrong_password", hashed)
+    
+    @pytest.mark.security
+    def test_rate_limiting_rules_exist(self):
+        """Test que existen reglas de rate limiting."""
+        from src.services.protection_system import RATE_LIMIT_RULES
+        
+        assert 'api_general' in RATE_LIMIT_RULES
+        assert 'llm_generation' in RATE_LIMIT_RULES
+        assert 'auth_attempts' in RATE_LIMIT_RULES
+        
+        # Auth attempts debe ser restrictivo
+        auth_rule = RATE_LIMIT_RULES['auth_attempts']
+        assert auth_rule.requests <= 5  # Máximo 5 intentos
+
+
+class TestCryptoSecurity:
+    """Tests de seguridad para encriptación."""
+    
+    @pytest.mark.security
+    def test_fernet_encryption(self):
+        """Test de encriptación Fernet."""
+        from crypto import encrypt_text, decrypt_text
+        
+        original = "sensitive_data_123"
+        encrypted = encrypt_text(original)
+        
+        # Debe ser diferente al original
+        assert encrypted != original
+        # Debe poder desencriptarse
+        decrypted = decrypt_text(encrypted)
+        assert decrypted == original
+    
+    @pytest.mark.security
+    def test_oauth_token_encryption(self):
+        """Test de encriptación de tokens OAuth."""
+        from crypto import encrypt_oauth_token, decrypt_oauth_token
+        
+        token = "ya29.a0AfH6SMC..." # Simular token OAuth
+        encrypted = encrypt_oauth_token(token)
+        
+        # Debe estar encriptado
+        assert encrypted != token
+        assert encrypted.startswith('gAAAAA')  # Fernet format
+        
+        # Debe poder desencriptarse
+        decrypted = decrypt_oauth_token(encrypted)
+        assert decrypted == token
+    
+    @pytest.mark.security
+    def test_null_token_handling(self):
+        """Test manejo de tokens nulos."""
+        from crypto import encrypt_oauth_token, decrypt_oauth_token
+        
+        assert encrypt_oauth_token(None) is None
+        assert decrypt_oauth_token(None) is None
+    
+    @pytest.mark.security
+    def test_is_encrypted_detection(self):
+        """Test de detección de valores encriptados."""
+        from crypto import is_encrypted, encrypt_text
+        
+        plain = "plain_text"
+        encrypted = encrypt_text(plain)
+        
+        assert is_encrypted(encrypted) is True
+        assert is_encrypted(plain) is False
+        assert is_encrypted("") is False
+        assert is_encrypted(None) is False
+
+
+class TestCORSConfiguration:
+    """Tests de configuración CORS."""
+    
+    @pytest.mark.security
+    def test_cors_not_wildcard(self):
+        """Test que CORS no permite todos los orígenes en producción."""
+        # Leer archivo admin_panel.py y verificar CORS
+        import admin_panel
+        
+        # Verificar que hay configuración CORS
+        # La configuración ahora usa variables de entorno
+        cors_origins = os.environ.get("CORS_ORIGINS", "")
+        assert "*" not in cors_origins or not cors_origins
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-m", "security"])

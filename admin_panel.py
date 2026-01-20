@@ -79,13 +79,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Chatbot Admin Panel", lifespan=lifespan)
 
-# Enable permissive CORS for local UI access
+# Configure CORS from environment variable
+_cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:8003,http://127.0.0.1:8003")
+_allowed_origins = [origin.strip() for origin in _cors_origins.split(",") if origin.strip()]
+# Allow localhost variants by default for development
+if not _allowed_origins:
+    _allowed_origins = ["http://localhost:8003", "http://127.0.0.1:8003"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 # Mount simple static UI

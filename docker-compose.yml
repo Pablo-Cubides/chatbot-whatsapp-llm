@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-chatbot}
       POSTGRES_USER: ${POSTGRES_USER:-chatbot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_THIS_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -30,7 +30,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-chatbot}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-CHANGE_THIS_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatbot}
     ports:
       - "8003:8003"
     volumes:
@@ -53,7 +53,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-chatbot}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-CHANGE_THIS_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatbot}
       WHATSAPP_MODE: web
     volumes:
       - ./data/whatsapp-profile:/app/data/whatsapp-profile
@@ -81,7 +81,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-chatbot}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-CHANGE_THIS_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatbot}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -92,27 +92,27 @@ services:
     networks:
       - chatbot-network
 
-  # Redis (opcional - para caché avanzado)
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: chatbot-redis
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #   networks:
-  #     - chatbot-network
+  # Redis para caché avanzado
+  redis:
+    image: redis:7-alpine
+    container_name: chatbot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chatbot-network
 
 volumes:
   postgres_data:
     driver: local
-  # redis_data:
-  #   driver: local
+  redis_data:
+    driver: local
 
 networks:
   chatbot-network:
