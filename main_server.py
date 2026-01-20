@@ -75,6 +75,49 @@ except ImportError as e:
     whatsapp_manager = None
     multi_llm = None
 
+# Importar sistema de citas
+try:
+    from services.calendar_service import calendar_manager, CalendarConfig, CalendarProvider
+    from services.google_calendar_provider import GoogleCalendarProvider
+    from services.outlook_calendar_provider import OutlookCalendarProvider
+    from services.appointment_flow import appointment_flow, AppointmentSession
+    
+    # Configurar proveedores de calendario si están habilitados
+    if business_config:
+        calendar_config = business_config.config.get("integrations", {}).get("calendar_booking", {})
+        if calendar_config.get("enabled"):
+            working_hours = calendar_config.get("working_hours", {})
+            provider = calendar_config.get("provider", "google_calendar")
+            
+            config = CalendarConfig(
+                provider=CalendarProvider(provider),
+                calendar_id=calendar_config.get(provider, {}).get("calendar_id", "primary"),
+                default_duration_minutes=calendar_config.get("default_duration_minutes", 30),
+                buffer_between_appointments=calendar_config.get("buffer_between_appointments", 15),
+                working_hours=working_hours
+            )
+            
+            if provider == "google_calendar":
+                google_provider = GoogleCalendarProvider(config)
+                calendar_manager.register_provider(google_provider)
+                calendar_manager.set_active_provider("google_calendar")
+            elif provider == "outlook":
+                outlook_config = calendar_config.get("outlook", {})
+                outlook_provider = OutlookCalendarProvider(config)
+                outlook_provider.configure(
+                    client_id=outlook_config.get("client_id", ""),
+                    client_secret=outlook_config.get("client_secret", ""),
+                    tenant_id=outlook_config.get("tenant_id", "common")
+                )
+                calendar_manager.register_provider(outlook_provider)
+                calendar_manager.set_active_provider("outlook")
+    
+    logger.info("✅ Sistema de citas cargado")
+except ImportError as e:
+    logger.warning(f"⚠️ Sistema de citas no disponible: {e}")
+    calendar_manager = None
+    appointment_flow = None
+
 # Crear app FastAPI
 app = FastAPI(
     title="WhatsApp AI Chatbot Admin Panel",
@@ -401,6 +444,303 @@ async def get_system_logs(lines: int = 100):
         return {"logs": f"Últimas {lines} líneas de logs (por implementar)"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ═══════════════════════════════════════════════════════════════
+# 📅 RUTAS DE CALENDARIO Y CITAS
+# ═══════════════════════════════════════════════════════════════
+
+if calendar_manager:
+    @app.get("/api/calendar/status")
+    async def get_calendar_status():
+        """Obtener estado del sistema de calendario"""
+        return JSONResponse(content={
+            "is_ready": calendar_manager.is_ready(),
+            "available_providers": calendar_manager.get_available_providers(),
+            "active_provider": calendar_manager._active_provider,
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    @app.get("/api/calendar/config")
+    async def get_calendar_config():
+        """Obtener configuración actual del calendario"""
+        if not business_config:
+            return JSONResponse(content={})
+        
+        calendar_config = business_config.config.get("integrations", {}).get("calendar_booking", {})
+        return JSONResponse(content=calendar_config)
+    
+    @app.post("/api/calendar/config")
+    async def save_calendar_config(config: dict):
+        """Guardar configuración del calendario"""
+        if not business_config:
+            raise HTTPException(status_code=500, detail="Business config not available")
+        
+        try:
+            # Get current config
+            current_config = business_config.config
+            if "integrations" not in current_config:
+                current_config["integrations"] = {}
+            if "calendar_booking" not in current_config["integrations"]:
+                current_config["integrations"]["calendar_booking"] = {}
+            
+            calendar_config = current_config["integrations"]["calendar_booking"]
+            
+            # Update with new values
+            for key, value in config.items():
+                if isinstance(value, dict) and key in calendar_config and isinstance(calendar_config[key], dict):
+                    calendar_config[key].update(value)
+                else:
+                    calendar_config[key] = value
+            
+            # Save config
+            business_config.save_config(current_config)
+            
+            # Reconfigure calendar provider if needed
+            if config.get("provider") and config.get("enabled"):
+                await _reconfigure_calendar_provider(calendar_config)
+            
+            return JSONResponse(content={"success": True, "message": "Configuración guardada"})
+            
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/api/calendar/google/credentials")
+    async def upload_google_credentials(credentials: UploadFile = File(...)):
+        """Subir archivo de credenciales de Google"""
+        import json
+        from pathlib import Path
+        
+        try:
+            content = await credentials.read()
+            creds_data = json.loads(content)
+            
+            # Validate it's a valid Google credentials file
+            if "installed" not in creds_data and "web" not in creds_data:
+                raise HTTPException(status_code=400, detail="Archivo de credenciales inválido")
+            
+            # Save to config directory
+            config_dir = Path(__file__).parent / "config"
+            config_dir.mkdir(exist_ok=True)
+            
+            creds_path = config_dir / "google_credentials.json"
+            with open(creds_path, "w") as f:
+                json.dump(creds_data, f)
+            
+            # Update provider path
+            provider = calendar_manager._providers.get("google_calendar")
+            if provider:
+                provider.set_credentials_path(str(creds_path))
+            
+            return JSONResponse(content={
+                "success": True,
+                "message": "Credenciales guardadas correctamente",
+                "path": str(creds_path)
+            })
+            
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="El archivo no es un JSON válido")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    async def _reconfigure_calendar_provider(config: dict):
+        """Reconfigurar proveedor de calendario con nueva configuración"""
+        try:
+            provider_name = config.get("provider", "google_calendar")
+            working_hours = config.get("working_hours", {})
+            
+            from services.calendar_service import CalendarConfig, CalendarProvider
+            
+            new_config = CalendarConfig(
+                provider=CalendarProvider(provider_name),
+                calendar_id=config.get(provider_name, {}).get("calendar_id", "primary"),
+                default_duration_minutes=config.get("default_duration_minutes", 30),
+                buffer_between_appointments=config.get("buffer_between_appointments", 15),
+                working_hours=working_hours
+            )
+            
+            provider = calendar_manager._providers.get(provider_name)
+            if provider:
+                provider.config = new_config
+                calendar_manager.set_active_provider(provider_name)
+                
+        except Exception as e:
+            logger.error(f"Error reconfiguring calendar: {e}")
+    
+    @app.get("/api/calendar/oauth/google/authorize")
+    async def google_oauth_authorize():
+        """Iniciar flujo OAuth para Google Calendar"""
+        try:
+            provider = calendar_manager._providers.get("google_calendar")
+            if not provider:
+                raise HTTPException(status_code=404, detail="Google Calendar provider not configured")
+            
+            auth_url = provider.get_oauth_url()
+            if not auth_url:
+                raise HTTPException(status_code=500, detail="Failed to generate OAuth URL. Check credentials file.")
+            
+            return JSONResponse(content={
+                "authorization_url": auth_url,
+                "instructions": "Redirect user to this URL to authorize Google Calendar access"
+            })
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/calendar/oauth/google/callback")
+    async def google_oauth_callback(code: str, state: str = None):
+        """Callback para completar OAuth de Google"""
+        try:
+            provider = calendar_manager._providers.get("google_calendar")
+            if not provider:
+                raise HTTPException(status_code=404, detail="Google Calendar provider not configured")
+            
+            redirect_uri = "http://localhost:8003/api/calendar/oauth/google/callback"
+            success = await provider.handle_oauth_callback(code, redirect_uri)
+            
+            if success:
+                return JSONResponse(content={
+                    "success": True,
+                    "message": "Google Calendar conectado exitosamente"
+                })
+            else:
+                raise HTTPException(status_code=400, detail="OAuth token exchange failed")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/calendar/oauth/outlook/authorize")
+    async def outlook_oauth_authorize():
+        """Iniciar flujo OAuth para Outlook Calendar"""
+        try:
+            provider = calendar_manager._providers.get("outlook")
+            if not provider:
+                raise HTTPException(status_code=404, detail="Outlook provider not configured")
+            
+            auth_url = provider.get_oauth_url()
+            if not auth_url:
+                raise HTTPException(status_code=500, detail="Failed to generate OAuth URL. Check credentials.")
+            
+            return JSONResponse(content={
+                "authorization_url": auth_url,
+                "instructions": "Redirect user to this URL to authorize Outlook access"
+            })
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/calendar/oauth/outlook/callback")
+    async def outlook_oauth_callback(code: str, state: str = None):
+        """Callback para completar OAuth de Outlook"""
+        try:
+            provider = calendar_manager._providers.get("outlook")
+            if not provider:
+                raise HTTPException(status_code=404, detail="Outlook provider not configured")
+            
+            redirect_uri = "http://localhost:8003/api/calendar/oauth/outlook/callback"
+            success = await provider.handle_oauth_callback(code, redirect_uri)
+            
+            if success:
+                return JSONResponse(content={
+                    "success": True,
+                    "message": "Outlook Calendar conectado exitosamente"
+                })
+            else:
+                raise HTTPException(status_code=400, detail="OAuth token exchange failed")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/api/appointments/availability")
+    async def get_availability(
+        date: str = None,
+        days: int = 7,
+        duration_minutes: int = 30
+    ):
+        """Obtener horarios disponibles para citas"""
+        try:
+            if date:
+                start_date = datetime.fromisoformat(date)
+            else:
+                start_date = datetime.now()
+            
+            end_date = start_date + timedelta(days=days)
+            
+            slots = await calendar_manager.get_free_slots(start_date, end_date, duration_minutes)
+            
+            return JSONResponse(content={
+                "available_slots": [slot.to_dict() for slot in slots],
+                "total_slots": len(slots),
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat()
+            })
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/api/appointments")
+    async def create_appointment(data: dict):
+        """Crear una nueva cita"""
+        try:
+            from services.calendar_service import AppointmentData
+            
+            appointment = AppointmentData(
+                title=data.get("title", "Cita"),
+                start_time=datetime.fromisoformat(data["start_time"]),
+                end_time=datetime.fromisoformat(data["end_time"]),
+                client_name=data["client_name"],
+                client_email=data.get("client_email"),
+                client_phone=data.get("client_phone"),
+                description=data.get("description"),
+                timezone=data.get("timezone", "America/Bogota"),
+                send_notifications=data.get("send_notifications", True),
+                add_video_conferencing=data.get("add_video_conferencing", True)
+            )
+            
+            result = await calendar_manager.create_appointment(appointment)
+            
+            if result.success:
+                return JSONResponse(content=result.to_dict())
+            else:
+                raise HTTPException(status_code=400, detail=result.error_message)
+                
+        except KeyError as e:
+            raise HTTPException(status_code=400, detail=f"Missing required field: {e}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.delete("/api/appointments/{external_id}")
+    async def cancel_appointment(external_id: str, notify: bool = True):
+        """Cancelar una cita existente"""
+        try:
+            success = await calendar_manager.cancel_appointment(external_id, notify)
+            
+            if success:
+                return JSONResponse(content={
+                    "success": True,
+                    "message": "Cita cancelada exitosamente"
+                })
+            else:
+                raise HTTPException(status_code=400, detail="No se pudo cancelar la cita")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+if appointment_flow:
+    @app.get("/api/appointments/sessions")
+    async def get_appointment_sessions():
+        """Obtener sesiones activas de agendamiento"""
+        sessions = {}
+        for chat_id, session in appointment_flow._sessions.items():
+            if not session.is_expired():
+                sessions[chat_id] = session.to_dict()
+        
+        return JSONResponse(content={
+            "active_sessions": sessions,
+            "total": len(sessions)
+        })
+    
+    @app.delete("/api/appointments/sessions/{chat_id}")
+    async def cancel_appointment_session(chat_id: str):
+        """Cancelar una sesión de agendamiento activa"""
+        message = appointment_flow.cancel_session(chat_id)
+        return JSONResponse(content={
+            "success": True,
+            "message": message or "Session not found"
+        })
 
 # ═══════════════════════════════════════════════════════════════
 # 📊 WEBSOCKET - MÉTRICAS EN TIEMPO REAL

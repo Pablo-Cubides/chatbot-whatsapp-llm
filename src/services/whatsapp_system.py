@@ -28,6 +28,14 @@ except ImportError:
     IMAGE_ANALYSIS_AVAILABLE = False
     logging.warning("⚠️ Sistema de análisis de imágenes no disponible")
 
+# Importar sistema de citas
+try:
+    from src.services.appointment_flow import appointment_flow
+    APPOINTMENT_FLOW_AVAILABLE = True
+except ImportError:
+    APPOINTMENT_FLOW_AVAILABLE = False
+    logging.warning("⚠️ Sistema de citas no disponible")
+
 logger = logging.getLogger(__name__)
 
 class WhatsAppManager:
@@ -243,8 +251,25 @@ class WhatsAppManager:
                 "image_description": image_description
             })
             
-            # Generar respuesta
-            response = await self._generate_response(contact_name, message_text)
+            # Verificar si hay flujo de citas activo o intento de agendar
+            appointment_response = None
+            if APPOINTMENT_FLOW_AVAILABLE and appointment_flow:
+                # Extraer teléfono del ID del chat si es posible
+                client_phone = self._extract_phone_from_chat(contact_name)
+                
+                # Procesar con el flujo de citas
+                appointment_response, flow_completed = await appointment_flow.process_message(
+                    chat_id=contact_name,
+                    message=message_text,
+                    client_phone=client_phone
+                )
+            
+            # Si hay respuesta del flujo de citas, usarla
+            if appointment_response:
+                response = appointment_response
+            else:
+                # Generar respuesta normal con IA
+                response = await self._generate_response(contact_name, message_text)
             
             if response:
                 # Enviar respuesta
@@ -446,6 +471,15 @@ class WhatsAppManager:
         except Exception as e:
             logger.error(f"Error enviando mensaje: {e}")
             return False
+    
+    def _extract_phone_from_chat(self, contact_name: str) -> Optional[str]:
+        """Extraer número de teléfono del identificador de chat si es posible"""
+        # WhatsApp contactos sin guardar aparecen como +XX XXXX XXXX
+        import re
+        phone_match = re.search(r'\+?\d[\d\s\-]{7,}', contact_name)
+        if phone_match:
+            return phone_match.group().replace(" ", "").replace("-", "")
+        return None
     
     def get_status(self) -> Dict[str, Any]:
         """Obtener estado actual del sistema"""

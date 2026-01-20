@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,7 +25,7 @@
             margin: 0 auto;
             background: white;
             border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             overflow: hidden;
         }
 
@@ -38,7 +39,7 @@
         .header h1 {
             font-size: 3rem;
             margin-bottom: 15px;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
         .header p {
@@ -63,7 +64,7 @@
             background: white;
             border-radius: 15px;
             padding: 30px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
             border: 1px solid #e9ecef;
             transition: all 0.3s ease;
             cursor: pointer;
@@ -71,7 +72,7 @@
 
         .card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
         }
 
         .card-icon {
@@ -114,13 +115,13 @@
         }
 
         .primary-card .card-button {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             color: white;
-            border: 1px solid rgba(255,255,255,0.3);
+            border: 1px solid rgba(255, 255, 255, 0.3);
         }
 
         .primary-card .card-button:hover {
-            background: rgba(255,255,255,0.3);
+            background: rgba(255, 255, 255, 0.3);
         }
 
         .config-card {
@@ -129,13 +130,13 @@
         }
 
         .config-card .card-button {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             color: white;
-            border: 1px solid rgba(255,255,255,0.3);
+            border: 1px solid rgba(255, 255, 255, 0.3);
         }
 
         .config-card .card-button:hover {
-            background: rgba(255,255,255,0.3);
+            background: rgba(255, 255, 255, 0.3);
         }
 
         .monitor-card {
@@ -144,13 +145,13 @@
         }
 
         .monitor-card .card-button {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             color: white;
-            border: 1px solid rgba(255,255,255,0.3);
+            border: 1px solid rgba(255, 255, 255, 0.3);
         }
 
         .monitor-card .card-button:hover {
-            background: rgba(255,255,255,0.3);
+            background: rgba(255, 255, 255, 0.3);
         }
 
         .api-card {
@@ -248,7 +249,7 @@
 
         .action-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
         .footer {
@@ -263,15 +264,15 @@
             .header h1 {
                 font-size: 2rem;
             }
-            
+
             .cards-grid {
                 grid-template-columns: 1fr;
             }
-            
+
             .quick-actions {
                 flex-direction: column;
             }
-            
+
             .action-btn {
                 width: 100%;
                 justify-content: center;
@@ -290,19 +291,174 @@
         .feature-highlight h3 {
             margin-bottom: 10px;
         }
+
+        /* Setup Checklist */
+        .setup-checklist {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 2px solid #e9ecef;
+        }
+
+        .setup-checklist h3 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .checklist-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .checklist-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
+            transition: all 0.3s;
+        }
+
+        .checklist-item.completed {
+            border-color: #28a745;
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        }
+
+        .checklist-item.pending {
+            border-color: #ffc107;
+        }
+
+        .checklist-icon {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .checklist-item.completed .checklist-icon {
+            background: #28a745;
+            color: white;
+        }
+
+        .checklist-item.pending .checklist-icon {
+            background: #ffc107;
+            color: white;
+        }
+
+        .checklist-item.not-started .checklist-icon {
+            background: #e9ecef;
+            color: #6c757d;
+        }
+
+        .user-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 40px;
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: white;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .setup-link {
+            color: #4facfe;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .setup-link:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
+            <div class="user-header">
+                <div class="user-info">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="usernameDisplay">Usuario</span>
+                </div>
+                <button class="logout-btn" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i> Cerrar Sesión
+                </button>
+            </div>
             <h1><i class="fas fa-robot"></i> WhatsApp AI Chatbot</h1>
-            <p>Panel de Control Unificado - Gestiona tu asistente virtual empresarial con múltiples proveedores de IA</p>
+            <p>Panel de Control Unificado - Gestiona tu asistente virtual empresarial con múltiples proveedores de IA
+            </p>
         </div>
 
         <div class="dashboard">
+            <!-- Setup Checklist -->
+            <div class="setup-checklist" id="setupChecklist">
+                <h3><i class="fas fa-tasks"></i> Progreso de Configuración</h3>
+                <div class="checklist-items">
+                    <div class="checklist-item not-started" id="checkBusiness">
+                        <div class="checklist-icon"><i class="fas fa-store"></i></div>
+                        <div>
+                            <strong>Configurar Negocio</strong>
+                            <div style="font-size: 0.85rem; color: #6c757d;">Nombre y descripción</div>
+                        </div>
+                    </div>
+                    <div class="checklist-item not-started" id="checkWhatsApp">
+                        <div class="checklist-icon"><i class="fab fa-whatsapp"></i></div>
+                        <div>
+                            <strong>WhatsApp</strong>
+                            <div style="font-size: 0.85rem; color: #6c757d;">Modo de conexión</div>
+                        </div>
+                    </div>
+                    <div class="checklist-item not-started" id="checkAI">
+                        <div class="checklist-icon"><i class="fas fa-brain"></i></div>
+                        <div>
+                            <strong>APIs de IA</strong>
+                            <div style="font-size: 0.85rem; color: #6c757d;">Proveedores configurados</div>
+                        </div>
+                    </div>
+                    <div class="checklist-item not-started" id="checkBot">
+                        <div class="checklist-icon"><i class="fas fa-play"></i></div>
+                        <div>
+                            <strong>Bot Activo</strong>
+                            <div style="font-size: 0.85rem; color: #6c757d;">Listo para mensajes</div>
+                        </div>
+                    </div>
+                </div>
+                <p style="margin-top: 15px; font-size: 0.9rem; color: #6c757d;">
+                    ¿Primera vez? <a href="setup.html" class="setup-link">Ir al asistente de configuración →</a>
+                </p>
+            </div>
+
             <div class="feature-highlight">
                 <h3><i class="fas fa-magic"></i> ¡Configuración 100% Personalizable!</h3>
-                <p>Ahora puedes personalizar completamente tu chatbot sin tipos de negocio predefinidos. Define tu propia personalidad, objetivos y flujo de conversación.</p>
+                <p>Ahora puedes personalizar completamente tu chatbot sin tipos de negocio predefinidos. Define tu
+                    propia personalidad, objetivos y flujo de conversación.</p>
             </div>
 
             <!-- Estado del Sistema -->
@@ -351,7 +507,8 @@
                     </div>
                     <div class="card-title">Configuración de Negocio</div>
                     <div class="card-description">
-                        Personaliza completamente tu chatbot: describe tu negocio, define la personalidad de la IA y configura el flujo de conversación.
+                        Personaliza completamente tu chatbot: describe tu negocio, define la personalidad de la IA y
+                        configura el flujo de conversación.
                     </div>
                     <a href="business_config.html" class="card-button">
                         <i class="fas fa-edit"></i> Configurar Ahora
@@ -365,7 +522,8 @@
                     </div>
                     <div class="card-title">Chat de Prueba</div>
                     <div class="card-description">
-                        Prueba tu chatbot directamente desde el panel. Verifica respuestas y ajusta la configuración en tiempo real.
+                        Prueba tu chatbot directamente desde el panel. Verifica respuestas y ajusta la configuración en
+                        tiempo real.
                     </div>
                     <a href="chat.html" class="card-button">
                         <i class="fas fa-play"></i> Probar Chat
@@ -393,7 +551,8 @@
                     </div>
                     <div class="card-title">Gestión de APIs</div>
                     <div class="card-description">
-                        Administra múltiples proveedores de IA: Gemini, OpenAI, Grok, Claude, Ollama y LM Studio con fallback inteligente.
+                        Administra múltiples proveedores de IA: Gemini, OpenAI, Grok, Claude, Ollama y LM Studio con
+                        fallback inteligente.
                     </div>
                     <button class="card-button" onclick="showApiManagement()">
                         <i class="fas fa-network-wired"></i> Gestionar APIs
@@ -409,7 +568,8 @@
                     <div class="card-description">
                         Monitorea alertas automáticas, gestiona prioridades y asigna tareas a tu equipo en tiempo real.
                     </div>
-                    <a href="alerts.html" class="card-button" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                    <a href="alerts.html" class="card-button"
+                        style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
                         <i class="fas fa-exclamation-triangle"></i> Ver Alertas
                     </a>
                 </div>
@@ -423,7 +583,8 @@
                     <div class="card-description">
                         Crea y gestiona campañas de mensajes masivos, programa envíos y monitorea el estado de la cola.
                     </div>
-                    <button class="card-button" onclick="showCampaigns()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                    <button class="card-button" onclick="showCampaigns()"
+                        style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
                         <i class="fas fa-bullhorn"></i> Gestionar Campañas
                     </button>
                 </div>
@@ -437,7 +598,8 @@
                     <div class="card-description">
                         Programa mensajes para envío futuro y configura el provider de WhatsApp (Web/Cloud API).
                     </div>
-                    <button class="card-button" onclick="showScheduler()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                    <button class="card-button" onclick="showScheduler()"
+                        style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
                         <i class="fas fa-calendar-alt"></i> Ver Programados
                     </button>
                 </div>
@@ -451,9 +613,25 @@
                     <div class="card-description">
                         Configura y monitorea el proveedor de WhatsApp: Web (Playwright) o Cloud API oficial.
                     </div>
-                    <button class="card-button" onclick="showWhatsAppProvider()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                    <button class="card-button" onclick="showWhatsAppProvider()"
+                        style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
                         <i class="fas fa-cog"></i> Configurar Provider
                     </button>
+                </div>
+
+                <!-- Calendario y Citas -->
+                <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #f093fb 100%); color: white;">
+                    <div class="card-icon">
+                        <i class="fas fa-calendar-alt"></i>
+                    </div>
+                    <div class="card-title">Calendario y Citas</div>
+                    <div class="card-description">
+                        Conecta Google Calendar o Outlook para agendar citas automáticamente desde WhatsApp.
+                    </div>
+                    <a href="calendar_config.html" class="card-button"
+                        style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fas fa-calendar-check"></i> Configurar Calendario
+                    </a>
                 </div>
             </div>
 
@@ -463,17 +641,17 @@
                     <i class="fas fa-magic"></i>
                     Configurar Mi Negocio
                 </a>
-                
+
                 <button class="action-btn action-success" onclick="startWhatsAppBot()">
                     <i class="fas fa-whatsapp"></i>
                     Iniciar WhatsApp Bot
                 </button>
-                
+
                 <button class="action-btn action-warning" onclick="testApis()">
                     <i class="fas fa-test-tube"></i>
                     Probar APIs
                 </button>
-                
+
                 <button class="action-btn action-danger" onclick="viewLogs()">
                     <i class="fas fa-file-alt"></i>
                     Ver Logs
@@ -483,7 +661,7 @@
 
         <div class="footer">
             <p>
-                <i class="fas fa-copyright"></i> 2024 WhatsApp AI Chatbot - 
+                <i class="fas fa-copyright"></i> 2024 WhatsApp AI Chatbot -
                 Configuración Enterprise Universal con Múltiples Proveedores de IA
             </p>
             <p style="margin-top: 5px; font-size: 12px;">
@@ -494,47 +672,174 @@
 
     <script>
         // Funciones del panel
-        function showApiManagement() {
-            alert('Función en desarrollo: Gestión avanzada de APIs\n\nCaracterísticas:\n- Monitor de uso por API\n- Configuración de fallback\n- Límites y quotas\n- Rotación automática');
+        async function showApiManagement() {
+            // Crear modal para gestión de APIs
+            const modal = document.createElement('div');
+            modal.id = 'apiModal';
+            modal.innerHTML = `
+                <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;">
+                    <div style="background:white;padding:30px;border-radius:15px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+                        <h2 style="margin:0 0 20px;color:#333;">🤖 Gestión de APIs de IA</h2>
+                        
+                        <div id="apiContent">
+                            <p>Cargando configuración...</p>
+                        </div>
+                        
+                        <hr style="margin:20px 0;">
+                        
+                        <h3>Agregar Proveedor Personalizado</h3>
+                        <form id="addProviderForm" style="display:grid;gap:10px;">
+                            <input type="text" id="providerName" placeholder="Nombre (ej: Mi OpenAI)" required style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                            <select id="providerType" required style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                                <option value="">Seleccionar tipo...</option>
+                                <option value="openai">OpenAI (GPT)</option>
+                                <option value="gemini">Google Gemini</option>
+                                <option value="claude">Anthropic Claude</option>
+                                <option value="xai">xAI Grok</option>
+                            </select>
+                            <input type="password" id="providerApiKey" placeholder="API Key" required style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                            <input type="text" id="providerModel" placeholder="Modelo (ej: gpt-4o-mini)" required style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                            <button type="submit" style="padding:10px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;">
+                                ➕ Agregar Proveedor
+                            </button>
+                        </form>
+                        
+                        <button onclick="document.getElementById('apiModal').remove();" style="margin-top:20px;padding:10px 20px;background:#666;color:white;border:none;border-radius:5px;cursor:pointer;">
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Cargar configuración actual
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch('/api/ai-models/config', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const config = await response.json();
+                    let html = '<div style="margin-bottom:20px;">';
+                    html += `<p><strong>Proveedor por defecto:</strong> ${config.default_provider || 'auto'}</p>`;
+
+                    if (config.custom_providers && config.custom_providers.length > 0) {
+                        html += '<h4>Proveedores personalizados:</h4><ul>';
+                        config.custom_providers.forEach(p => {
+                            html += `<li>${p.name} (${p.provider_type}) - ${p.model} 
+                                <button onclick="deleteProvider('${p.name}')" style="margin-left:10px;padding:2px 8px;background:#f44336;color:white;border:none;border-radius:3px;cursor:pointer;">❌</button>
+                            </li>`;
+                        });
+                        html += '</ul>';
+                    } else {
+                        html += '<p style="color:#666;">No hay proveedores personalizados configurados.</p>';
+                    }
+
+                    html += '</div>';
+                    document.getElementById('apiContent').innerHTML = html;
+                }
+            } catch (error) {
+                document.getElementById('apiContent').innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            }
+
+            // Manejar formulario
+            document.getElementById('addProviderForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const token = localStorage.getItem('token');
+                const data = {
+                    name: document.getElementById('providerName').value,
+                    provider_type: document.getElementById('providerType').value,
+                    api_key: document.getElementById('providerApiKey').value,
+                    model: document.getElementById('providerModel').value,
+                    active: true
+                };
+
+                try {
+                    const response = await fetch('/api/ai-models/custom-provider', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    const result = await response.json();
+                    if (result.success) {
+                        alert('✅ Proveedor agregado exitosamente');
+                        document.getElementById('apiModal').remove();
+                        showApiManagement();
+                    } else {
+                        alert('❌ Error: ' + result.detail);
+                    }
+                } catch (error) {
+                    alert('❌ Error: ' + error.message);
+                }
+            });
+        }
+
+        async function deleteProvider(name) {
+            if (!confirm(`¿Eliminar proveedor "${name}"?`)) return;
+
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/ai-models/custom-provider/${encodeURIComponent(name)}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    alert('✅ Proveedor eliminado');
+                    document.getElementById('apiModal').remove();
+                    showApiManagement();
+                } else {
+                    alert('❌ Error: ' + result.detail);
+                }
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
         }
 
         function startWhatsAppBot() {
             if (confirm('¿Iniciar el bot de WhatsApp? Asegúrate de tener la configuración de negocio completa.')) {
                 fetch('/api/whatsapp/start', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('✅ Bot de WhatsApp iniciado exitosamente');
-                        location.reload();
-                    } else {
-                        alert('❌ Error: ' + (data.message || 'No se pudo iniciar el bot'));
-                    }
-                })
-                .catch(error => {
-                    alert('❌ Error de conexión: ' + error.message);
-                });
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('✅ Bot de WhatsApp iniciado exitosamente');
+                            location.reload();
+                        } else {
+                            alert('❌ Error: ' + (data.message || 'No se pudo iniciar el bot'));
+                        }
+                    })
+                    .catch(error => {
+                        alert('❌ Error de conexión: ' + error.message);
+                    });
             }
         }
 
         function testApis() {
             alert('Probando conexión con todas las APIs...');
-            
+
             fetch('/api/test-apis', { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                const results = data.results || {};
-                let message = 'Resultados de las pruebas:\n\n';
-                
-                Object.keys(results).forEach(api => {
-                    const status = results[api] ? '✅' : '❌';
-                    message += `${status} ${api}: ${results[api] ? 'OK' : 'Error'}\n`;
+                .then(response => response.json())
+                .then(data => {
+                    const results = data.results || {};
+                    let message = 'Resultados de las pruebas:\n\n';
+
+                    Object.keys(results).forEach(api => {
+                        const status = results[api] ? '✅' : '❌';
+                        message += `${status} ${api}: ${results[api] ? 'OK' : 'Error'}\n`;
+                    });
+
+                    alert(message);
+                })
+                .catch(error => {
+                    alert('❌ Error probando APIs: ' + error.message);
                 });
-                
-                alert(message);
-            })
-            .catch(error => {
-                alert('❌ Error probando APIs: ' + error.message);
-            });
         }
 
         function viewLogs() {
@@ -543,32 +848,183 @@
 
         // Funciones nuevas: Campañas, Scheduler, WhatsApp Provider
         async function showCampaigns() {
+            // Crear modal para gestión de campañas
+            const modal = document.createElement('div');
+            modal.id = 'campaignModal';
+            modal.innerHTML = `
+                <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;">
+                    <div style="background:white;padding:30px;border-radius:15px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;">
+                        <h2 style="margin:0 0 20px;color:#333;">📢 Campañas Masivas</h2>
+                        
+                        <div id="campaignsList" style="margin-bottom:20px;">
+                            <p>Cargando campañas...</p>
+                        </div>
+                        
+                        <hr style="margin:20px 0;">
+                        
+                        <h3>➕ Crear Nueva Campaña</h3>
+                        <form id="createCampaignForm" style="display:grid;gap:10px;">
+                            <input type="text" id="campaignName" placeholder="Nombre de la campaña" required 
+                                style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                            
+                            <textarea id="campaignTemplate" placeholder="Mensaje template (usa {nombre} para personalizar)" 
+                                required rows="4" style="padding:10px;border:1px solid #ddd;border-radius:5px;resize:vertical;">¡Hola {nombre}! 👋 
+
+Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</textarea>
+                            
+                            <textarea id="campaignContacts" placeholder="Números de teléfono (uno por línea, ej: +57123456789)" 
+                                required rows="4" style="padding:10px;border:1px solid #ddd;border-radius:5px;resize:vertical;font-family:monospace;"></textarea>
+                            
+                            <div style="display:flex;gap:10px;">
+                                <input type="number" id="campaignDelay" value="5" min="1" max="60" 
+                                    style="flex:1;padding:10px;border:1px solid #ddd;border-radius:5px;">
+                                <span style="align-self:center;">segundos entre mensajes</span>
+                            </div>
+                            
+                            <button type="submit" style="padding:12px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;font-size:1em;">
+                                🚀 Crear Campaña
+                            </button>
+                        </form>
+                        
+                        <button onclick="document.getElementById('campaignModal').remove();" 
+                            style="margin-top:20px;padding:10px 20px;background:#666;color:white;border:none;border-radius:5px;cursor:pointer;">
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Cargar campañas existentes
             try {
                 const token = localStorage.getItem('token');
                 const response = await fetch('/api/campaigns', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                
-                if (!response.ok) throw new Error('No se pudieron cargar campañas');
-                
-                const campaigns = await response.json();
-                
-                let message = '📢 CAMPAÑAS ACTIVAS\n\n';
-                
-                if (campaigns.length === 0) {
-                    message += 'No hay campañas activas.\n\n';
-                } else {
-                    campaigns.forEach(c => {
-                        message += `📊 ${c.name}\n`;
-                        message += `   Estado: ${c.status}\n`;
-                        message += `   Enviados: ${c.sent_count}/${c.total_messages}\n`;
-                        message += `   Creada: ${new Date(c.created_at).toLocaleDateString()}\n\n`;
-                    });
+
+                if (response.ok) {
+                    const campaigns = await response.json();
+                    let html = '';
+
+                    if (!campaigns || campaigns.length === 0) {
+                        html = '<p style="color:#666;">No hay campañas activas. Crea una nueva a continuación.</p>';
+                    } else {
+                        html = '<div style="display:grid;gap:10px;">';
+                        campaigns.forEach(c => {
+                            const statusColor = c.status === 'running' ? '#4CAF50' :
+                                c.status === 'completed' ? '#2196F3' :
+                                    c.status === 'paused' ? '#FF9800' : '#666';
+                            html += `
+                                <div style="padding:15px;background:#f5f5f5;border-radius:10px;border-left:4px solid ${statusColor};">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                                        <strong>${c.name || 'Sin nombre'}</strong>
+                                        <span style="color:${statusColor};font-weight:bold;">${c.status?.toUpperCase() || 'UNKNOWN'}</span>
+                                    </div>
+                                    <div style="margin-top:5px;font-size:0.9em;color:#666;">
+                                        Enviados: ${c.sent_count || 0}/${c.total_messages || 0}
+                                        | Creada: ${c.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A'}
+                                    </div>
+                                    ${c.status === 'running' ? `
+                                        <button onclick="pauseCampaign('${c.id}')" 
+                                            style="margin-top:10px;padding:5px 10px;background:#FF9800;color:white;border:none;border-radius:3px;cursor:pointer;">
+                                            ⏸️ Pausar
+                                        </button>
+                                    ` : ''}
+                                    ${c.status === 'paused' ? `
+                                        <button onclick="resumeCampaign('${c.id}')" 
+                                            style="margin-top:10px;padding:5px 10px;background:#4CAF50;color:white;border:none;border-radius:3px;cursor:pointer;">
+                                            ▶️ Reanudar
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                    }
+
+                    document.getElementById('campaignsList').innerHTML = html;
                 }
-                
-                message += 'Ir a "Mensajes Programados" para crear campañas.\n';
-                alert(message);
-                
+            } catch (error) {
+                document.getElementById('campaignsList').innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            }
+
+            // Manejar formulario de creación
+            document.getElementById('createCampaignForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const token = localStorage.getItem('token');
+                const contacts = document.getElementById('campaignContacts').value
+                    .split('\n')
+                    .map(c => c.trim())
+                    .filter(c => c.length > 0);
+
+                if (contacts.length === 0) {
+                    alert('❌ Agrega al menos un número de contacto');
+                    return;
+                }
+
+                const data = {
+                    name: document.getElementById('campaignName').value,
+                    template: document.getElementById('campaignTemplate').value,
+                    contacts: contacts,
+                    delay_between_messages: parseInt(document.getElementById('campaignDelay').value) || 5
+                };
+
+                try {
+                    const response = await fetch('/api/campaigns', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    const result = await response.json();
+                    if (result.success) {
+                        alert(`✅ ${result.message}`);
+                        document.getElementById('campaignModal').remove();
+                        showCampaigns(); // Refrescar
+                    } else {
+                        alert('❌ Error: ' + (result.detail || result.message));
+                    }
+                } catch (error) {
+                    alert('❌ Error: ' + error.message);
+                }
+            });
+        }
+
+        async function pauseCampaign(campaignId) {
+            const token = localStorage.getItem('token');
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/pause`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('✅ Campaña pausada');
+                    document.getElementById('campaignModal').remove();
+                    showCampaigns();
+                }
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        async function resumeCampaign(campaignId) {
+            const token = localStorage.getItem('token');
+            try {
+                const response = await fetch(`/api/campaigns/${campaignId}/resume`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('✅ Campaña reanudada');
+                    document.getElementById('campaignModal').remove();
+                    showCampaigns();
+                }
             } catch (error) {
                 alert('❌ Error: ' + error.message);
             }
@@ -580,78 +1036,181 @@
                 const response = await fetch('/api/queue/pending', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                
+
                 if (!response.ok) throw new Error('No se pudo cargar la cola');
-                
+
                 const messages = await response.json();
-                
+
                 let message = '🕒 MENSAJES PROGRAMADOS\n\n';
-                
+
                 if (messages.length === 0) {
                     message += 'No hay mensajes en la cola.\n\n';
                 } else {
                     const scheduled = messages.filter(m => m.scheduled_at);
-                    
+
                     message += `Total en cola: ${messages.length}\n`;
                     message += `Programados: ${scheduled.length}\n\n`;
-                    
+
                     scheduled.slice(0, 5).forEach(m => {
                         message += `📱 ${m.phone}\n`;
                         message += `   Programado: ${new Date(m.scheduled_at).toLocaleString()}\n`;
                         message += `   Prioridad: ${m.priority || 'normal'}\n\n`;
                     });
-                    
+
                     if (scheduled.length > 5) {
                         message += `... y ${scheduled.length - 5} más\n`;
                     }
                 }
-                
+
                 message += '\n💡 Usa /api/queue/enqueue para agregar mensajes';
                 alert(message);
-                
+
             } catch (error) {
                 alert('❌ Error: ' + error.message);
             }
         }
 
         async function showWhatsAppProvider() {
+            // Crear modal para configuración de WhatsApp Provider
+            const modal = document.createElement('div');
+            modal.id = 'waModal';
+            modal.innerHTML = `
+                <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;">
+                    <div style="background:white;padding:30px;border-radius:15px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+                        <h2 style="margin:0 0 20px;color:#333;">📱 Configuración WhatsApp Provider</h2>
+                        
+                        <div id="waStatus">
+                            <p>Cargando estado...</p>
+                        </div>
+                        
+                        <hr style="margin:20px 0;">
+                        
+                        <h3>Cambiar Modo de Provider</h3>
+                        <div style="display:flex;gap:10px;margin-bottom:20px;">
+                            <button onclick="setProviderMode('web')" style="flex:1;padding:15px;border:2px solid #ddd;border-radius:10px;cursor:pointer;background:#f5f5f5;">
+                                <strong>🌐 Web</strong><br>
+                                <small>WhatsApp Web (Playwright)</small>
+                            </button>
+                            <button onclick="setProviderMode('cloud')" style="flex:1;padding:15px;border:2px solid #ddd;border-radius:10px;cursor:pointer;background:#f5f5f5;">
+                                <strong>☁️ Cloud</strong><br>
+                                <small>API Oficial de Meta</small>
+                            </button>
+                            <button onclick="setProviderMode('both')" style="flex:1;padding:15px;border:2px solid #ddd;border-radius:10px;cursor:pointer;background:#f5f5f5;">
+                                <strong>🔄 Dual</strong><br>
+                                <small>Ambos con fallback</small>
+                            </button>
+                        </div>
+                        
+                        <hr style="margin:20px 0;">
+                        
+                        <h3>☁️ Credenciales Cloud API</h3>
+                        <form id="cloudCredentialsForm" style="display:grid;gap:10px;">
+                            <input type="text" id="cloudPhoneId" placeholder="Phone Number ID" style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                            <input type="password" id="cloudToken" placeholder="Access Token" style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                            <input type="text" id="cloudVerifyToken" placeholder="Verify Token (para webhook)" style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                            <input type="text" id="cloudBusinessId" placeholder="Business Account ID (opcional)" style="padding:10px;border:1px solid #ddd;border-radius:5px;">
+                            <button type="submit" style="padding:10px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;">
+                                💾 Guardar Credenciales
+                            </button>
+                        </form>
+                        
+                        <button onclick="document.getElementById('waModal').remove();" style="margin-top:20px;padding:10px 20px;background:#666;color:white;border:none;border-radius:5px;cursor:pointer;">
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Cargar estado actual
             try {
                 const token = localStorage.getItem('token');
-                const response = await fetch('/api/whatsapp/provider/status', {
+                const response = await fetch('/api/whatsapp/provider/config', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                
-                if (!response.ok) throw new Error('No se pudo obtener estado del provider');
-                
-                const status = await response.json();
-                
-                let message = '📱 WHATSAPP PROVIDER STATUS\n\n';
-                message += `Modo configurado: ${status.mode || 'unknown'}\n`;
-                message += `Provider activo: ${status.active_provider || 'ninguno'}\n\n`;
-                
-                if (status.primary) {
-                    message += '🔵 PRIMARY PROVIDER:\n';
-                    message += `   Tipo: ${status.primary.provider}\n`;
-                    message += `   Disponible: ${status.primary.available ? '✅' : '❌'}\n`;
-                    if (status.primary.phone_id) {
-                        message += `   Phone ID: ${status.primary.phone_id}\n`;
+
+                if (response.ok) {
+                    const config = await response.json();
+                    let html = `<div style="padding:15px;background:#e8f5e9;border-radius:10px;">`;
+                    html += `<p><strong>Modo actual:</strong> <span style="color:#2e7d32;font-size:1.2em;">${config.mode?.toUpperCase() || 'WEB'}</span></p>`;
+
+                    if (config.cloud_api?.phone_number_id) {
+                        html += `<p><strong>Phone ID configurado:</strong> ${config.cloud_api.phone_number_id}</p>`;
                     }
-                    message += '\n';
+                    if (config.cloud_api?.access_token_masked) {
+                        html += `<p><strong>Token:</strong> ${config.cloud_api.access_token_masked}</p>`;
+                    }
+                    html += `</div>`;
+                    document.getElementById('waStatus').innerHTML = html;
+
+                    // Pre-llenar formulario
+                    if (config.cloud_api) {
+                        document.getElementById('cloudPhoneId').value = config.cloud_api.phone_number_id || '';
+                        document.getElementById('cloudVerifyToken').value = config.cloud_api.verify_token || '';
+                        document.getElementById('cloudBusinessId').value = config.cloud_api.business_account_id || '';
+                    }
                 }
-                
-                if (status.backup) {
-                    message += '🟢 BACKUP PROVIDER:\n';
-                    message += `   Tipo: ${status.backup.provider}\n`;
-                    message += `   Disponible: ${status.backup.available ? '✅' : '❌'}\n\n`;
+            } catch (error) {
+                document.getElementById('waStatus').innerHTML = `<p style="color:red;">Error: ${error.message}</p>`;
+            }
+
+            // Manejar formulario de credenciales
+            document.getElementById('cloudCredentialsForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const token = localStorage.getItem('token');
+                const data = {
+                    access_token: document.getElementById('cloudToken').value,
+                    phone_number_id: document.getElementById('cloudPhoneId').value,
+                    verify_token: document.getElementById('cloudVerifyToken').value,
+                    business_account_id: document.getElementById('cloudBusinessId').value
+                };
+
+                try {
+                    const response = await fetch('/api/whatsapp/cloud/credentials', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    const result = await response.json();
+                    if (result.success) {
+                        alert('✅ Credenciales guardadas exitosamente');
+                        document.getElementById('waModal').remove();
+                        showWhatsAppProvider();
+                    } else {
+                        alert('❌ Error: ' + (result.detail || result.message));
+                    }
+                } catch (error) {
+                    alert('❌ Error: ' + error.message);
                 }
-                
-                message += '\n💡 Configura WHATSAPP_MODE en .env:\n';
-                message += '   - "web" = Solo WhatsApp Web (Playwright)\n';
-                message += '   - "cloud" = Solo Cloud API oficial\n';
-                message += '   - "both" = Dual mode con fallback\n';
-                
-                alert(message);
-                
+            });
+        }
+
+        async function setProviderMode(mode) {
+            const token = localStorage.getItem('token');
+
+            try {
+                const response = await fetch('/api/whatsapp/provider/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ mode: mode })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    alert(`✅ Modo cambiado a: ${mode.toUpperCase()}`);
+                    document.getElementById('waModal').remove();
+                    showWhatsAppProvider();
+                } else {
+                    alert('❌ Error: ' + (result.detail || result.message));
+                }
             } catch (error) {
                 alert('❌ Error: ' + error.message);
             }
@@ -660,23 +1219,119 @@
         // Auto-refresh del estado cada 30 segundos
         setInterval(() => {
             fetch('/api/status')
-            .then(response => response.json())
-            .then(data => {
-                // Actualizar indicadores de estado
-                console.log('Estado actualizado:', data);
-            })
-            .catch(error => console.log('Error actualizando estado:', error));
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Estado actualizado:', data);
+                    updateBotStatus(data);
+                })
+                .catch(error => console.log('Error actualizando estado:', error));
         }, 30000);
 
-        // Mostrar notificación de bienvenida
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(() => {
-                if (!localStorage.getItem('welcomed')) {
-                    alert('🎉 ¡Bienvenido al Panel de Control!\n\n✨ Nuevo: Configuración 100% personalizable\n📱 Multi-API con fallback inteligente\n🤖 Asistente empresarial universal\n\n👉 Comienza configurando tu negocio');
-                    localStorage.setItem('welcomed', 'true');
-                }
-            }, 1000);
+        // Authentication check and initialization
+        document.addEventListener('DOMContentLoaded', async function () {
+            // Check authentication
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/ui/login.html';
+                return;
+            }
+
+            // Display username
+            const username = localStorage.getItem('username') || 'Usuario';
+            document.getElementById('usernameDisplay').textContent = username;
+
+            // Load setup checklist status
+            await updateChecklist();
+
+            // Welcome message for new users (but not on every visit)
+            if (!localStorage.getItem('welcomed_v2')) {
+                setTimeout(() => {
+                    // Check if setup is incomplete
+                    const businessCheck = document.getElementById('checkBusiness');
+                    if (businessCheck && businessCheck.classList.contains('not-started')) {
+                        if (confirm('🎉 ¡Bienvenido!\n\nParece que es tu primera vez. ¿Quieres ir al asistente de configuración para empezar?')) {
+                            window.location.href = '/ui/setup.html';
+                        }
+                    }
+                    localStorage.setItem('welcomed_v2', 'true');
+                }, 1000);
+            }
         });
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            localStorage.removeItem('remember');
+            window.location.href = '/ui/login.html';
+        }
+
+        async function updateChecklist() {
+            const token = localStorage.getItem('token');
+
+            try {
+                // Check business config
+                const businessResponse = await fetch('/api/business/config', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (businessResponse.ok) {
+                    const config = await businessResponse.json();
+                    const businessItem = document.getElementById('checkBusiness');
+
+                    if (config.business_info?.name && config.business_info.name !== 'Mi Negocio') {
+                        businessItem.className = 'checklist-item completed';
+                        businessItem.querySelector('.checklist-icon').innerHTML = '<i class="fas fa-check"></i>';
+                    } else {
+                        businessItem.className = 'checklist-item pending';
+                    }
+                }
+
+                // Check WhatsApp config
+                const waResponse = await fetch('/api/whatsapp/provider/config', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (waResponse.ok) {
+                    const waConfig = await waResponse.json();
+                    const waItem = document.getElementById('checkWhatsApp');
+
+                    if (waConfig.mode) {
+                        waItem.className = 'checklist-item completed';
+                        waItem.querySelector('.checklist-icon').innerHTML = '<i class="fas fa-check"></i>';
+                    }
+                }
+
+                // Check AI models
+                const aiResponse = await fetch('/api/ai-models/config', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (aiResponse.ok) {
+                    const aiConfig = await aiResponse.json();
+                    const aiItem = document.getElementById('checkAI');
+
+                    // Consider configured if default provider is set or custom providers exist
+                    if (aiConfig.default_provider || (aiConfig.custom_providers && aiConfig.custom_providers.length > 0)) {
+                        aiItem.className = 'checklist-item completed';
+                        aiItem.querySelector('.checklist-icon').innerHTML = '<i class="fas fa-check"></i>';
+                    }
+                }
+
+            } catch (error) {
+                console.error('Error updating checklist:', error);
+            }
+        }
+
+        function updateBotStatus(status) {
+            const botItem = document.getElementById('checkBot');
+            if (status && status.bot_running) {
+                botItem.className = 'checklist-item completed';
+                botItem.querySelector('.checklist-icon').innerHTML = '<i class="fas fa-check"></i>';
+            } else {
+                botItem.className = 'checklist-item pending';
+            }
+        }
     </script>
 </body>
+
 </html>

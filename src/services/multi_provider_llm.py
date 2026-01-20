@@ -28,6 +28,14 @@ except ImportError:
     logger.warning("⚠️ Sistema de humanización no disponible")
     HUMANIZATION_AVAILABLE = False
 
+# Importar context loader para inyección de contextos
+try:
+    from services.context_loader import context_loader
+    CONTEXT_LOADER_AVAILABLE = True
+except ImportError:
+    logger.warning("⚠️ Context loader no disponible")
+    CONTEXT_LOADER_AVAILABLE = False
+
 class LLMProvider(Enum):
     GEMINI = "gemini"
     OPENAI = "openai"
@@ -221,20 +229,76 @@ class MultiProviderLLM:
         else:
             return self.normal_fallback
     
+    def _inject_contexts_into_messages(
+        self, 
+        messages: List[Dict[str, str]], 
+        chat_id: str
+    ) -> List[Dict[str, str]]:
+        """
+        Carga e inyecta contextos relevantes en los mensajes
+        Incluye: DailyContext, UserContext, objetivos, perfil, estrategia
+        """
+        if not CONTEXT_LOADER_AVAILABLE:
+            return messages
+        
+        try:
+            # Cargar todos los contextos
+            contexts = context_loader.load_all_contexts(chat_id)
+            
+            # Construir sección de contexto
+            context_section = context_loader.build_context_prompt_section(contexts)
+            
+            if not context_section:
+                return messages
+            
+            # Inyectar como mensaje de sistema adicional
+            enhanced_messages = list(messages)
+            
+            # Buscar el primer mensaje de sistema y agregar contexto después
+            system_index = -1
+            for i, msg in enumerate(enhanced_messages):
+                if msg.get("role") == "system":
+                    system_index = i
+                    break
+            
+            context_message = {
+                "role": "system",
+                "content": f"CONTEXTOS ACTIVOS:\n\n{context_section}"
+            }
+            
+            if system_index >= 0:
+                # Insertar después del primer mensaje de sistema
+                enhanced_messages.insert(system_index + 1, context_message)
+            else:
+                # Si no hay mensaje de sistema, insertar al inicio
+                enhanced_messages.insert(0, context_message)
+            
+            logger.info(f"📦 Contextos inyectados para chat {chat_id}")
+            return enhanced_messages
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Error inyectando contextos: {e}")
+            return messages
+    
     async def generate_response(self, 
                               messages: List[Dict[str, str]], 
                               business_context: Optional[Dict] = None,
                               use_case: str = "normal",
                               free_only: bool = False,
-                              max_retries: int = 3) -> Dict[str, Any]:
+                              max_retries: int = 3,
+                              inject_contexts: bool = True) -> Dict[str, Any]:
         """
         Genera respuesta usando el proveedor disponible con fallback automático
-        Incluye sistema de humanización y detección de respuestas bot
+        Incluye sistema de humanización, detección de respuestas bot, e inyección de contextos
         """
         
         # Obtener mensaje del usuario para análisis contextual
         user_message = messages[-1]["content"] if messages else ""
         chat_id = business_context.get("chat_id") if business_context else "unknown"
+        
+        # INYECTAR CONTEXTOS (DailyContext, UserContext, objetivos, etc)
+        if inject_contexts and chat_id != "unknown":
+            messages = self._inject_contexts_into_messages(messages, chat_id)
         
         # Determinar si el admin habilitó solo modelos gratuitos
         admin_free_only = os.getenv('ENABLE_FREE_MODELS_FALLBACK', 'false').lower() == 'true'

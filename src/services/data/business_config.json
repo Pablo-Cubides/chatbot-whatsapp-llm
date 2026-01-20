@@ -120,5 +120,39 @@
       "service": "stripe",
       "links": {}
     }
+  },
+  "whatsapp_provider": {
+    "mode": "web",
+    "cloud_api": {
+      "access_token": "",
+      "phone_number_id": "",
+      "verify_token": "",
+      "business_account_id": ""
+    }
+  },
+  "analysis_settings": {
+    "deep_analysis_enabled": true,
+    "deep_analysis_trigger_conversations": 50,
+    "deep_analysis_trigger_days": 7,
+    "image_analysis_enabled": true,
+    "audio_transcription_enabled": true,
+    "whisper_model_size": "base",
+    "whisper_device": "cpu"
+  },
+  "ai_models": {
+    "default_provider": "gemini",
+    "response_layer": {
+      "provider": "auto",
+      "model": ""
+    },
+    "reasoner_layer": {
+      "provider": "lmstudio",
+      "model": ""
+    },
+    "analyzer_layer": {
+      "provider": "auto",
+      "model": ""
+    },
+    "custom_providers": []
   }
 }

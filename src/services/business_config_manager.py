@@ -108,8 +108,33 @@ class BusinessConfigManager:
             "integrations": {
                 "calendar_booking": {
                     "enabled": False,
-                    "service": "calendly",  # calendly, google_calendar, custom
-                    "link": "https://calendly.com/tu-negocio"
+                    "provider": "google_calendar",  # google_calendar, outlook
+                    "default_duration_minutes": 30,
+                    "buffer_between_appointments": 15,
+                    "max_advance_booking_days": 30,
+                    "working_hours": {
+                        "monday": {"start": "09:00", "end": "18:00"},
+                        "tuesday": {"start": "09:00", "end": "18:00"},
+                        "wednesday": {"start": "09:00", "end": "18:00"},
+                        "thursday": {"start": "09:00", "end": "18:00"},
+                        "friday": {"start": "09:00", "end": "17:00"},
+                        "saturday": {"closed": True},
+                        "sunday": {"closed": True}
+                    },
+                    "google_calendar": {
+                        "credentials_file": "config/google_credentials.json",
+                        "token_file": "config/google_token.json",
+                        "calendar_id": "primary",
+                        "send_notifications": True,
+                        "add_google_meet": True
+                    },
+                    "outlook": {
+                        "client_id": "",
+                        "client_secret": "",
+                        "tenant_id": "common",
+                        "calendar_id": "",
+                        "add_teams_meeting": True
+                    }
                 },
                 "crm_integration": {
                     "enabled": False,
@@ -121,6 +146,40 @@ class BusinessConfigManager:
                     "service": "stripe",  # stripe, paypal, mercadopago
                     "links": {}
                 }
+            },
+            "whatsapp_provider": {
+                "mode": "web",  # web, cloud, both
+                "cloud_api": {
+                    "access_token": "",
+                    "phone_number_id": "",
+                    "verify_token": "",
+                    "business_account_id": ""
+                }
+            },
+            "analysis_settings": {
+                "deep_analysis_enabled": True,
+                "deep_analysis_trigger_conversations": 50,
+                "deep_analysis_trigger_days": 7,
+                "image_analysis_enabled": True,
+                "audio_transcription_enabled": True,
+                "whisper_model_size": "base",  # tiny, base, small, medium, large
+                "whisper_device": "cpu"  # cpu, cuda
+            },
+            "ai_models": {
+                "default_provider": "gemini",
+                "response_layer": {
+                    "provider": "auto",  # auto uses fallback order, or specific provider
+                    "model": ""
+                },
+                "reasoner_layer": {
+                    "provider": "lmstudio",
+                    "model": ""
+                },
+                "analyzer_layer": {
+                    "provider": "auto",
+                    "model": ""
+                },
+                "custom_providers": []  # List of user-added API configurations
             }
         }
     

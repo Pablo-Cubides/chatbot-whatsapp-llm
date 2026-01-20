@@ -3009,6 +3009,465 @@ async def preview_business_config():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ═══════════════════════════════════════════════════════════════
+# 📱 WHATSAPP PROVIDER CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+
+class WhatsAppProviderConfig(BaseModel):
+    mode: str  # web, cloud, both
+    cloud_api: Optional[Dict[str, str]] = None
+
+@app.get("/api/whatsapp/provider/config")
+async def get_whatsapp_provider_config(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Obtiene la configuración actual del proveedor WhatsApp"""
+    try:
+        config = business_config.config.get('whatsapp_provider', {
+            'mode': 'web',
+            'cloud_api': {}
+        })
+        # Mask access token for security
+        if config.get('cloud_api', {}).get('access_token'):
+            masked_token = config['cloud_api']['access_token'][:10] + '...' if len(config['cloud_api'].get('access_token', '')) > 10 else ''
+            config = {**config, 'cloud_api': {**config.get('cloud_api', {}), 'access_token_masked': masked_token}}
+        return JSONResponse(content=config)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/whatsapp/provider/config")
+async def update_whatsapp_provider_config(
+    config: WhatsAppProviderConfig,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Actualiza la configuración del proveedor WhatsApp"""
+    try:
+        if config.mode not in ['web', 'cloud', 'both']:
+            raise HTTPException(status_code=400, detail="Mode debe ser 'web', 'cloud', o 'both'")
+        
+        whatsapp_config = {
+            'mode': config.mode,
+            'cloud_api': config.cloud_api or {}
+        }
+        
+        # Update the config
+        business_config.config['whatsapp_provider'] = whatsapp_config
+        
+        if business_config.save_config(business_config.config):
+            # Log the change
+            log_config_change(
+                current_user.get('username', 'admin'),
+                'whatsapp_provider',
+                {'mode': config.mode}
+            )
+            return JSONResponse(content={
+                "success": True,
+                "message": f"Proveedor WhatsApp configurado en modo: {config.mode}"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error guardando configuración")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/whatsapp/cloud/credentials")
+async def update_cloud_api_credentials(
+    data: Dict[str, str],
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Actualiza las credenciales del Cloud API de WhatsApp"""
+    try:
+        required_fields = ['access_token', 'phone_number_id']
+        for field in required_fields:
+            if not data.get(field):
+                raise HTTPException(status_code=400, detail=f"Campo '{field}' es requerido")
+        
+        cloud_config = {
+            'access_token': data.get('access_token', ''),
+            'phone_number_id': data.get('phone_number_id', ''),
+            'verify_token': data.get('verify_token', ''),
+            'business_account_id': data.get('business_account_id', '')
+        }
+        
+        # Update the config
+        if 'whatsapp_provider' not in business_config.config:
+            business_config.config['whatsapp_provider'] = {'mode': 'cloud'}
+        
+        business_config.config['whatsapp_provider']['cloud_api'] = cloud_config
+        
+        if business_config.save_config(business_config.config):
+            log_config_change(
+                current_user.get('username', 'admin'),
+                'whatsapp_cloud_credentials',
+                {'phone_number_id': data.get('phone_number_id')}
+            )
+            return JSONResponse(content={
+                "success": True,
+                "message": "Credenciales de Cloud API actualizadas"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error guardando credenciales")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════
+# ⚙️ ANALYSIS SETTINGS CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+
+class AnalysisSettings(BaseModel):
+    deep_analysis_enabled: Optional[bool] = True
+    deep_analysis_trigger_conversations: Optional[int] = 50
+    deep_analysis_trigger_days: Optional[int] = 7
+    image_analysis_enabled: Optional[bool] = True
+    audio_transcription_enabled: Optional[bool] = True
+    whisper_model_size: Optional[str] = "base"
+    whisper_device: Optional[str] = "cpu"
+
+@app.get("/api/settings/analysis")
+async def get_analysis_settings(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Obtiene la configuración de análisis"""
+    try:
+        settings = business_config.config.get('analysis_settings', {
+            'deep_analysis_enabled': True,
+            'deep_analysis_trigger_conversations': 50,
+            'deep_analysis_trigger_days': 7,
+            'image_analysis_enabled': True,
+            'audio_transcription_enabled': True,
+            'whisper_model_size': 'base',
+            'whisper_device': 'cpu'
+        })
+        return JSONResponse(content=settings)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/settings/analysis")
+async def update_analysis_settings(
+    settings: AnalysisSettings,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Actualiza la configuración de análisis"""
+    try:
+        analysis_config = {
+            'deep_analysis_enabled': settings.deep_analysis_enabled,
+            'deep_analysis_trigger_conversations': settings.deep_analysis_trigger_conversations,
+            'deep_analysis_trigger_days': settings.deep_analysis_trigger_days,
+            'image_analysis_enabled': settings.image_analysis_enabled,
+            'audio_transcription_enabled': settings.audio_transcription_enabled,
+            'whisper_model_size': settings.whisper_model_size,
+            'whisper_device': settings.whisper_device
+        }
+        
+        business_config.config['analysis_settings'] = analysis_config
+        
+        if business_config.save_config(business_config.config):
+            log_config_change(
+                current_user.get('username', 'admin'),
+                'analysis_settings',
+                analysis_config
+            )
+            return JSONResponse(content={
+                "success": True,
+                "message": "Configuración de análisis actualizada"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error guardando configuración")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════
+# 🤖 AI MODELS CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+
+class CustomProviderConfig(BaseModel):
+    name: str
+    provider_type: str  # openai, gemini, claude, xai, etc
+    api_key: str
+    base_url: Optional[str] = None
+    model: str
+    is_free: Optional[bool] = False
+    is_reasoning: Optional[bool] = False
+    active: Optional[bool] = True
+
+class AIModelsConfig(BaseModel):
+    default_provider: Optional[str] = "gemini"
+    response_layer: Optional[Dict[str, str]] = None
+    reasoner_layer: Optional[Dict[str, str]] = None
+    analyzer_layer: Optional[Dict[str, str]] = None
+
+@app.get("/api/ai-models/config")
+async def get_ai_models_config(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Obtiene la configuración de modelos de IA"""
+    try:
+        config = business_config.config.get('ai_models', {
+            'default_provider': 'gemini',
+            'response_layer': {'provider': 'auto', 'model': ''},
+            'reasoner_layer': {'provider': 'lmstudio', 'model': ''},
+            'analyzer_layer': {'provider': 'auto', 'model': ''},
+            'custom_providers': []
+        })
+        
+        # Mask API keys in custom providers
+        if 'custom_providers' in config:
+            masked_providers = []
+            for p in config['custom_providers']:
+                masked = {**p}
+                if masked.get('api_key'):
+                    masked['api_key_masked'] = masked['api_key'][:8] + '...' if len(masked.get('api_key', '')) > 8 else ''
+                    del masked['api_key']
+                masked_providers.append(masked)
+            config['custom_providers'] = masked_providers
+        
+        return JSONResponse(content=config)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ai-models/config")
+async def update_ai_models_config(
+    config: AIModelsConfig,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Actualiza la configuración de modelos de IA"""
+    try:
+        ai_config = business_config.config.get('ai_models', {})
+        
+        if config.default_provider:
+            ai_config['default_provider'] = config.default_provider
+        if config.response_layer:
+            ai_config['response_layer'] = config.response_layer
+        if config.reasoner_layer:
+            ai_config['reasoner_layer'] = config.reasoner_layer
+        if config.analyzer_layer:
+            ai_config['analyzer_layer'] = config.analyzer_layer
+        
+        business_config.config['ai_models'] = ai_config
+        
+        if business_config.save_config(business_config.config):
+            log_config_change(
+                current_user.get('username', 'admin'),
+                'ai_models',
+                {'default_provider': config.default_provider}
+            )
+            return JSONResponse(content={
+                "success": True,
+                "message": "Configuración de modelos IA actualizada"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error guardando configuración")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ai-models/custom-provider")
+async def add_custom_provider(
+    provider: CustomProviderConfig,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Agrega un proveedor de IA personalizado con API key del usuario"""
+    try:
+        ai_config = business_config.config.get('ai_models', {})
+        
+        if 'custom_providers' not in ai_config:
+            ai_config['custom_providers'] = []
+        
+        # Check if provider with same name already exists
+        existing_names = [p['name'] for p in ai_config['custom_providers']]
+        if provider.name in existing_names:
+            raise HTTPException(status_code=400, detail=f"Ya existe un proveedor con el nombre '{provider.name}'")
+        
+        new_provider = {
+            'name': provider.name,
+            'provider_type': provider.provider_type,
+            'api_key': provider.api_key,
+            'base_url': provider.base_url,
+            'model': provider.model,
+            'is_free': provider.is_free,
+            'is_reasoning': provider.is_reasoning,
+            'active': provider.active
+        }
+        
+        ai_config['custom_providers'].append(new_provider)
+        business_config.config['ai_models'] = ai_config
+        
+        if business_config.save_config(business_config.config):
+            log_config_change(
+                current_user.get('username', 'admin'),
+                'custom_ai_provider_added',
+                {'name': provider.name, 'provider_type': provider.provider_type}
+            )
+            return JSONResponse(content={
+                "success": True,
+                "message": f"Proveedor '{provider.name}' agregado exitosamente"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error guardando proveedor")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/ai-models/custom-provider/{provider_name}")
+async def delete_custom_provider(
+    provider_name: str,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Elimina un proveedor de IA personalizado"""
+    try:
+        ai_config = business_config.config.get('ai_models', {})
+        
+        if 'custom_providers' not in ai_config:
+            raise HTTPException(status_code=404, detail="No hay proveedores personalizados")
+        
+        original_count = len(ai_config['custom_providers'])
+        ai_config['custom_providers'] = [
+            p for p in ai_config['custom_providers'] 
+            if p['name'] != provider_name
+        ]
+        
+        if len(ai_config['custom_providers']) == original_count:
+            raise HTTPException(status_code=404, detail=f"Proveedor '{provider_name}' no encontrado")
+        
+        business_config.config['ai_models'] = ai_config
+        
+        if business_config.save_config(business_config.config):
+            return JSONResponse(content={
+                "success": True,
+                "message": f"Proveedor '{provider_name}' eliminado"
+            })
+        else:
+            raise HTTPException(status_code=500, detail="Error eliminando proveedor")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ai-models/test-connection")
+async def test_ai_provider_connection(
+    data: Dict[str, str],
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Prueba la conexión con un proveedor de IA"""
+    try:
+        provider_type = data.get('provider_type')
+        api_key = data.get('api_key')
+        base_url = data.get('base_url')
+        model = data.get('model')
+        
+        if not provider_type or not api_key:
+            raise HTTPException(status_code=400, detail="provider_type y api_key son requeridos")
+        
+        # Test based on provider type
+        import aiohttp
+        
+        test_result = {"success": False, "message": ""}
+        
+        if provider_type == 'openai':
+            url = (base_url or 'https://api.openai.com/v1') + '/models'
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status == 200:
+                        test_result = {"success": True, "message": "Conexión exitosa con OpenAI"}
+                    else:
+                        test_result = {"success": False, "message": f"Error: {response.status}"}
+        
+        elif provider_type == 'gemini':
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        test_result = {"success": True, "message": "Conexión exitosa con Gemini"}
+                    else:
+                        test_result = {"success": False, "message": f"Error: {response.status}"}
+        
+        elif provider_type == 'xai':
+            url = (base_url or 'https://api.x.ai/v1') + '/models'
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status == 200:
+                        test_result = {"success": True, "message": "Conexión exitosa con xAI/Grok"}
+                    else:
+                        test_result = {"success": False, "message": f"Error: {response.status}"}
+        
+        else:
+            test_result = {"success": False, "message": f"Tipo de proveedor '{provider_type}' no soportado para test automático"}
+        
+        return JSONResponse(content=test_result)
+        
+    except Exception as e:
+        return JSONResponse(content={"success": False, "message": str(e)})
+
+@app.get("/api/ai-models/available-providers")
+async def get_available_providers(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Lista los tipos de proveedores disponibles para configurar"""
+    return JSONResponse(content={
+        "providers": [
+            {
+                "type": "gemini",
+                "name": "Google Gemini",
+                "description": "Excelente relación calidad/precio, 15 RPM gratuitas",
+                "requires_key": True,
+                "default_model": "gemini-1.5-flash",
+                "is_free": True
+            },
+            {
+                "type": "openai",
+                "name": "OpenAI (GPT)",
+                "description": "Mejor calidad general, modelos GPT-4 y GPT-3.5",
+                "requires_key": True,
+                "default_model": "gpt-4o-mini",
+                "is_free": False
+            },
+            {
+                "type": "claude",
+                "name": "Anthropic Claude",
+                "description": "Excelente para análisis profundo y razonamiento",
+                "requires_key": True,
+                "default_model": "claude-3-haiku-20240307",
+                "is_free": False
+            },
+            {
+                "type": "xai",
+                "name": "xAI Grok",
+                "description": "Límites generosos en beta, menos censura",
+                "requires_key": True,
+                "default_model": "grok-beta",
+                "is_free": True
+            },
+            {
+                "type": "ollama",
+                "name": "Ollama (Local)",
+                "description": "Modelos locales gratuitos, requiere instalación",
+                "requires_key": False,
+                "default_model": "llama3.2:3b",
+                "is_free": True
+            },
+            {
+                "type": "lmstudio",
+                "name": "LM Studio (Local)",
+                "description": "Modelos locales con interfaz gráfica",
+                "requires_key": False,
+                "default_model": "nemotron-mini-4b-instruct",
+                "is_free": True
+            }
+        ]
+    })
+
+
 # ============== AUDIT SYSTEM API ==============
 
 @app.get('/api/audit/logs')
@@ -3045,6 +3504,72 @@ async def get_audit_stats(current_user: Dict[str, Any] = Depends(require_admin))
 
 
 # ============== CAMPAIGN MANAGEMENT API ==============
+
+class CampaignCreate(BaseModel):
+    name: str
+    template: str
+    contacts: List[str]  # List of phone numbers
+    scheduled_at: Optional[str] = None  # ISO datetime or None for immediate
+    delay_between_messages: Optional[int] = 5  # seconds
+    
+@app.get('/api/campaigns')
+async def list_campaigns(
+    status: Optional[str] = None,
+    limit: int = 50,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Listar todas las campañas"""
+    try:
+        campaigns = queue_manager.list_campaigns(status=status, limit=limit)
+        return campaigns
+    except Exception as e:
+        logger.error(f"Error listando campañas: {e}")
+        return []
+
+@app.post('/api/campaigns')
+async def create_campaign(
+    campaign: CampaignCreate,
+    current_user: Dict[str, Any] = Depends(require_admin)
+):
+    """Crear una nueva campaña de mensajes masivos"""
+    try:
+        if not campaign.name or not campaign.template:
+            raise HTTPException(status_code=400, detail="Nombre y template son requeridos")
+        
+        if not campaign.contacts or len(campaign.contacts) == 0:
+            raise HTTPException(status_code=400, detail="Se requiere al menos un contacto")
+        
+        # Create campaign through queue manager
+        campaign_id = queue_manager.create_campaign(
+            name=campaign.name,
+            template=campaign.template,
+            contacts=campaign.contacts,
+            scheduled_at=campaign.scheduled_at,
+            delay_between=campaign.delay_between_messages or 5,
+            created_by=current_user.get('username', 'admin')
+        )
+        
+        if campaign_id:
+            # Log the action
+            log_bulk_send(
+                current_user.get('username', 'admin'),
+                len(campaign.contacts),
+                campaign_id
+            )
+            
+            return {
+                "success": True,
+                "campaign_id": campaign_id,
+                "message": f"Campaña '{campaign.name}' creada con {len(campaign.contacts)} contactos",
+                "total_messages": len(campaign.contacts)
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Error creando campaña")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get('/api/campaigns/{campaign_id}')
 async def get_campaign_status(campaign_id: str, current_user: Dict[str, Any] = Depends(get_current_user)):

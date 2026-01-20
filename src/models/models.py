@@ -206,3 +206,75 @@ class ChatStrategy(Base):
     source_snapshot = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
+
+
+# ----------------------- Appointment Scheduling Models -----------------------
+class Appointment(Base):
+    """Citas agendadas a través del chatbot"""
+    __tablename__ = "appointments"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    appointment_id = Column(String(100), unique=True, nullable=False, index=True)
+    chat_id = Column(String(200), nullable=False, index=True)
+    
+    # Información de la cita
+    title = Column(String(300), nullable=False)
+    description = Column(Text, nullable=True)
+    start_time = Column(DateTime, nullable=False, index=True)
+    end_time = Column(DateTime, nullable=False)
+    timezone = Column(String(50), default="America/Bogota")
+    location = Column(String(500), nullable=True)  # Puede ser URL de meet/teams o dirección física
+    
+    # Información del cliente
+    client_name = Column(String(200), nullable=False)
+    client_email = Column(String(200), nullable=True)
+    client_phone = Column(String(50), nullable=True)
+    
+    # Proveedor de calendario y estado
+    provider = Column(String(50), nullable=False, index=True)  # google_calendar, outlook
+    status = Column(String(30), default="pending", nullable=False, index=True)
+    # Estados: pending, confirmed, cancelled, completed, no_show, rescheduled
+    
+    # IDs y links externos
+    external_id = Column(String(300), nullable=True)  # ID en Google/Outlook
+    external_link = Column(String(500), nullable=True)  # Link para unirse a la reunión
+    ical_uid = Column(String(300), nullable=True)  # UID del evento iCal
+    
+    # Metadatos
+    reminder_sent = Column(Boolean, default=False)
+    notes = Column(Text, nullable=True)
+    metadata = Column(JSON, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    cancelled_at = Column(DateTime, nullable=True)
+
+
+class CalendarCredential(Base):
+    """Credenciales OAuth para servicios de calendario"""
+    __tablename__ = "calendar_credentials"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider = Column(String(50), nullable=False, unique=True, index=True)  # google_calendar, outlook
+    
+    # Tokens OAuth (encriptados en producción)
+    access_token = Column(Text, nullable=True)
+    refresh_token = Column(Text, nullable=True)
+    token_type = Column(String(50), default="Bearer")
+    
+    # Información de expiración
+    expires_at = Column(DateTime, nullable=True)
+    scope = Column(Text, nullable=True)
+    
+    # Información de la cuenta
+    account_email = Column(String(200), nullable=True)
+    calendar_id = Column(String(300), nullable=True)  # ID del calendario a usar
+    
+    # Estado
+    is_active = Column(Boolean, default=True)
+    last_used_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

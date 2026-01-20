@@ -56,33 +56,72 @@ def _last_turns(chat_id: str, n_turns: int = 30) -> str:
 def run_reasoner_for_chat(chat_id: str) -> int:
     """Run the analysis model to produce a new strategy and activate it.
     Returns the new strategy version number.
+    
+    ENHANCED: Now prominently uses contact objectives to generate
+    targeted strategies that actively pursue the defined goal.
     """
     profile = cs.get_profile(chat_id)
     prev = cs.get_active_strategy(chat_id)
 
-    # Build prompt pieces
+    # Build prompt pieces - OBJECTIVE IS NOW PRIORITY
+    objective = ""
+    if profile and (profile.objective or '').strip():
+        objective = profile.objective
+    
     profile_block = []
     if profile and (profile.initial_context or '').strip():
         profile_block.append(f"Contexto inicial: {profile.initial_context}")
-    if profile and (profile.objective or '').strip():
-        profile_block.append(f"Objetivo: {profile.objective}")
     if profile and (profile.instructions or '').strip():
-        profile_block.append(f"Instrucciones: {profile.instructions}")
-    profile_text = "\n".join(profile_block) or "(sin perfil)"
+        profile_block.append(f"Instrucciones específicas: {profile.instructions}")
+    profile_text = "\n".join(profile_block) or "(sin perfil adicional)"
 
     prev_text = prev.strategy_text if prev and (prev.strategy_text or '').strip() else "(sin estrategia previa)"
     convo_snapshot = _last_turns(chat_id, n_turns=40)
 
-    # Build payload
+    # Build payload with OBJECTIVE-FOCUSED prompt
     payload = _load_payload_template()
     messages = list(payload.get("messages", []))
-    messages += [
-        {"role": "system", "content": "No hables con el usuario. Responde solo con la estrategia."},
-        {"role": "user", "content": f"Perfil del chat (resumen):\n{profile_text}"},
-        {"role": "user", "content": f"Estrategia vigente (si la hay):\n{prev_text}"},
-        {"role": "user", "content": f"Extracto de la conversación (últimos turnos):\n{convo_snapshot}"},
-        {"role": "user", "content": "Formula la ESTRATEGIA OPERATIVA para los próximos 10 mensajes del bot respondedor."}
-    ]
+    
+    # Enhanced system message that prioritizes objective
+    system_message = """Eres un estratega de conversaciones. NO hables con el usuario final.
+Tu tarea es producir una ESTRATEGIA OPERATIVA para el bot respondedor.
+
+REGLAS CRÍTICAS:
+1. El OBJETIVO del contacto es la PRIORIDAD ABSOLUTA
+2. Cada mensaje del bot debe acercar la conversación hacia el objetivo
+3. Identifica el PROGRESO actual hacia el objetivo (0-100%)
+4. Propón TÁCTICAS CONCRETAS para los próximos 10 mensajes
+5. Incluye indicadores de éxito y puntos de cierre
+
+FORMATO DE RESPUESTA:
+- Análisis de progreso actual (%)
+- Obstáculos identificados
+- Estrategia para próximos 10 mensajes
+- Tácticas de cierre o conversión"""
+    
+    messages += [{"role": "system", "content": system_message}]
+    
+    # Add objective prominently if exists
+    if objective:
+        messages.append({
+            "role": "user", 
+            "content": f"🎯 OBJETIVO PRIORITARIO CON ESTE CLIENTE:\n{objective}\n\nTODA la estrategia debe orientarse a lograr este objetivo."
+        })
+    else:
+        messages.append({
+            "role": "user", 
+            "content": "⚠️ No hay objetivo definido. Genera una estrategia genérica de engagement y calificación."
+        })
+    
+    if profile_text != "(sin perfil adicional)":
+        messages.append({"role": "user", "content": f"Perfil del cliente:\n{profile_text}"})
+    
+    messages.append({"role": "user", "content": f"Estrategia vigente:\n{prev_text}"})
+    messages.append({"role": "user", "content": f"Extracto de conversación (últimos turnos):\n{convo_snapshot}"})
+    messages.append({
+        "role": "user", 
+        "content": "Genera la ESTRATEGIA OPERATIVA enfocada en el objetivo. Incluye análisis de progreso y tácticas concretas."
+    })
     payload["messages"] = messages
 
     # Call LM Studio
