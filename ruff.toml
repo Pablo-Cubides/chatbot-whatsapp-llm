@@ -1,0 +1,52 @@
+# Ruff configuration
+# https://docs.astral.sh/ruff/configuration/
+
+target-version = "py39"
+line-length = 127
+exclude = [
+    ".git",
+    "__pycache__",
+    "alembic/versions",
+    "htmlcov",
+    "node_modules",
+    ".venv",
+    "venv",
+]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "W",    # pycodestyle warnings
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "E402",  # module-import-not-at-top (needed for env setup / sys.path)
+    "S101",  # assert usage (OK in tests)
+    "S104",  # binding to 0.0.0.0
+    "S110",  # try-except-pass (common in browser automation)
+    "S112",  # try-except-continue (common in retry loops)
+    "S311",  # non-cryptographic random (used for jitter/delays, not security)
+    "S602",  # subprocess with shell=True (intentional usage)
+    "S603",  # subprocess without shell
+    "S607",  # partial path
+    "B008",  # function calls in defaults (FastAPI Depends)
+    "B904",  # raise-without-from (too invasive to fix 100+ locations)
+    "SIM102", # collapsible-if (readability preference)
+    "SIM105", # contextlib.suppress (style preference)
+    "SIM108", # if-else-block to ternary (readability preference)
+    "SIM115", # open-file-with-context-handler (style preference)
+    "SIM117", # multiple-with-statements (style preference)
+]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["S"]  # Disable security checks in tests
+"conftest.py" = ["S"]
+
+[lint.isort]
+known-first-party = ["src"]

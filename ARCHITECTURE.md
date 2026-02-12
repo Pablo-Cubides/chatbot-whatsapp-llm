@@ -64,50 +64,44 @@ graph TB
 
 ```
 chatbot-whatsapp-llm/
-├── 📁 app/                     # Aplicación principal FastAPI
-│   ├── 📁 api/                 # Endpoints API REST
-│   │   ├── 📁 endpoints/       # Módulos de endpoints
-│   │   │   ├── auth.py         # Autenticación
-│   │   │   ├── business_config.py
-│   │   │   ├── queue.py        # Cola de mensajes
-│   │   │   ├── alerts.py       # Sistema de alertas
-│   │   │   ├── analytics.py    # Métricas
-│   │   │   └── whatsapp.py     # WhatsApp + LLM
-│   │   └── router.py           # Router principal
-│   ├── 📁 core/                # Módulos centrales
-│   │   ├── config.py           # Configuración
-│   │   └── utils.py            # Utilidades
-│   ├── 📁 db/                  # Conexión a base de datos
+├── 📁 src/                     # Código fuente principal
 │   ├── 📁 models/              # Modelos SQLAlchemy
-│   └── 📁 services/            # Servicios de negocio
-│
-├── 📁 src/                     # Servicios legacy
-│   ├── 📁 models/              # Modelos de datos
-│   ├── 📁 services/            # 29 servicios
-│   │   ├── auth_system.py      # Autenticación JWT
-│   │   ├── multi_provider_llm.py
-│   │   ├── queue_system.py     # Cola de mensajes
-│   │   ├── alert_system.py     # Alertas
-│   │   ├── cache_system.py     # Cache Redis
-│   │   ├── protection_system.py # Rate limiting
-│   │   └── ...
-│   └── 📁 workers/             # Workers en background
+│   ├── 📁 routers/             # Routers FastAPI modulares
+│   │   ├── auth.py             # Autenticación
+│   │   ├── monitoring.py       # Monitoreo y métricas
+│   │   ├── campaigns.py        # Campañas y cola
+│   │   ├── business_config.py  # Configuración de negocio
+│   │   ├── webhooks.py         # Webhooks WhatsApp
+│   │   └── deps.py             # Dependencias compartidas
+│   └── 📁 services/            # 30+ servicios de negocio
+│       ├── auth_system.py      # Autenticación JWT + bcrypt
+│       ├── multi_provider_llm.py # Multi-proveedor LLM
+│       ├── queue_system.py     # Cola de mensajes
+│       ├── alert_system.py     # Sistema de alertas
+│       ├── cache_system.py     # Cache Redis
+│       ├── protection_system.py # Rate limiting + Circuit Breaker
+│       ├── metrics.py          # Métricas Prometheus
+│       └── ...
 │
 ├── 📁 tests/                   # Suite de tests
 │   ├── test_auth_system.py
 │   ├── test_api_endpoints.py
-│   ├── test_security.py
-│   ├── test_core_modules.py
+│   ├── test_crypto.py
+│   ├── test_protection_system.py
+│   ├── test_cache_system.py
 │   └── ...
 │
 ├── 📁 config/                  # Archivos de configuración
 ├── 📁 data/                    # Datos persistentes
 ├── 📁 ui/                      # UI web estática
-├── 📁 logs/                    # Logs del sistema
+├── 📁 alembic/                 # Migraciones de base de datos
 │
-├── admin_panel.py              # API principal (legacy)
-├── main_server.py              # Servidor alternativo
+├── admin_panel.py              # Entry point: API de administración
+├── main_server.py              # Entry point: Servidor principal
+├── whatsapp_automator.py       # Entry point: Worker WhatsApp
 ├── crypto.py                   # Encriptación Fernet
+├── chat_sessions.py            # Gestión de sesiones de chat
+├── reasoner.py                 # Motor de razonamiento LLM
 ├── docker-compose.yml          # Orquestación Docker
 ├── Dockerfile                  # Container principal
 ├── requirements.txt            # Dependencias

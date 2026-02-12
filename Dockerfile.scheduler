@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Crear usuario no-root
+RUN useradd -m -r -s /bin/bash appuser
+
 # Crear directorio de trabajo
 WORKDIR /app
 
@@ -27,7 +30,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Crear directorios necesarios
-RUN mkdir -p /app/data /app/logs
+# Crear directorios necesarios
+RUN mkdir -p /app/data /app/logs && \
+    chown -R appuser:appuser /app
+
+# Cambiar a usuario no-root
+USER appuser
 
 # Comando por defecto
 CMD ["python", "src/workers/scheduler_worker.py"]

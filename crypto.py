@@ -3,9 +3,10 @@
 Implementación segura con Fernet para encriptar tokens OAuth, API keys, etc.
 """
 
-import os
 import logging
+import os
 from typing import Optional
+
 from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,13 @@ def ensure_key() -> bytes:
     key = Fernet.generate_key()
     with open(KEY_PATH, "wb") as f:
         f.write(key)
+    # Restrict file permissions (owner read-only)
+    try:
+        import stat
+
+        os.chmod(KEY_PATH, stat.S_IRUSR | stat.S_IWUSR)
+    except (OSError, AttributeError):
+        pass  # Windows may not support all chmod modes
     logger.info("Nueva clave Fernet generada y guardada")
     return key
 
@@ -46,10 +54,10 @@ def get_fernet() -> Fernet:
 def encrypt_text(plaintext: str) -> str:
     """
     Encripta texto plano usando Fernet.
-    
+
     Args:
         plaintext: Texto a encriptar
-        
+
     Returns:
         Token encriptado como string
     """
@@ -63,10 +71,10 @@ def encrypt_text(plaintext: str) -> str:
 def decrypt_text(token: str) -> str:
     """
     Desencripta token Fernet a texto plano.
-    
+
     Args:
         token: Token encriptado
-        
+
     Returns:
         Texto desencriptado, o el valor original si falla
     """
@@ -77,24 +85,25 @@ def decrypt_text(token: str) -> str:
         pt = f.decrypt(token.encode("utf-8"))
         return pt.decode("utf-8")
     except InvalidToken:
-        logger.warning("Token inválido para desencriptar - retornando valor original")
-        return token
+        logger.warning("Token inválido para desencriptar - posible dato no encriptado")
+        return None
     except Exception as e:
         logger.error(f"Error desencriptando: {e}")
-        return token
+        return None
 
 
 # =====================================
 # Funciones específicas para OAuth Tokens
 # =====================================
 
+
 def encrypt_oauth_token(token: Optional[str]) -> Optional[str]:
     """
     Encripta un token OAuth para almacenamiento seguro en base de datos.
-    
+
     Args:
         token: Token OAuth (access_token o refresh_token)
-        
+
     Returns:
         Token encriptado o None si el input es None
     """
@@ -112,10 +121,10 @@ def encrypt_oauth_token(token: Optional[str]) -> Optional[str]:
 def decrypt_oauth_token(encrypted_token: Optional[str]) -> Optional[str]:
     """
     Desencripta un token OAuth almacenado en base de datos.
-    
+
     Args:
         encrypted_token: Token encriptado
-        
+
     Returns:
         Token desencriptado o None si el input es None
     """
@@ -133,10 +142,10 @@ def decrypt_oauth_token(encrypted_token: Optional[str]) -> Optional[str]:
 def encrypt_api_key(api_key: str) -> str:
     """
     Encripta una API key para almacenamiento seguro.
-    
+
     Args:
         api_key: API key en texto plano
-        
+
     Returns:
         API key encriptada
     """
@@ -148,10 +157,10 @@ def encrypt_api_key(api_key: str) -> str:
 def decrypt_api_key(encrypted_key: str) -> str:
     """
     Desencripta una API key almacenada.
-    
+
     Args:
         encrypted_key: API key encriptada
-        
+
     Returns:
         API key en texto plano
     """
@@ -162,42 +171,47 @@ def decrypt_api_key(encrypted_key: str) -> str:
 
 def is_encrypted(value: str) -> bool:
     """
-    Verifica si un valor parece estar encriptado con Fernet.
-    Los tokens Fernet comienzan con 'gAAAAA'.
-    
+    Verifica si un valor está encriptado con Fernet intentando desencriptarlo.
+
     Args:
         value: Valor a verificar
-        
+
     Returns:
-        True si parece encriptado, False en caso contrario
+        True si está encriptado, False en caso contrario
     """
     if not value or len(value) < 10:
         return False
-    # Los tokens Fernet siempre comienzan con 'gAAAAA'
-    return value.startswith('gAAAAA')
+    try:
+        f = get_fernet()
+        f.decrypt(value.encode("utf-8"))
+        return True
+    except (InvalidToken, Exception):
+        return False
 
 
 def rotate_encryption_key(old_key: bytes, new_key: bytes, encrypted_value: str) -> str:
     """
     Rota la clave de encriptación para un valor encriptado.
     Útil para rotación periódica de claves de seguridad.
-    
+
     Args:
         old_key: Clave Fernet anterior
         new_key: Nueva clave Fernet
         encrypted_value: Valor encriptado con la clave anterior
-        
+
     Returns:
         Valor re-encriptado con la nueva clave
     """
     # Desencriptar con clave anterior
-    old_fernet = Fernet(old_key)
-    decrypted = old_fernet.decrypt(encrypted_value.encode()).decode()
-    
+    try:
+        old_fernet = Fernet(old_key)
+        decrypted = old_fernet.decrypt(encrypted_value.encode()).decode()
+    except InvalidToken:
+        raise ValueError("No se pudo desencriptar con la clave anterior. Verifica que la clave sea correcta.")
+
     # Re-encriptar con nueva clave
     new_fernet = Fernet(new_key)
     new_encrypted = new_fernet.encrypt(decrypted.encode()).decode()
-    
+
     logger.info("Valor re-encriptado con nueva clave exitosamente")
     return new_encrypted
-

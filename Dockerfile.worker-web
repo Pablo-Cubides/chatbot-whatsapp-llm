@@ -1,5 +1,5 @@
 # Dockerfile para WhatsApp Web Worker (Playwright)
-FROM mcr.microsoft.com/playwright/python:v1.40.0-focal
+FROM mcr.microsoft.com/playwright/python:v1.51.0-noble
 
 LABEL maintainer="Pablo Cubides"
 LABEL description="WhatsApp Web Automator Worker con Playwright"
@@ -9,14 +9,17 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
+# Crear usuario no-root
+RUN useradd -m -r -s /bin/bash appuser
+
 # Crear directorio de trabajo
 WORKDIR /app
 
 # Copiar requirements
-COPY requirements.txt .
+COPY requirements.txt requirements-worker.txt ./
 
-# Instalar dependencias Python
-RUN pip install --no-cache-dir -r requirements.txt
+# Instalar dependencias Python (worker includes playwright)
+RUN pip install --no-cache-dir -r requirements-worker.txt
 
 # Instalar navegadores Playwright
 RUN playwright install chromium
@@ -26,7 +29,11 @@ RUN playwright install-deps chromium
 COPY . .
 
 # Crear directorios necesarios
-RUN mkdir -p /app/data/whatsapp-profile /app/logs /app/config
+RUN mkdir -p /app/data/whatsapp-profile /app/logs /app/config && \
+    chown -R appuser:appuser /app
+
+# Cambiar a usuario no-root
+USER appuser
 
 # Volumen para perfil de WhatsApp (persistencia de sesión)
 VOLUME ["/app/data/whatsapp-profile"]

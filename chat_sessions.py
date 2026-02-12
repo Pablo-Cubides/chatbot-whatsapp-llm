@@ -1,16 +1,16 @@
 import json
-import os
 from datetime import datetime
 
-from admin_db import initialize_schema, get_session
+from admin_db import get_session, initialize_schema
+
+from crypto import decrypt_text, encrypt_text
 from models import (
-    Conversation,
-    Contact,
-    ChatProfile,
     ChatCounter,
+    ChatProfile,
     ChatStrategy,
+    Contact,
+    Conversation,
 )
-from crypto import encrypt_text, decrypt_text
 
 
 # Compatibilidad: inicializa esquema SQLAlchemy al importar
@@ -32,12 +32,7 @@ def save_context(chat_id, context):
 
 def load_last_context(chat_id):
     session = get_session()
-    row = (
-        session.query(Conversation)
-        .filter(Conversation.chat_id == chat_id)
-        .order_by(Conversation.timestamp.desc())
-        .first()
-    )
+    row = session.query(Conversation).filter(Conversation.chat_id == chat_id).order_by(Conversation.timestamp.desc()).first()
     session.close()
     if row:
         try:
@@ -80,6 +75,7 @@ initialize_db()
 
 
 # ------------------------ Two-agent pipeline helpers ------------------------
+
 
 def add_or_update_contact(chat_id: str, name: str = None, auto_enabled: bool = True):
     session = get_session()
@@ -177,7 +173,7 @@ def get_active_strategy(chat_id: str):
     try:
         s = (
             session.query(ChatStrategy)
-            .filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active == True)
+            .filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active)
             .order_by(ChatStrategy.version.desc(), ChatStrategy.created_at.desc())
             .first()
         )
@@ -190,16 +186,17 @@ def activate_new_strategy(chat_id: str, strategy_text: str, source_snapshot: str
     session = get_session()
     try:
         # deactivate previous
-        session.query(ChatStrategy).filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active == True).update({"is_active": False})
+        session.query(ChatStrategy).filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active).update(
+            {"is_active": False}
+        )
         # next version
         last = (
-            session.query(ChatStrategy)
-            .filter(ChatStrategy.chat_id == chat_id)
-            .order_by(ChatStrategy.version.desc())
-            .first()
+            session.query(ChatStrategy).filter(ChatStrategy.chat_id == chat_id).order_by(ChatStrategy.version.desc()).first()
         )
         next_ver = (last.version + 1) if last else 1
-        s = ChatStrategy(chat_id=chat_id, version=next_ver, strategy_text=strategy_text, source_snapshot=source_snapshot, is_active=True)
+        s = ChatStrategy(
+            chat_id=chat_id, version=next_ver, strategy_text=strategy_text, source_snapshot=source_snapshot, is_active=True
+        )
         session.add(s)
         # update counters
         ctr = session.get(ChatCounter, chat_id)
@@ -207,6 +204,7 @@ def activate_new_strategy(chat_id: str, strategy_text: str, source_snapshot: str
             ctr = ChatCounter(chat_id=chat_id)
             session.add(ctr)
         from datetime import datetime as _dt
+
         ctr.strategy_version = next_ver
         ctr.last_reasoned_at = _dt.utcnow()
         session.commit()

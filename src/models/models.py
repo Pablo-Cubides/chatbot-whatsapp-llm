@@ -1,15 +1,16 @@
+from datetime import datetime
+
 from sqlalchemy import (
+    JSON,
+    Boolean,
     Column,
+    DateTime,
+    ForeignKey,
     Integer,
     String,
-    DateTime,
     Text,
-    Boolean,
-    ForeignKey,
-    JSON,
 )
 from sqlalchemy.orm import declarative_base, relationship
-from datetime import datetime
 
 Base = declarative_base()
 
@@ -27,7 +28,7 @@ class ModelConfig(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     provider = Column(String, nullable=False)
-    model_type = Column(String, default='local')  # 'local' or 'online'
+    model_type = Column(String, default="local")  # 'local' or 'online'
     config = Column(JSON, nullable=True)
     active = Column(Boolean, default=True)
 
@@ -101,91 +102,94 @@ class ChatProfile(Base):
 # ----------------------- Humanization & Transfer Models -----------------------
 class SilentTransfer(Base):
     """Transferencias silenciosas a humanos"""
+
     __tablename__ = "silent_transfers"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     transfer_id = Column(String(100), unique=True, nullable=False, index=True)
     chat_id = Column(String(200), nullable=False, index=True)
-    
+
     # Razón y contexto
     reason = Column(String(50), nullable=False, index=True)
     trigger_message = Column(Text, nullable=True)
     conversation_context = Column(JSON, nullable=True)
-    
+
     # Estado
     status = Column(String(20), default="pending", nullable=False, index=True)
     priority = Column(Integer, default=5, nullable=False)
-    
+
     # Tiempos
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     assigned_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    
+
     # Asignación
     assigned_to = Column(String(100), nullable=True, index=True)
-    
-    # Metadata
-    metadata = Column(JSON, nullable=True)
+
+    # Transfer metadata
+    transfer_metadata = Column("metadata", JSON, nullable=True)
     notes = Column(Text, nullable=True)
     client_notified = Column(Boolean, default=False, nullable=False)
 
 
 class HumanizationMetric(Base):
     """Métricas de humanización del bot"""
+
     __tablename__ = "humanization_metrics"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     chat_id = Column(String(200), index=True, nullable=False)
     session_id = Column(String(100), index=True)
-    
+
     # Métricas críticas
     bot_suspicion_detected = Column(Boolean, default=False, nullable=False)
     bot_suspicion_triggers = Column(JSON, nullable=True)
     bot_suspicion_level = Column(Integer, default=0)  # 0-10
-    
+
     # Contadores
     silent_transfers_count = Column(Integer, default=0)
     humanized_responses_count = Column(Integer, default=0)
     simple_question_failures = Column(Integer, default=0)
     ethical_refusals = Column(Integer, default=0)
-    
+
     # Validación de respuestas
     bot_revealing_responses = Column(Integer, default=0)
     responses_humanized = Column(Integer, default=0)
-    
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ConversationObjective(Base):
     """Objetivos y resultados de conversaciones"""
+
     __tablename__ = "conversation_objectives"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     chat_id = Column(String(200), index=True, nullable=False)
     session_id = Column(String(100), index=True)
-    
+
     # Objetivos
     global_objective = Column(String(100))  # venta, cita, soporte, lead
     client_objective = Column(Text)  # objetivo específico del cliente
-    
+
     # Resultado
     objective_achieved = Column(String(20))  # yes, no, partial
     conversion_happened = Column(Boolean, default=False)
-    
+
     # Emociones
     initial_emotion = Column(String(50))
     final_emotion = Column(String(50))
     emotion_trend = Column(String(20))  # improving, stable, declining
-    
+
     # Calidad
     satisfaction_score = Column(Integer)  # 0-10
     response_quality_score = Column(Integer)  # 0-10
-    
+
     # Análisis
     failure_reasons = Column(JSON, nullable=True)
     success_factors = Column(JSON, nullable=True)
-    
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -211,12 +215,13 @@ class ChatStrategy(Base):
 # ----------------------- Appointment Scheduling Models -----------------------
 class Appointment(Base):
     """Citas agendadas a través del chatbot"""
+
     __tablename__ = "appointments"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     appointment_id = Column(String(100), unique=True, nullable=False, index=True)
     chat_id = Column(String(200), nullable=False, index=True)
-    
+
     # Información de la cita
     title = Column(String(300), nullable=False)
     description = Column(Text, nullable=True)
@@ -224,27 +229,27 @@ class Appointment(Base):
     end_time = Column(DateTime, nullable=False)
     timezone = Column(String(50), default="America/Bogota")
     location = Column(String(500), nullable=True)  # Puede ser URL de meet/teams o dirección física
-    
+
     # Información del cliente
     client_name = Column(String(200), nullable=False)
     client_email = Column(String(200), nullable=True)
     client_phone = Column(String(50), nullable=True)
-    
+
     # Proveedor de calendario y estado
     provider = Column(String(50), nullable=False, index=True)  # google_calendar, outlook
     status = Column(String(30), default="pending", nullable=False, index=True)
     # Estados: pending, confirmed, cancelled, completed, no_show, rescheduled
-    
+
     # IDs y links externos
     external_id = Column(String(300), nullable=True)  # ID en Google/Outlook
     external_link = Column(String(500), nullable=True)  # Link para unirse a la reunión
     ical_uid = Column(String(300), nullable=True)  # UID del evento iCal
-    
+
     # Metadatos
     reminder_sent = Column(Boolean, default=False)
     notes = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)
-    
+    extra_metadata = Column("metadata", JSON, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -253,28 +258,29 @@ class Appointment(Base):
 
 class CalendarCredential(Base):
     """Credenciales OAuth para servicios de calendario"""
+
     __tablename__ = "calendar_credentials"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     provider = Column(String(50), nullable=False, unique=True, index=True)  # google_calendar, outlook
-    
+
     # Tokens OAuth (encriptados en producción)
     access_token = Column(Text, nullable=True)
     refresh_token = Column(Text, nullable=True)
     token_type = Column(String(50), default="Bearer")
-    
+
     # Información de expiración
     expires_at = Column(DateTime, nullable=True)
     scope = Column(Text, nullable=True)
-    
+
     # Información de la cuenta
     account_email = Column(String(200), nullable=True)
     calendar_id = Column(String(300), nullable=True)  # ID del calendario a usar
-    
+
     # Estado
     is_active = Column(Boolean, default=True)
     last_used_at = Column(DateTime, nullable=True)
-    
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

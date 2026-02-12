@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="common.css">
+
     <title>Alertas - Admin Panel</title>
     <style>
         * {
@@ -500,7 +502,7 @@
         
         async function loadStats() {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/alerts?limit=1000', {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -535,7 +537,7 @@
             container.innerHTML = '<div class="loading">Cargando alertas...</div>';
             
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 
                 // Construir URL con filtros
                 const params = new URLSearchParams();
@@ -695,7 +697,7 @@
             }
             
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch(`/api/alerts/${currentAlertId}/assign`, {
                     method: 'POST',
                     headers: {
@@ -727,7 +729,7 @@
             }
             
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch(`/api/alerts/${currentAlertId}/resolve`, {
                     method: 'POST',
                     headers: {

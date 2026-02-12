@@ -4,8 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="common.css">
+
     <title>🚀 Configuración Inicial - WhatsApp AI Chatbot</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         * {
             margin: 0;
@@ -605,7 +607,7 @@
 
         // Check auth on load
         document.addEventListener('DOMContentLoaded', () => {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             if (!token) {
                 window.location.href = '/ui/login.html';
                 return;
@@ -617,7 +619,7 @@
 
         async function loadExistingConfig() {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/business/config', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -705,7 +707,7 @@
 
         async function saveBusinessConfig() {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/business/config', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -738,7 +740,7 @@
 
         async function saveWhatsAppConfig() {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const config = { mode: selectedMode };
 
                 if (selectedMode === 'cloud' || selectedMode === 'both') {
@@ -790,7 +792,7 @@
             preview.scrollTop = preview.scrollHeight;
 
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/chat/test', {
                     method: 'POST',
                     headers: {

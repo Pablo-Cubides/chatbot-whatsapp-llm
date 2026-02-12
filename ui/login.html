@@ -4,8 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="common.css">
+
     <title>🔐 Login - WhatsApp AI Chatbot</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         * {
             margin: 0;
@@ -318,8 +320,8 @@
             </form>
 
             <div class="demo-credentials">
-                <h4><i class="fas fa-info-circle"></i> Credenciales de Prueba</h4>
-                <p>Usuario: <code>admin</code> | Contraseña: <code>admin123</code></p>
+                <h4><i class="fas fa-info-circle"></i> Acceso</h4>
+                <p>Utilice las credenciales proporcionadas por el administrador del sistema.</p>
             </div>
         </div>
 
@@ -332,7 +334,7 @@
     <script>
         // Check if already logged in
         document.addEventListener('DOMContentLoaded', () => {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             if (token) {
                 // Verify token is still valid
                 fetch('/api/verify', {
@@ -345,14 +347,14 @@
                         }
                     })
                     .catch(() => {
-                        localStorage.removeItem('token');
+                        sessionStorage.removeItem('token');
                     });
             }
         });
 
         async function checkSetupStatus() {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/business/config', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -402,11 +404,11 @@
 
                 if (response.ok && data.access_token) {
                     // Save token
-                    localStorage.setItem('token', data.access_token);
-                    localStorage.setItem('username', username);
+                    sessionStorage.setItem('token', data.access_token);
+                    sessionStorage.setItem('username', username);
 
                     if (document.getElementById('rememberMe').checked) {
-                        localStorage.setItem('remember', 'true');
+                        sessionStorage.setItem('remember', 'true');
                     }
 
                     // Redirect based on setup status

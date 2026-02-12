@@ -229,8 +229,8 @@ services:
 ## 📚 Documentation
 
 - [Security Policy](SECURITY.md) - Security guidelines
-- [Contributing Guide](CONTRIBUTING.md) - Development guidelines
-- [Changelog](CHANGELOG.md) - Version history
+- [Architecture](ARCHITECTURE.md) - System design and diagrams
+- [Deployment](docs/DEPLOYMENT.md) - Cloud deployment guide
 
 ---
 

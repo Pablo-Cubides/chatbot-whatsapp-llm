@@ -1,0 +1,7 @@
+# Worker-web (Playwright) dependencies
+# Install with: pip install -r requirements-worker.txt
+
+-r requirements.txt
+
+# Playwright for WhatsApp Web automation
+playwright>=1.51.0

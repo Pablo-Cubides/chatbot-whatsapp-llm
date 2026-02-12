@@ -139,3 +139,18 @@ Thumbs.db
 manual_queue.json
 scheduled.json
 contacts_backup.json
+
+# Dead/removed directories (prevent accidental re-add)
+app/
+Frontend/
+
+# Build artifacts
+.next/
+package-lock.json
+
+# Backups and reports
+backups/
+tests/reports/
+
+# Data caches
+data/transcription_cache/

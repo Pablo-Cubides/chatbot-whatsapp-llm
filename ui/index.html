@@ -4,8 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="common.css">
+
     <title>🤖 WhatsApp AI Chatbot - Panel de Control</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         * {
             margin: 0;
@@ -714,7 +716,7 @@
 
             // Cargar configuración actual
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/ai-models/config', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -747,7 +749,7 @@
             document.getElementById('addProviderForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
 
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const data = {
                     name: document.getElementById('providerName').value,
                     provider_type: document.getElementById('providerType').value,
@@ -784,7 +786,7 @@
             if (!confirm(`¿Eliminar proveedor "${name}"?`)) return;
 
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch(`/api/ai-models/custom-provider/${encodeURIComponent(name)}`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -897,7 +899,7 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
 
             // Cargar campañas existentes
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/campaigns', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -952,7 +954,7 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
             document.getElementById('createCampaignForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
 
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const contacts = document.getElementById('campaignContacts').value
                     .split('\n')
                     .map(c => c.trim())
@@ -995,7 +997,7 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
         }
 
         async function pauseCampaign(campaignId) {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             try {
                 const response = await fetch(`/api/campaigns/${campaignId}/pause`, {
                     method: 'POST',
@@ -1013,7 +1015,7 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
         }
 
         async function resumeCampaign(campaignId) {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             try {
                 const response = await fetch(`/api/campaigns/${campaignId}/resume`, {
                     method: 'POST',
@@ -1032,7 +1034,7 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
 
         async function showScheduler() {
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/queue/pending', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -1124,7 +1126,7 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
 
             // Cargar estado actual
             try {
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const response = await fetch('/api/whatsapp/provider/config', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -1158,7 +1160,7 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
             document.getElementById('cloudCredentialsForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
 
-                const token = localStorage.getItem('token');
+                const token = sessionStorage.getItem('token');
                 const data = {
                     access_token: document.getElementById('cloudToken').value,
                     phone_number_id: document.getElementById('cloudPhoneId').value,
@@ -1191,7 +1193,7 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
         }
 
         async function setProviderMode(mode) {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
 
             try {
                 const response = await fetch('/api/whatsapp/provider/config', {
@@ -1230,21 +1232,21 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
         // Authentication check and initialization
         document.addEventListener('DOMContentLoaded', async function () {
             // Check authentication
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
             if (!token) {
                 window.location.href = '/ui/login.html';
                 return;
             }
 
             // Display username
-            const username = localStorage.getItem('username') || 'Usuario';
+            const username = sessionStorage.getItem('username') || 'Usuario';
             document.getElementById('usernameDisplay').textContent = username;
 
             // Load setup checklist status
             await updateChecklist();
 
             // Welcome message for new users (but not on every visit)
-            if (!localStorage.getItem('welcomed_v2')) {
+            if (!sessionStorage.getItem('welcomed_v2')) {
                 setTimeout(() => {
                     // Check if setup is incomplete
                     const businessCheck = document.getElementById('checkBusiness');
@@ -1253,20 +1255,20 @@ Tenemos una promoción especial para ti. ¿Te gustaría conocer más detalles?</
                             window.location.href = '/ui/setup.html';
                         }
                     }
-                    localStorage.setItem('welcomed_v2', 'true');
+                    sessionStorage.setItem('welcomed_v2', 'true');
                 }, 1000);
             }
         });
 
         function logout() {
-            localStorage.removeItem('token');
-            localStorage.removeItem('username');
-            localStorage.removeItem('remember');
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('username');
+            sessionStorage.removeItem('remember');
             window.location.href = '/ui/login.html';
         }
 
         async function updateChecklist() {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('token');
 
             try {
                 // Check business config
