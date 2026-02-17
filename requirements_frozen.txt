@@ -46,7 +46,7 @@ python-multipart==0.0.20
 PyJWT==2.10.1
 slowapi==0.1.9
 bcrypt==4.1.2
-email-validator==2.1.0
+email-validator==2.3.0
 psycopg2-binary==2.9.9
 redis==5.0.8
 Jinja2==3.1.6
