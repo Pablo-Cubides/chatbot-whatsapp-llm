@@ -1,5 +1,5 @@
 # Dockerfile para WhatsApp Web Worker (Playwright, multi-stage)
-FROM mcr.microsoft.com/playwright/python:v1.51.0-noble AS builder
+FROM mcr.microsoft.com/playwright/python:v1.58.0-noble AS builder
 
 LABEL maintainer="Pablo Cubides"
 LABEL description="WhatsApp Web Automator Worker con Playwright"
@@ -17,7 +17,7 @@ COPY requirements.txt requirements-worker.txt ./
 RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements-worker.txt
 
 
-FROM mcr.microsoft.com/playwright/python:v1.51.0-noble AS runtime
+FROM mcr.microsoft.com/playwright/python:v1.58.0-noble AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
