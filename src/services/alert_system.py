@@ -6,10 +6,14 @@ Detección inteligente de situaciones que requieren intervención humana
 import logging
 import os
 import re
+import asyncio
 import uuid
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Optional
+
+import httpx
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text
 
@@ -17,6 +21,25 @@ from src.models.admin_db import get_session
 from src.models.models import Base
 
 logger = logging.getLogger(__name__)
+
+
+def _run_async_blocking(coro):
+    """Run async coroutine from sync context without nested-loop errors."""
+    try:
+        asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(lambda: asyncio.run(coro)).result()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+
+async def _post_json_async(url: str, payload: dict[str, Any], timeout_seconds: float = 10) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        return await client.post(url, json=payload)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class AlertSeverity(str, Enum):
@@ -52,7 +75,7 @@ class AlertRule(Base):
     actions = Column(JSON, nullable=False)  # ['create_alert', 'mark_human_needed', 'notify_webhook']
     schedule = Column(JSON, nullable=True)  # horario activo
     extra_data = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
     created_by = Column(String(100), nullable=False)
 
 
@@ -69,7 +92,7 @@ class Alert(Base):
     severity = Column(String(20), nullable=False, index=True)
     status = Column(String(20), default="open", nullable=False, index=True)  # open, assigned, resolved
     assigned_to = Column(String(100), nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
     resolved_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
     extra_data = Column(JSON, nullable=True)
@@ -130,7 +153,7 @@ class AlertManager:
             session.close()
 
         except Exception as e:
-            logger.error(f"❌ Error cargando reglas por defecto: {e}")
+            logger.error("❌ Error cargando reglas por defecto: %s", e)
 
     def check_alert_rules(self, message_text: str, chat_id: str, metadata: Optional[dict] = None) -> list[str]:
         """
@@ -171,7 +194,7 @@ class AlertManager:
                         # Limit regex search to first 5000 chars to prevent ReDoS
                         matched = pattern.search(message_text[:5000]) is not None
                     except re.error as regex_err:
-                        logger.warning(f"⚠️ Regex inválido en regla {rule.id}: {rule.pattern} - {regex_err}")
+                        logger.warning("⚠️ Regex inválido en regla %s: %s - %s", rule.id, rule.pattern, regex_err)
 
                 if matched:
                     # Crear alerta
@@ -185,7 +208,7 @@ class AlertManager:
 
                     if alert_id:
                         alert_ids.append(alert_id)
-                        logger.info(f"🚨 Alerta creada: {alert_id} (regla: {rule.name})")
+                        logger.info("🚨 Alerta creada: %s (regla: %s)", alert_id, rule.name)
 
                         # Ejecutar acciones
                         if "mark_human_needed" in rule.actions:
@@ -198,7 +221,7 @@ class AlertManager:
             return alert_ids
 
         except Exception as e:
-            logger.error(f"❌ Error verificando reglas de alerta: {e}")
+            logger.error("❌ Error verificando reglas de alerta: %s", e)
             return []
 
     def create_alert(
@@ -232,7 +255,7 @@ class AlertManager:
             return alert_id
 
         except Exception as e:
-            logger.error(f"❌ Error creando alerta: {e}")
+            logger.error("❌ Error creando alerta: %s", e)
             return None
 
     def get_alerts(
@@ -268,8 +291,66 @@ class AlertManager:
             return [self._alert_to_dict(alert) for alert in alerts]
 
         except Exception as e:
-            logger.error(f"❌ Error obteniendo alertas: {e}")
+            logger.error("❌ Error obteniendo alertas: %s", e)
             return []
+
+    def get_alert_by_id(self, alert_id: str) -> Optional[dict[str, Any]]:
+        """Obtener una alerta por su identificador público."""
+        try:
+            session = get_session()
+            alert = session.query(Alert).filter(Alert.alert_id == alert_id).first()
+            session.close()
+            if not alert:
+                return None
+            return self._alert_to_dict(alert)
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo alerta {alert_id}: {e}")
+            return None
+
+    def acknowledge_security_alert(
+        self,
+        alert_id: str,
+        acknowledged_by: str,
+        note: Optional[str] = None,
+        silence_minutes: int = 0,
+    ) -> Optional[dict[str, Any]]:
+        """Registrar acuse de alerta de seguridad con trazabilidad operativa."""
+        try:
+            session = get_session()
+            alert = session.query(Alert).filter(Alert.alert_id == alert_id).first()
+            if not alert:
+                session.close()
+                return None
+
+            metadata = dict(alert.extra_data or {})
+            now = datetime.now(timezone.utc)
+
+            metadata.update(
+                {
+                    "acknowledged_by": acknowledged_by,
+                    "acknowledged_at": now.isoformat(),
+                }
+            )
+            if note:
+                metadata["acknowledge_note"] = note[:500]
+
+            if silence_minutes > 0:
+                silenced_until = now + timedelta(minutes=min(max(1, silence_minutes), 24 * 60))
+                metadata["silenced_until"] = silenced_until.isoformat()
+                metadata["silenced_by"] = acknowledged_by
+
+            alert.assigned_to = acknowledged_by
+            alert.status = "assigned"
+            alert.extra_data = metadata
+
+            session.commit()
+            session.refresh(alert)
+            payload = self._alert_to_dict(alert)
+            session.close()
+            return payload
+        except Exception as e:
+            logger.error(f"❌ Error confirmando alerta de seguridad {alert_id}: {e}")
+            return None
 
     def assign_alert(self, alert_id: str, assigned_to: str) -> bool:
         """Asignar una alerta a un operador"""
@@ -417,15 +498,13 @@ class AlertManager:
         webhook_url = os.environ.get("ALERT_WEBHOOK_URL")
         if webhook_url:
             try:
-                import requests
-
                 payload = {
                     "alert_id": alert_id,
                     "chat_id": chat_id,
                     "message_text": message_text[:500],  # Truncate for safety
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
-                response = requests.post(webhook_url, json=payload, timeout=10)
+                response = _run_async_blocking(_post_json_async(webhook_url, payload, timeout_seconds=10))
                 if response.status_code < 300:
                     logger.info(f"📞 Webhook notificado para alerta {alert_id}")
                 else:

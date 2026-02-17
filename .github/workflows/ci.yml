@@ -9,9 +9,15 @@ on:
     branches: [main]
 
 env:
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: "3.11.8"
   JWT_SECRET: "test-secret-for-ci-minimum-32-characters-long"
   ADMIN_PASSWORD: "test_password_ci"
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/chatbot-whatsapp
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
 
 jobs:
   # ===========================
@@ -41,6 +47,10 @@ jobs:
       
       - name: Check imports and lint with Ruff
         run: ruff check .
+
+      - name: Type check (targeted hardened modules)
+        run: |
+          mypy --config-file mypy.ini --strict src/services/http_rate_limit.py crypto.py src/workers/scheduler_worker.py admin_panel.py src/services/process_control.py
 
   # ===========================
   # Tests
@@ -86,7 +96,7 @@ jobs:
           JWT_SECRET: ${{ env.JWT_SECRET }}
           ADMIN_PASSWORD: ${{ env.ADMIN_PASSWORD }}
         run: |
-          pytest tests/ -v --cov=src --cov-report=xml --cov-report=html
+          pytest tests/ -v --cov=src --cov-report=xml --cov-report=html --cov-fail-under=70
       
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
@@ -120,6 +130,18 @@ jobs:
       - name: Check with Bandit
         run: bandit -r src/ -ll --skip B101
 
+      - name: Safety check
+        run: safety check -r requirements.txt
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
   # ===========================
   # Build Docker Image
   # ===========================
@@ -138,10 +160,20 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: false
-          tags: chatbot-whatsapp:${{ github.sha }}
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          tags: |
+            chatbot-whatsapp:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: chatbot-whatsapp:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
       
       - name: Test Docker image
         run: |
@@ -167,24 +199,122 @@ jobs:
     name: 🚀 Deploy
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_SSH_KEY != ''
     
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Deploy notification
-        run: |
-          echo "🎉 Ready to deploy version ${{ github.sha }}"
-          echo "Configure your deployment target (AWS/GCP/Azure) in this step"
-      
-      # Ejemplo: Deploy a AWS ECS
-      # - name: Configure AWS credentials
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #     aws-region: us-east-1
-      
-      # - name: Deploy to ECS
-      #   run: |
-      #     aws ecs update-service --cluster chatbot --service chatbot-service --force-new-deployment
+      - name: Deploy via SSH (Docker host)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            APP_DIR="${{ secrets.DEPLOY_PATH }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="$HOME/chatbot-whatsapp-llm"
+            fi
+
+            dump_diagnostics() {
+              echo "=== deploy diagnostics: docker compose ps ==="
+              docker compose ps || true
+              echo "=== deploy diagnostics: recent logs (app/worker-web/scheduler) ==="
+              docker compose logs --tail=120 app worker-web scheduler || true
+            }
+
+            trap 'echo "Deploy step failed; collecting diagnostics"; dump_diagnostics' ERR
+
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+            cd "$APP_DIR"
+
+            export JWT_SECRET='${{ secrets.JWT_SECRET }}'
+            export ADMIN_PASSWORD='${{ secrets.ADMIN_PASSWORD }}'
+            export OPERATOR_PASSWORD='${{ secrets.OPERATOR_PASSWORD }}'
+            export POSTGRES_PASSWORD='${{ secrets.POSTGRES_PASSWORD }}'
+            export REDIS_PASSWORD='${{ secrets.REDIS_PASSWORD }}'
+            export POSTGRES_USER='${{ secrets.POSTGRES_USER }}'
+            export POSTGRES_DB='${{ secrets.POSTGRES_DB }}'
+            export DATABASE_URL='${{ secrets.DATABASE_URL }}'
+            export WHATSAPP_APP_SECRET='${{ secrets.WHATSAPP_APP_SECRET }}'
+            export AUTO_MIGRATE='true'
+
+            # Fail-fast: required runtime secrets must be present
+            for required_var in JWT_SECRET ADMIN_PASSWORD OPERATOR_PASSWORD POSTGRES_PASSWORD REDIS_PASSWORD POSTGRES_USER POSTGRES_DB DATABASE_URL WHATSAPP_APP_SECRET; do
+              if [ -z "$(printenv "$required_var")" ]; then
+                echo "Missing required deploy secret/env: $required_var"
+                exit 1
+              fi
+            done
+
+            # Preflight: validate compose files before pull/up
+            docker compose config -q
+            if [ -f docker-compose.proxy.yml ]; then
+              docker compose -f docker-compose.yml -f docker-compose.proxy.yml config -q
+            fi
+            if [ -f docker-compose.backup.yml ]; then
+              docker compose -f docker-compose.yml -f docker-compose.backup.yml config -q
+            fi
+
+            docker compose pull || true
+            docker compose up -d postgres redis
+            docker compose run --rm app alembic upgrade head
+            docker compose up -d app worker-web scheduler
+
+            if [ -f docker-compose.proxy.yml ]; then
+              docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d reverse-proxy
+            fi
+
+            if [ -f docker-compose.backup.yml ]; then
+              docker compose -f docker-compose.yml -f docker-compose.backup.yml up -d postgres-backup
+            fi
+
+            # Post-deploy smoke checks
+            for i in 1 2 3 4 5; do
+              if curl -fsS "http://localhost:8003/healthz" >/dev/null; then
+                break
+              fi
+              sleep 5
+            done
+
+            HEALTH_JSON=$(curl -fsS "http://localhost:8003/healthz")
+            printf '%s' "$HEALTH_JSON" | python3 -c "import json,sys; p=json.load(sys.stdin); c=p.get('components') or {}; req={'database','redis','disk','memory'}; missing=sorted(req-set(c.keys())); assert 'status' in p, 'healthz missing status'; assert isinstance(c, dict), 'healthz components invalid'; assert not missing, f'healthz missing components: {missing}'"
+            curl -fsS "http://localhost:8003/metrics" | head -n 20
+
+            # Auth smoke checks (unauthenticated + authenticated)
+            ME_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8003/api/auth/me")
+            if [ "$ME_STATUS" != "401" ]; then
+              echo "Expected /api/auth/me to return 401 without token, got $ME_STATUS"
+              exit 1
+            fi
+
+            LOGIN_RESPONSE=$(curl -fsS -X POST "http://localhost:8003/api/auth/login" \
+              -H "Content-Type: application/json" \
+              -d "{\"username\":\"admin\",\"password\":\"${ADMIN_PASSWORD}\"}")
+            ACCESS_TOKEN=$(printf '%s' "$LOGIN_RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))")
+            if [ -z "$ACCESS_TOKEN" ]; then
+              echo "Login smoke check failed: access_token missing"
+              echo "$LOGIN_RESPONSE"
+              exit 1
+            fi
+
+            curl -fsS "http://localhost:8003/api/auth/me" \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" | grep -q '"username":"admin"'
+
+            # Runtime status checks for critical services
+            docker compose ps
+            for svc in app worker-web scheduler; do
+              if ! docker compose ps "$svc" | grep -Eiq "Up|running|healthy"; then
+                echo "Service $svc is not running/healthy"
+                docker compose ps
+                exit 1
+              fi
+            done
+
+            if docker compose ps | grep -Eiq "unhealthy|Exited|dead"; then
+              echo "Detected unhealthy/exited containers after deploy"
+              docker compose ps
+              exit 1
+            fi
+
+            docker compose ps

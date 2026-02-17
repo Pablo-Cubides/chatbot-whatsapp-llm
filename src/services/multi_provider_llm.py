@@ -6,6 +6,10 @@ Incluye sistema de humanización y detección de respuestas bot
 
 import logging
 import os
+import asyncio
+import hashlib
+import json
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
@@ -16,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 # Importar sistema de humanización
 try:
-    from services.humanized_responses import humanized_responses, sensitive_handler
-    from services.silent_transfer import TransferReason, silent_transfer_manager
+    from src.services.humanized_responses import humanized_responses, sensitive_handler
+    from src.services.silent_transfer import TransferReason, silent_transfer_manager
 
     HUMANIZATION_AVAILABLE = True
 except ImportError:
@@ -26,12 +30,33 @@ except ImportError:
 
 # Importar context loader para inyección de contextos
 try:
-    from services.context_loader import context_loader
+    from src.services.context_loader import context_loader
 
     CONTEXT_LOADER_AVAILABLE = True
 except ImportError:
     logger.warning("⚠️ Context loader no disponible")
     CONTEXT_LOADER_AVAILABLE = False
+
+try:
+    from src.services.cache_system import cache_llm_response, get_cached_llm_response
+
+    CACHE_AVAILABLE = True
+except ImportError:
+    CACHE_AVAILABLE = False
+
+try:
+    from src.services.protection_system import CircuitBreakerOpenException, get_or_create_circuit_breaker
+
+    CIRCUIT_BREAKER_AVAILABLE = True
+except ImportError:
+    CIRCUIT_BREAKER_AVAILABLE = False
+
+try:
+    from src.services.metrics import inc_counter, observe_histogram
+
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
 
 
 class LLMProvider(Enum):
@@ -61,6 +86,11 @@ class MultiProviderLLM:
     def __init__(self):
         self.providers = {}
         self.fallback_order = []
+        self._http_session: Optional[aiohttp.ClientSession] = None
+        self.provider_timeout_seconds = int(os.getenv("LLM_PROVIDER_TIMEOUT_SECONDS", "30"))
+        self.retry_base_delay_seconds = float(os.getenv("LLM_RETRY_BASE_DELAY_SECONDS", "0.5"))
+        self.cache_enabled = os.getenv("LLM_CACHE_ENABLED", "true").lower() == "true"
+        self.cache_ttl_seconds = int(os.getenv("LLM_CACHE_TTL_SECONDS", "3600"))
         self.load_configurations()
 
     def load_configurations(self):
@@ -110,53 +140,91 @@ class MultiProviderLLM:
                 is_free=False,
             )
 
-        # Ollama (Local, completamente gratuito)
-        if self._check_ollama_available():
-            self.providers[LLMProvider.OLLAMA] = APIConfig(
-                name="Ollama (Local)",
-                api_key=None,
-                base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-                model=os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
-                is_reasoning=False,  # Modelos pequeños, menos razonamiento
-                is_free=True,  # Completamente gratuito
-            )
+        # Proveedores locales: se registran sin hacer I/O durante import/init.
+        self.providers[LLMProvider.OLLAMA] = APIConfig(
+            name="Ollama (Local)",
+            api_key=None,
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            model=os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
+            is_reasoning=False,
+            is_free=True,
+            active=False,
+        )
 
-        # LM Studio (Local, completamente gratuito)
-        if self._check_lmstudio_available():
-            self.providers[LLMProvider.LM_STUDIO] = APIConfig(
-                name="LM Studio (Local)",
-                api_key=None,
-                base_url=os.getenv("LM_STUDIO_URL", "http://127.0.0.1:1234/v1"),
-                model=os.getenv("LM_STUDIO_MODEL", "nemotron-mini-4b-instruct"),
-                is_reasoning=False,
-                is_free=True,  # Completamente gratuito
-            )
+        self.providers[LLMProvider.LM_STUDIO] = APIConfig(
+            name="LM Studio (Local)",
+            api_key=None,
+            base_url=os.getenv("LM_STUDIO_URL", "http://127.0.0.1:1234/v1"),
+            model=os.getenv("LM_STUDIO_MODEL", "nemotron-mini-4b-instruct"),
+            is_reasoning=False,
+            is_free=True,
+            active=False,
+        )
 
         # Configurar orden de fallback inteligente
         self._setup_intelligent_fallback()
 
-        logger.info(f"Configurados {len(self.providers)} proveedores de IA")
+        logger.info("Configurados %s proveedores de IA", len(self.providers))
         self._log_provider_capabilities()
 
-    def _check_ollama_available(self) -> bool:
-        """Verifica si Ollama está disponible"""
+    async def _check_ollama_available_async(self) -> bool:
+        """Verifica asíncronamente si Ollama está disponible."""
+        timeout = aiohttp.ClientTimeout(total=3)
+        url = f"{os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')}/api/version"
         try:
-            import requests
-
-            response = requests.get(f"{os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')}/api/version", timeout=3)
-            return response.status_code == 200
+            async with self._session_scope() as session:
+                async with session.get(url, timeout=timeout) as response:
+                    return response.status == 200
         except Exception:
             return False
 
-    def _check_lmstudio_available(self) -> bool:
-        """Verifica si LM Studio está disponible"""
+    async def _check_lmstudio_available_async(self) -> bool:
+        """Verifica asíncronamente si LM Studio está disponible."""
+        timeout = aiohttp.ClientTimeout(total=3)
+        url = f"{os.getenv('LM_STUDIO_URL', 'http://127.0.0.1:1234')}/v1/models"
         try:
-            import requests
-
-            response = requests.get(f"{os.getenv('LM_STUDIO_URL', 'http://127.0.0.1:1234')}/v1/models", timeout=3)
-            return response.status_code == 200
+            async with self._session_scope() as session:
+                async with session.get(url, timeout=timeout) as response:
+                    return response.status == 200
         except Exception:
             return False
+
+    def set_http_session(self, session: Optional[aiohttp.ClientSession]) -> None:
+        """Inject shared aiohttp session managed by app lifespan."""
+        self._http_session = session
+
+    async def initialize(self) -> None:
+        """Initialize runtime provider availability checks (no import-time I/O)."""
+        try:
+            ollama_available, lmstudio_available = await asyncio.gather(
+                self._check_ollama_available_async(),
+                self._check_lmstudio_available_async(),
+            )
+
+            if LLMProvider.OLLAMA in self.providers:
+                self.providers[LLMProvider.OLLAMA].active = bool(ollama_available)
+            if LLMProvider.LM_STUDIO in self.providers:
+                self.providers[LLMProvider.LM_STUDIO].active = bool(lmstudio_available)
+
+            self._setup_intelligent_fallback()
+            logger.info(
+                "LLM initialize: ollama=%s lmstudio=%s",
+                ollama_available,
+                lmstudio_available,
+            )
+        except Exception as e:
+            logger.warning("LLM initialize warning: %s", e)
+
+    @asynccontextmanager
+    async def _session_scope(self):
+        """Provide shared ClientSession when available; otherwise a short-lived one."""
+        if self._http_session is not None and not self._http_session.closed:
+            yield self._http_session
+            return
+
+        timeout = aiohttp.ClientTimeout(total=self.provider_timeout_seconds)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            yield session
 
     def _setup_intelligent_fallback(self):
         """Configura orden de fallback inteligente basado en benchmarks y uso"""
@@ -193,7 +261,7 @@ class MultiProviderLLM:
                     self.free_only_fallback.append(provider)
 
             except ValueError:
-                logger.warning(f"Proveedor desconocido en fallback order: {provider_name}")
+                logger.warning("Proveedor desconocido en fallback order: %s", provider_name)
                 continue
 
         # Si no hay modelos de razonamiento, usar los normales
@@ -204,9 +272,9 @@ class MultiProviderLLM:
         if not self.free_only_fallback:
             self.free_only_fallback = [p for p in self.normal_fallback if self.providers[p].is_free]
 
-        logger.info(f"Fallback normal: {[p.value for p in self.normal_fallback]}")
-        logger.info(f"Fallback razonamiento: {[p.value for p in self.reasoning_fallback]}")
-        logger.info(f"Fallback gratuito: {[p.value for p in self.free_only_fallback]}")
+        logger.info("Fallback normal: %s", [p.value for p in self.normal_fallback])
+        logger.info("Fallback razonamiento: %s", [p.value for p in self.reasoning_fallback])
+        logger.info("Fallback gratuito: %s", [p.value for p in self.free_only_fallback])
 
     def _log_provider_capabilities(self):
         """Log de capacidades de cada proveedor"""
@@ -219,7 +287,7 @@ class MultiProviderLLM:
             if not config.api_key:
                 capabilities.append("📍 Local")
 
-            logger.info(f"✅ {config.name}: {', '.join(capabilities) if capabilities else 'Estándar'}")
+            logger.info("✅ %s: %s", config.name, ", ".join(capabilities) if capabilities else "Estándar")
 
     def get_fallback_order(self, use_case: str = "normal", free_only: bool = False) -> list[LLMProvider]:
         """Retorna el orden de fallback según el caso de uso"""
@@ -268,11 +336,11 @@ class MultiProviderLLM:
                 # Si no hay mensaje de sistema, insertar al inicio
                 enhanced_messages.insert(0, context_message)
 
-            logger.info(f"📦 Contextos inyectados para chat {chat_id}")
+            logger.info("📦 Contextos inyectados para chat %s", chat_id)
             return enhanced_messages
 
         except Exception as e:
-            logger.warning(f"⚠️ Error inyectando contextos: {e}")
+            logger.warning("⚠️ Error inyectando contextos: %s", e)
             return messages
 
     async def generate_response(
@@ -290,6 +358,16 @@ class MultiProviderLLM:
         """
 
         # Obtener mensaje del usuario para análisis contextual
+        request_start = asyncio.get_event_loop().time()
+        if METRICS_AVAILABLE:
+            inc_counter("llm_requests")
+
+        def _finalize(payload: dict[str, Any]) -> dict[str, Any]:
+            if METRICS_AVAILABLE:
+                elapsed = max(0.0, asyncio.get_event_loop().time() - request_start)
+                observe_histogram("llm_response_time", elapsed)
+            return payload
+
         user_message = messages[-1]["content"] if messages else ""
         chat_id = business_context.get("chat_id") if business_context else "unknown"
 
@@ -302,23 +380,50 @@ class MultiProviderLLM:
         if admin_free_only:
             free_only = True
 
+        prompt_hash = self._compute_prompt_hash(messages, business_context, use_case=use_case, free_only=free_only)
+
         # Para negocios sensibles, priorizar modelos sin censura
         business_type = business_context.get("business_type") if business_context else None
         if HUMANIZATION_AVAILABLE and business_type and sensitive_handler.is_sensitive_business(business_type):
-            logger.info(f"🔞 Negocio sensible detectado: {business_type} - Priorizando modelos sin censura")
+            logger.info("🔞 Negocio sensible detectado: %s - Priorizando modelos sin censura", business_type)
             preferred_models = sensitive_handler.get_preferred_models(business_type)
             # Reordenar fallback para priorizar modelos sin censura
             fallback_providers = self._reorder_for_sensitive(self.get_fallback_order(use_case, free_only), preferred_models)
         else:
             fallback_providers = self.get_fallback_order(use_case, free_only)
 
-        logger.info(f"Usando caso: {use_case}, solo gratuitos: {free_only}")
+        logger.info("Usando caso: %s, solo gratuitos: %s", use_case, free_only)
 
         # Intentar con cada proveedor
         for provider in fallback_providers:
             try:
-                logger.info(f"Intentando con proveedor: {provider.value}")
-                result = await self._call_provider(provider, messages, business_context)
+                logger.info("Intentando con proveedor: %s", provider.value)
+                effective_retries = max(1, int(max_retries))
+
+                if self.cache_enabled and CACHE_AVAILABLE:
+                    cached = await get_cached_llm_response(prompt_hash, provider.value)
+                    if cached and cached.get("response"):
+                        return _finalize({
+                            "success": True,
+                            "response": cached["response"],
+                            "provider": provider.value,
+                            "model": self.providers[provider].model,
+                            "tokens_used": 0,
+                            "is_free": self.providers[provider].is_free,
+                            "use_case": use_case,
+                            "was_humanized": False,
+                            "cached": True,
+                        })
+
+                result = await self._call_provider(
+                    provider,
+                    messages,
+                    business_context,
+                    max_retries=effective_retries,
+                )
+
+                if not (result and result.get("success")):
+                    self._record_provider_failure(provider.value)
 
                 if result and result.get("success"):
                     response_text = result["response"]
@@ -329,8 +434,8 @@ class MultiProviderLLM:
                         is_ethical_refusal = humanized_responses.detect_llm_ethical_refusal(response_text)
 
                         if is_ethical_refusal:
-                            logger.error(f"❌ NEGACIÓN ÉTICA detectada en {provider.value}")
-                            logger.error(f"   Respuesta: {response_text[:200]}")
+                            logger.error("❌ NEGACIÓN ÉTICA detectada en %s", provider.value)
+                            logger.error("   Respuesta: %s", response_text[:200])
 
                             # Si no es un modelo sin censura, intentar con siguiente
                             if provider.value not in ["ollama", "lmstudio", "grok"]:
@@ -341,13 +446,21 @@ class MultiProviderLLM:
                         validation = humanized_responses.validate_llm_response(response_text)
 
                         if not validation["is_valid"]:
-                            logger.warning(f"⚠️ Respuesta suena a BOT: {validation['issues']}")
+                            logger.warning("⚠️ Respuesta suena a BOT: %s", validation["issues"])
                             # Humanizar respuesta
                             response_text = humanized_responses.humanize_response(response_text)
                             logger.info("✅ Respuesta humanizada aplicada")
 
-                    logger.info(f"✅ Respuesta exitosa de {provider.value}")
-                    return {
+                    if self.cache_enabled and CACHE_AVAILABLE and response_text:
+                        await cache_llm_response(
+                            prompt_hash=prompt_hash,
+                            response=response_text,
+                            provider=provider.value,
+                            ttl=self.cache_ttl_seconds,
+                        )
+
+                    logger.info("✅ Respuesta exitosa de %s", provider.value)
+                    return _finalize({
                         "success": True,
                         "response": response_text,
                         "provider": provider.value,
@@ -356,10 +469,11 @@ class MultiProviderLLM:
                         "is_free": self.providers[provider].is_free,
                         "use_case": use_case,
                         "was_humanized": validation.get("is_valid", True) if HUMANIZATION_AVAILABLE else False,
-                    }
+                    })
 
             except Exception as e:
-                logger.warning(f"❌ Error con {provider.value}: {str(e)}")
+                logger.warning("❌ Error con %s: %s", provider.value, str(e))
+                self._record_provider_failure(provider.value)
                 continue
 
         # TODOS LOS PROVEEDORES FALLARON - Manejo inteligente con humanización
@@ -373,7 +487,7 @@ class MultiProviderLLM:
 
             # ¿Requiere transferencia silenciosa?
             if error_response["transfer_to_human"]:
-                logger.error(f"🔇 TRANSFERENCIA SILENCIOSA activada para: {user_message[:50]}")
+                logger.error("🔇 TRANSFERENCIA SILENCIOSA activada para: %s", user_message[:50])
 
                 # Crear transferencia
                 transfer_id = silent_transfer_manager.create_transfer(
@@ -388,33 +502,33 @@ class MultiProviderLLM:
                     notify_client=False,  # SILENCIOSO
                 )
 
-                return {
+                return _finalize({
                     "success": False,
                     "response": None,  # NO responder
                     "action": "silent_transfer",
                     "transfer_id": transfer_id,
                     "error": "LLM failure - silent transfer initiated",
-                }
+                })
 
             # Dar respuesta humanizada y marcar para reintento
-            logger.info(f"💬 Respuesta humanizada: {error_response['response']}")
-            return {
+            logger.info("💬 Respuesta humanizada: %s", error_response["response"])
+            return _finalize({
                 "success": True,  # Técnicamente "exitoso" porque damos respuesta
                 "response": error_response["response"],
                 "action": "humanized_fallback",
                 "should_retry": error_response.get("should_retry", False),
                 "delay_before_response": error_response.get("delay_before_response", 0),
                 "provider": "humanized_fallback",
-            }
+            })
 
         # Sin sistema de humanización, fallback tradicional
-        return {
+        return _finalize({
             "success": False,
             "error": f"Todos los proveedores para {use_case} no están disponibles",
             "response": self._get_fallback_response(business_context),
             "provider": "fallback",
             "use_case": use_case,
-        }
+        })
 
     def _reorder_for_sensitive(self, providers: list[LLMProvider], preferred: list[str]) -> list[LLMProvider]:
         """
@@ -436,7 +550,7 @@ class MultiProviderLLM:
                 if self.providers[provider].active:
                     prioritized.append(provider)
                 else:
-                    logger.debug(f"⚠️ {provider.value} está en preferred pero no está activo")
+                    logger.debug("⚠️ %s está en preferred pero no está activo", provider.value)
             else:
                 remaining.append(provider)
 
@@ -450,218 +564,319 @@ class MultiProviderLLM:
 
         return prioritized + remaining
 
+    def _record_provider_failure(self, provider_name: str) -> None:
+        """Registra fallos por proveedor para observabilidad del fallback."""
+        if not METRICS_AVAILABLE:
+            return
+        try:
+            inc_counter(f"llm_provider_failure_{provider_name}")
+        except Exception:
+            logger.debug("No se pudo registrar métrica de fallo para proveedor %s", provider_name)
+
     async def _call_provider(
-        self, provider: LLMProvider, messages: list[dict[str, str]], business_context: Optional[dict] = None
+        self,
+        provider: LLMProvider,
+        messages: list[dict[str, str]],
+        business_context: Optional[dict] = None,
+        max_retries: int = 3,
     ) -> dict[str, Any]:
         """Llama a un proveedor específico"""
 
         config = self.providers[provider]
 
-        if provider == LLMProvider.GEMINI:
-            return await self._call_gemini(config, messages, business_context)
-        elif provider == LLMProvider.OPENAI:
-            return await self._call_openai(config, messages)
-        elif provider == LLMProvider.CLAUDE:
-            return await self._call_claude(config, messages)
-        elif provider == LLMProvider.OLLAMA:
-            return await self._call_ollama(config, messages)
-        elif provider == LLMProvider.LM_STUDIO:
-            return await self._call_lmstudio(config, messages)
-        elif provider == LLMProvider.XAI:
-            return await self._call_xai(config, messages)
+        async def _dispatch() -> dict[str, Any]:
+            if provider == LLMProvider.GEMINI:
+                return await self._call_gemini(config, messages, business_context, max_retries=max_retries)
+            elif provider == LLMProvider.OPENAI:
+                return await self._call_openai(config, messages, max_retries=max_retries)
+            elif provider == LLMProvider.CLAUDE:
+                return await self._call_claude(config, messages, max_retries=max_retries)
+            elif provider == LLMProvider.OLLAMA:
+                return await self._call_ollama(config, messages, max_retries=max_retries)
+            elif provider == LLMProvider.LM_STUDIO:
+                return await self._call_lmstudio(config, messages, max_retries=max_retries)
+            elif provider == LLMProvider.XAI:
+                return await self._call_xai(config, messages, max_retries=max_retries)
+            return {"success": False, "error": "Proveedor no soportado"}
 
-        return {"success": False, "error": "Proveedor no soportado"}
+        if not CIRCUIT_BREAKER_AVAILABLE:
+            return await _dispatch()
 
-    async def _call_gemini(self, config: APIConfig, messages: list[dict], context: Optional[dict] = None) -> dict:
+        breaker_name = f"llm_{provider.value}"
+        breaker = get_or_create_circuit_breaker(
+            name=breaker_name,
+            failure_threshold=int(os.getenv("LLM_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")),
+            recovery_timeout=int(os.getenv("LLM_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "60")),
+        )
+
+        try:
+            return await breaker.call(_dispatch)
+        except CircuitBreakerOpenException:
+            return {"success": False, "error": f"Circuit breaker abierto para {provider.value}"}
+
+    async def _call_gemini(
+        self,
+        config: APIConfig,
+        messages: list[dict],
+        context: Optional[dict] = None,
+        max_retries: int = 3,
+    ) -> dict:
         """Llama a Google Gemini API"""
-        try:
-            # Convertir mensajes al formato de Gemini
-            contents = []
-            for msg in messages:
-                contents.append({"role": "user" if msg["role"] == "user" else "model", "parts": [{"text": msg["content"]}]})
+        # Convertir mensajes al formato de Gemini
+        contents = []
+        for msg in messages:
+            contents.append({"role": "user" if msg["role"] == "user" else "model", "parts": [{"text": msg["content"]}]})
 
-            url = f"{config.base_url}/models/{config.model}:generateContent"
-            headers = {"Content-Type": "application/json", "x-goog-api-key": config.api_key}
+        url = f"{config.base_url}/models/{config.model}:generateContent"
+        headers = {"Content-Type": "application/json", "x-goog-api-key": config.api_key}
 
-            payload = {
-                "contents": contents,
-                "generationConfig": {"temperature": config.temperature, "maxOutputTokens": config.max_tokens},
-            }
+        payload = {
+            "contents": contents,
+            "generationConfig": {"temperature": config.temperature, "maxOutputTokens": config.max_tokens},
+        }
 
-            async with (
-                aiohttp.ClientSession() as session,
-                session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as response,
-            ):
-                if response.status == 200:
-                    data = await response.json()
-                    if "candidates" in data and len(data["candidates"]) > 0:
-                        text = data["candidates"][0]["content"]["parts"][0]["text"]
-                        return {
-                            "success": True,
-                            "response": text,
-                            "tokens_used": data.get("usageMetadata", {}).get("totalTokenCount", 0),
-                        }
+        timeout = aiohttp.ClientTimeout(total=self.provider_timeout_seconds)
+        transient_statuses = {408, 429, 500, 502, 503, 504}
 
-                error_text = await response.text()
-                return {"success": False, "error": f"API Error: {error_text}"}
+        for attempt in range(max_retries):
+            try:
+                async with self._session_scope() as session:
+                    async with session.post(url, headers=headers, json=payload, timeout=timeout) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            if "candidates" in data and len(data["candidates"]) > 0:
+                                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                                return {
+                                    "success": True,
+                                    "response": text,
+                                    "tokens_used": data.get("usageMetadata", {}).get("totalTokenCount", 0),
+                                }
 
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+                        error_text = await response.text()
+                        if response.status in transient_statuses and attempt < (max_retries - 1):
+                            await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                            continue
+                        return {"success": False, "error": f"Gemini API Error ({response.status}): {error_text}"}
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < (max_retries - 1):
+                    await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                    continue
+                return {"success": False, "error": str(e)}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
-    async def _call_openai(self, config: APIConfig, messages: list[dict]) -> dict:
-        """Llama a OpenAI API"""
-        try:
-            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {config.api_key}"}
+        return {"success": False, "error": "Gemini retries exhausted"}
 
-            payload = {
-                "model": config.model,
+    async def _call_openai(self, config: APIConfig, messages: list[dict], max_retries: int = 3) -> dict:
+        """Llama a OpenAI API."""
+        return await self._call_openai_compatible(
+            provider_label="OpenAI",
+            base_url=config.base_url,
+            api_key=config.api_key,
+            model=config.model,
+            messages=messages,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            max_retries=max_retries,
+            include_auth_header=True,
+        )
+
+    @staticmethod
+    def _compute_prompt_hash(
+        messages: list[dict[str, str]],
+        business_context: Optional[dict[str, Any]],
+        use_case: str,
+        free_only: bool,
+    ) -> str:
+        serialized = json.dumps(
+            {
                 "messages": messages,
-                "temperature": config.temperature,
-                "max_tokens": config.max_tokens,
-            }
+                "business_context": business_context or {},
+                "use_case": use_case,
+                "free_only": bool(free_only),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-            async with (
-                aiohttp.ClientSession() as session,
-                session.post(
-                    f"{config.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as response,
-            ):
-                if response.status == 200:
-                    data = await response.json()
-                    return {
-                        "success": True,
-                        "response": data["choices"][0]["message"]["content"],
-                        "tokens_used": data.get("usage", {}).get("total_tokens", 0),
-                    }
-
-                error_text = await response.text()
-                return {"success": False, "error": f"API Error: {error_text}"}
-
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    async def _call_ollama(self, config: APIConfig, messages: list[dict]) -> dict:
+    async def _call_ollama(self, config: APIConfig, messages: list[dict], max_retries: int = 3) -> dict:
         """Llama a Ollama local"""
-        try:
-            payload = {"model": config.model, "messages": messages, "stream": False}
+        payload = {"model": config.model, "messages": messages, "stream": False}
+        timeout = aiohttp.ClientTimeout(total=self.provider_timeout_seconds)
+        transient_statuses = {408, 429, 500, 502, 503, 504}
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{config.base_url}/api/chat", json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return {
-                            "success": True,
-                            "response": data["message"]["content"],
-                            "tokens_used": 0,  # Ollama es local, no cuenta tokens
-                        }
-
-                    error_text = await response.text()
-                    return {"success": False, "error": f"Ollama Error: {error_text}"}
-
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    async def _call_lmstudio(self, config: APIConfig, messages: list[dict]) -> dict:
-        """Llama a LM Studio local"""
-        try:
-            payload = {
-                "model": config.model,
-                "messages": messages,
-                "temperature": config.temperature,
-                "max_tokens": config.max_tokens,
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{config.base_url}/chat/completions", json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return {
-                            "success": True,
-                            "response": data["choices"][0]["message"]["content"],
-                            "tokens_used": 0,  # LM Studio es local
-                        }
-
-                    error_text = await response.text()
-                    return {"success": False, "error": f"LM Studio Error: {error_text}"}
-
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    async def _call_claude(self, config: APIConfig, messages: list[dict]) -> dict:
-        """Llama a Claude API con formato correcto de Anthropic"""
-        try:
-            headers = {"Content-Type": "application/json", "X-Api-Key": config.api_key, "anthropic-version": "2023-06-01"}
-
-            # Convertir mensajes al formato de Claude
-            claude_messages = []
-            system_message = ""
-
-            for msg in messages:
-                if msg["role"] == "system":
-                    system_message += msg["content"] + "\n"
-                else:
-                    claude_messages.append({"role": msg["role"], "content": msg["content"]})
-
-            payload = {
-                "model": config.model,
-                "messages": claude_messages,
-                "max_tokens": config.max_tokens,
-                "temperature": config.temperature,
-            }
-
-            if system_message.strip():
-                payload["system"] = system_message.strip()
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{config.base_url}/v1/messages", headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        content = data.get("content", [])
-                        if content and len(content) > 0:
-                            text = content[0].get("text", "")
+        for attempt in range(max_retries):
+            try:
+                async with self._session_scope() as session:
+                    async with session.post(f"{config.base_url}/api/chat", json=payload, timeout=timeout) as response:
+                        if response.status == 200:
+                            data = await response.json()
                             return {
                                 "success": True,
-                                "response": text,
-                                "tokens_used": data.get("usage", {}).get("input_tokens", 0)
-                                + data.get("usage", {}).get("output_tokens", 0),
+                                "response": data["message"]["content"],
+                                "tokens_used": 0,
                             }
 
-                    error_text = await response.text()
-                    return {"success": False, "error": f"Claude API Error: {error_text}"}
+                        error_text = await response.text()
+                        if response.status in transient_statuses and attempt < (max_retries - 1):
+                            await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                            continue
+                        return {"success": False, "error": f"Ollama Error ({response.status}): {error_text}"}
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < (max_retries - 1):
+                    await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                    continue
+                return {"success": False, "error": f"Ollama Exception: {str(e)}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
-        except Exception as e:
-            return {"success": False, "error": f"Claude Exception: {str(e)}"}
+        return {"success": False, "error": "Ollama retries exhausted"}
 
-    async def _call_xai(self, config: APIConfig, messages: list[dict]) -> dict:
-        """Llama a xAI Grok API"""
-        try:
-            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {config.api_key}"}
+    async def _call_lmstudio(self, config: APIConfig, messages: list[dict], max_retries: int = 3) -> dict:
+        """Llama a LM Studio local."""
+        result = await self._call_openai_compatible(
+            provider_label="LM Studio",
+            base_url=config.base_url,
+            api_key=config.api_key,
+            model=config.model,
+            messages=messages,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            max_retries=max_retries,
+            include_auth_header=False,
+        )
+        if result.get("success"):
+            result["tokens_used"] = 0
+        return result
 
-            payload = {
-                "model": config.model,
-                "messages": messages,
-                "temperature": config.temperature,
-                "max_tokens": config.max_tokens,
-            }
+    async def _call_claude(self, config: APIConfig, messages: list[dict], max_retries: int = 3) -> dict:
+        """Llama a Claude API con formato correcto de Anthropic"""
+        headers = {"Content-Type": "application/json", "X-Api-Key": config.api_key, "anthropic-version": "2023-06-01"}
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{config.base_url}/chat/completions", headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return {
-                            "success": True,
-                            "response": data["choices"][0]["message"]["content"],
-                            "tokens_used": data.get("usage", {}).get("total_tokens", 0),
-                        }
+        claude_messages = []
+        system_message = ""
 
-                    error_text = await response.text()
-                    return {"success": False, "error": f"xAI Error: {error_text}"}
+        for msg in messages:
+            if msg["role"] == "system":
+                system_message += msg["content"] + "\n"
+            else:
+                claude_messages.append({"role": msg["role"], "content": msg["content"]})
 
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        payload = {
+            "model": config.model,
+            "messages": claude_messages,
+            "max_tokens": config.max_tokens,
+            "temperature": config.temperature,
+        }
+        if system_message.strip():
+            payload["system"] = system_message.strip()
+
+        timeout = aiohttp.ClientTimeout(total=self.provider_timeout_seconds)
+        transient_statuses = {408, 429, 500, 502, 503, 504}
+
+        for attempt in range(max_retries):
+            try:
+                async with self._session_scope() as session:
+                    async with session.post(f"{config.base_url}/v1/messages", headers=headers, json=payload, timeout=timeout) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            content = data.get("content", [])
+                            if content and len(content) > 0:
+                                text = content[0].get("text", "")
+                                return {
+                                    "success": True,
+                                    "response": text,
+                                    "tokens_used": data.get("usage", {}).get("input_tokens", 0)
+                                    + data.get("usage", {}).get("output_tokens", 0),
+                                }
+
+                        error_text = await response.text()
+                        if response.status in transient_statuses and attempt < (max_retries - 1):
+                            await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                            continue
+                        return {"success": False, "error": f"Claude API Error ({response.status}): {error_text}"}
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < (max_retries - 1):
+                    await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                    continue
+                return {"success": False, "error": f"Claude Exception: {str(e)}"}
+            except Exception as e:
+                return {"success": False, "error": f"Claude Exception: {str(e)}"}
+
+        return {"success": False, "error": "Claude retries exhausted"}
+
+    async def _call_xai(self, config: APIConfig, messages: list[dict], max_retries: int = 3) -> dict:
+        """Llama a xAI Grok API."""
+        return await self._call_openai_compatible(
+            provider_label="xAI",
+            base_url=config.base_url,
+            api_key=config.api_key,
+            model=config.model,
+            messages=messages,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            max_retries=max_retries,
+            include_auth_header=True,
+        )
+
+    async def _call_openai_compatible(
+        self,
+        provider_label: str,
+        base_url: str,
+        api_key: Optional[str],
+        model: str,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+        max_retries: int,
+        include_auth_header: bool = True,
+    ) -> dict:
+        """Cliente genérico para APIs compatibles con OpenAI `/chat/completions`."""
+        headers = {"Content-Type": "application/json"}
+        if include_auth_header and api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        timeout = aiohttp.ClientTimeout(total=self.provider_timeout_seconds)
+        transient_statuses = {408, 429, 500, 502, 503, 504}
+
+        for attempt in range(max_retries):
+            try:
+                async with self._session_scope() as session:
+                    async with session.post(
+                        f"{base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=timeout,
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            return {
+                                "success": True,
+                                "response": data["choices"][0]["message"]["content"],
+                                "tokens_used": data.get("usage", {}).get("total_tokens", 0),
+                            }
+
+                        error_text = await response.text()
+                        if response.status in transient_statuses and attempt < (max_retries - 1):
+                            await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                            continue
+                        return {"success": False, "error": f"{provider_label} Error ({response.status}): {error_text}"}
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < (max_retries - 1):
+                    await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                    continue
+                return {"success": False, "error": f"{provider_label} Exception: {str(e)}"}
+            except Exception as e:
+                return {"success": False, "error": f"{provider_label} Exception: {str(e)}"}
+
+        return {"success": False, "error": f"{provider_label} retries exhausted"}
 
     def _get_fallback_response(self, context: Optional[dict] = None) -> str:
         """Respuesta de emergencia cuando todos los proveedores fallan"""

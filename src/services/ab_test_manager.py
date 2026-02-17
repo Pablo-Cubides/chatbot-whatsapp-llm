@@ -7,9 +7,12 @@ import logging
 import os
 import random
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
+
+from src.models.admin_db import get_session
+from src.models.models import ABAssignmentModel, ABExperimentModel, ABResultModel, ABVariantModel
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +105,155 @@ class ABTestManager:
         self.default_min_sample_size = int(os.getenv("AB_TEST_MIN_SAMPLE_SIZE", "30"))
         self.default_confidence_level = float(os.getenv("AB_TEST_CONFIDENCE_LEVEL", "0.95"))
 
+        self._load_from_db()
         logger.info("🧪 ABTestManager inicializado")
+
+    def _load_from_db(self) -> None:
+        """Load persisted experiments/assignments on startup."""
+        try:
+            session = get_session()
+            experiments = session.query(ABExperimentModel).all()
+
+            loaded: dict[str, ABExperiment] = {}
+            for exp in experiments:
+                variant_rows = session.query(ABVariantModel).filter(ABVariantModel.experiment_id == exp.id).all()
+                variants = [
+                    Variant(
+                        id=v.id,
+                        name=v.name,
+                        description=v.description or "",
+                        config=v.config or {},
+                        traffic_percentage=float(v.traffic_percentage or 0),
+                        total_conversations=int(v.total_conversations or 0),
+                        successful_conversations=int(v.successful_conversations or 0),
+                        avg_response_time=float(v.avg_response_time or 0),
+                        avg_satisfaction_score=float(v.avg_satisfaction_score or 0),
+                        bot_suspicions=int(v.bot_suspicions or 0),
+                        objectives_achieved=int(v.objectives_achieved or 0),
+                    )
+                    for v in variant_rows
+                ]
+
+                loaded[exp.id] = ABExperiment(
+                    id=exp.id,
+                    name=exp.name,
+                    description=exp.description or "",
+                    variant_type=VariantType(exp.variant_type),
+                    status=ExperimentStatus(exp.status),
+                    variants=variants,
+                    created_at=exp.created_at or datetime.now(timezone.utc),
+                    started_at=exp.started_at,
+                    ended_at=exp.ended_at,
+                    min_sample_size=int(exp.min_sample_size or self.default_min_sample_size),
+                    confidence_level=float(exp.confidence_level or self.default_confidence_level),
+                    success_metric=exp.success_metric,
+                    total_participants=int(exp.total_participants or 0),
+                    winner_variant_id=exp.winner_variant_id,
+                    is_statistically_significant=bool(exp.is_statistically_significant),
+                )
+
+            self.experiments = loaded
+
+            assignments = session.query(ABAssignmentModel).all()
+            loaded_assignments: dict[str, dict[str, str]] = {}
+            for a in assignments:
+                loaded_assignments.setdefault(a.contact, {})[a.experiment_id] = a.variant_id
+            self.user_assignments = loaded_assignments
+            session.close()
+        except Exception as e:
+            logger.warning("⚠️ No se pudo cargar estado A/B desde DB: %s", e)
+
+    def _persist_experiment(self, experiment: ABExperiment) -> None:
+        try:
+            session = get_session()
+            row = session.query(ABExperimentModel).filter(ABExperimentModel.id == experiment.id).first()
+            if not row:
+                row = ABExperimentModel(id=experiment.id)
+                session.add(row)
+
+            row.name = experiment.name
+            row.description = experiment.description
+            row.variant_type = experiment.variant_type.value
+            row.status = experiment.status.value
+            row.success_metric = experiment.success_metric
+            row.min_sample_size = int(experiment.min_sample_size)
+            row.confidence_level = float(experiment.confidence_level)
+            row.total_participants = int(experiment.total_participants)
+            row.winner_variant_id = experiment.winner_variant_id
+            row.is_statistically_significant = bool(experiment.is_statistically_significant)
+            row.created_at = experiment.created_at
+            row.started_at = experiment.started_at
+            row.ended_at = experiment.ended_at
+
+            for variant in experiment.variants:
+                v = session.query(ABVariantModel).filter(ABVariantModel.id == variant.id).first()
+                if not v:
+                    v = ABVariantModel(id=variant.id, experiment_id=experiment.id)
+                    session.add(v)
+
+                v.name = variant.name
+                v.description = variant.description
+                v.config = variant.config
+                v.traffic_percentage = float(variant.traffic_percentage)
+                v.total_conversations = int(variant.total_conversations)
+                v.successful_conversations = int(variant.successful_conversations)
+                v.avg_response_time = float(variant.avg_response_time)
+                v.avg_satisfaction_score = float(variant.avg_satisfaction_score)
+                v.bot_suspicions = int(variant.bot_suspicions)
+                v.objectives_achieved = int(variant.objectives_achieved)
+
+            session.commit()
+            session.close()
+        except Exception as e:
+            logger.warning("⚠️ No se pudo persistir experimento A/B: %s", e)
+
+    def _persist_assignment(self, contact: str, experiment_id: str, variant_id: str) -> None:
+        try:
+            session = get_session()
+            row = (
+                session.query(ABAssignmentModel)
+                .filter(ABAssignmentModel.contact == contact, ABAssignmentModel.experiment_id == experiment_id)
+                .first()
+            )
+            if not row:
+                row = ABAssignmentModel(contact=contact, experiment_id=experiment_id, variant_id=variant_id)
+                session.add(row)
+            else:
+                row.variant_id = variant_id
+            session.commit()
+            session.close()
+        except Exception as e:
+            logger.warning("⚠️ No se pudo persistir asignación A/B: %s", e)
+
+    def _persist_result(
+        self,
+        contact: str,
+        experiment_id: str,
+        variant_id: str,
+        success: bool,
+        response_time: float,
+        satisfaction_score: float,
+        bot_suspicion: bool,
+        objective_achieved: bool,
+    ) -> None:
+        try:
+            session = get_session()
+            session.add(
+                ABResultModel(
+                    contact=contact,
+                    experiment_id=experiment_id,
+                    variant_id=variant_id,
+                    success=bool(success),
+                    response_time=float(response_time),
+                    satisfaction_score=float(satisfaction_score),
+                    bot_suspicion=bool(bot_suspicion),
+                    objective_achieved=bool(objective_achieved),
+                )
+            )
+            session.commit()
+            session.close()
+        except Exception as e:
+            logger.warning("⚠️ No se pudo persistir resultado A/B: %s", e)
 
     def create_experiment(
         self,
@@ -163,6 +314,7 @@ class ABTestManager:
         )
 
         self.experiments[experiment_id] = experiment
+        self._persist_experiment(experiment)
 
         logger.info(f"🧪 Experimento creado: {name} ({experiment_id})")
         logger.info(f"  Variantes: {len(variant_objects)}")
@@ -184,6 +336,7 @@ class ABTestManager:
 
         experiment.status = ExperimentStatus.RUNNING
         experiment.started_at = datetime.now()
+        self._persist_experiment(experiment)
 
         logger.info(f"🚀 Experimento iniciado: {experiment.name}")
         return True
@@ -195,6 +348,7 @@ class ABTestManager:
 
         experiment = self.experiments[experiment_id]
         experiment.status = ExperimentStatus.PAUSED
+        self._persist_experiment(experiment)
 
         logger.info(f"⏸️ Experimento pausado: {experiment.name}")
         return True
@@ -213,6 +367,8 @@ class ABTestManager:
         if winner:
             experiment.winner_variant_id = winner.id
             logger.info(f"🏆 Ganador: {winner.name}")
+
+        self._persist_experiment(experiment)
 
         logger.info(f"✅ Experimento completado: {experiment.name}")
         return True
@@ -248,6 +404,8 @@ class ABTestManager:
 
                 self.user_assignments[contact][experiment_id] = variant.id
                 experiment.total_participants += 1
+                self._persist_assignment(contact, experiment_id, variant.id)
+                self._persist_experiment(experiment)
 
                 logger.debug(f"👤 {contact} asignado a {variant.name} en {experiment.name}")
                 return variant
@@ -298,6 +456,18 @@ class ABTestManager:
 
         if objective_achieved:
             variant.objectives_achieved += 1
+
+        self._persist_result(
+            contact=contact,
+            experiment_id=experiment_id,
+            variant_id=variant.id,
+            success=success,
+            response_time=response_time,
+            satisfaction_score=satisfaction_score,
+            bot_suspicion=bot_suspicion,
+            objective_achieved=objective_achieved,
+        )
+        self._persist_experiment(experiment)
 
         # Verificar si es momento de calcular significancia
         if self._should_calculate_significance(experiment):

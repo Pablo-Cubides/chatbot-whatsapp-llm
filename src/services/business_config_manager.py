@@ -14,13 +14,18 @@ logger = logging.getLogger(__name__)
 
 class BusinessConfigManager:
     def __init__(self):
-        self.project_root = Path(__file__).parent
-        self.config_file = self.project_root / "data" / "business_config.json"
-        self.payload_file = self.project_root / "payload.json"
-        self.reasoner_file = self.project_root / "payload_reasoner.json"
+        self.project_root = Path(__file__).resolve().parents[2]
+        config_dir = self.project_root / "config"
+        data_dir = self.project_root / "data"
 
-        # Asegurar que existe el directorio data
-        self.config_file.parent.mkdir(exist_ok=True)
+        self.config_file = data_dir / "business_config.json"
+        self.payload_file = config_dir / "payload.json"
+        self.reasoner_file = config_dir / "payload_reasoner.json"
+
+        # Asegurar que existen directorios necesarios
+        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+        self.payload_file.parent.mkdir(parents=True, exist_ok=True)
+        self.reasoner_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Cargar configuración inicial
         self.config = self.load_config()

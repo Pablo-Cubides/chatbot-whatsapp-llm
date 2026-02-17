@@ -6,6 +6,8 @@ import asyncio
 import functools
 import ipaddress
 import logging
+import os
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -31,7 +33,7 @@ class CircuitBreakerStats:
     success_count: int = 0
     total_requests: int = 0
     last_failure_time: Optional[datetime] = None
-    state_changed_at: datetime = field(default_factory=datetime.utcnow)
+    state_changed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class CircuitBreaker:
@@ -151,6 +153,9 @@ class RateLimiter:
 
     def __init__(self):
         self.request_history: dict[str, list] = {}
+        self._cleanup_thread: Optional[threading.Thread] = None
+        self._cleanup_stop = threading.Event()
+        self._cleanup_interval_seconds = max(5, int(os.environ.get("RATE_LIMIT_CLEANUP_INTERVAL_SECONDS", "60")))
 
     def is_allowed(self, rule: RateLimitRule, identifier: str = None) -> tuple[bool, dict[str, Any]]:
         """
@@ -199,6 +204,31 @@ class RateLimiter:
         if stale_keys:
             logger.debug(f"🧹 Limpiados {len(stale_keys)} identifiers stale del rate limiter")
 
+    def _cleanup_old_entries(self):
+        """Internal periodic cleanup callback."""
+        self.cleanup_stale_entries()
+
+    def start_periodic_cleanup(self) -> None:
+        """Start bounded-memory cleanup task every N seconds."""
+        if self._cleanup_thread and self._cleanup_thread.is_alive():
+            return
+
+        self._cleanup_stop.clear()
+
+        def _worker() -> None:
+            while not self._cleanup_stop.wait(self._cleanup_interval_seconds):
+                try:
+                    self._cleanup_old_entries()
+                except Exception as e:
+                    logger.debug("Rate limiter periodic cleanup warning: %s", e)
+
+        self._cleanup_thread = threading.Thread(target=_worker, name="rate-limiter-cleanup", daemon=True)
+        self._cleanup_thread.start()
+
+    def stop_periodic_cleanup(self) -> None:
+        """Stop periodic cleanup task."""
+        self._cleanup_stop.set()
+
     def get_stats(self) -> dict[str, Any]:
         """Obtener estadísticas del rate limiter"""
         # Periodic cleanup on stats call
@@ -222,6 +252,7 @@ class RateLimiter:
 # Instancias globales
 circuit_breakers: dict[str, CircuitBreaker] = {}
 rate_limiter = RateLimiter()
+rate_limiter.start_periodic_cleanup()
 
 # Rate limiting rules predefinidas
 RATE_LIMIT_RULES = {

@@ -1,0 +1,24 @@
+.not-found-card {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.not-found-code {
+  font-size: 56px;
+  margin-bottom: 8px;
+}
+
+.not-found-title {
+  font-size: 20px;
+  margin-bottom: 20px;
+  color: #4b5563;
+}
+
+.not-found-description {
+  margin-bottom: 28px;
+  color: #4b5563;
+}
+
+.not-found-link {
+  text-decoration: none;
+}

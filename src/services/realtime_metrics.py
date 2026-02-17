@@ -39,7 +39,7 @@ class RealtimeMetricsManager:
         """Conectar un nuevo WebSocket"""
         await websocket.accept()
         self.active_connections.add(websocket)
-        logger.info(f"✅ Cliente WebSocket conectado (total: {len(self.active_connections)})")
+        logger.info("✅ Cliente WebSocket conectado (total: %s)", len(self.active_connections))
 
         # Enviar snapshot inicial
         await self.send_initial_snapshot(websocket)
@@ -47,7 +47,7 @@ class RealtimeMetricsManager:
     def disconnect(self, websocket: WebSocket):
         """Desconectar WebSocket"""
         self.active_connections.discard(websocket)
-        logger.info(f"❌ Cliente WebSocket desconectado (total: {len(self.active_connections)})")
+        logger.info("❌ Cliente WebSocket desconectado (total: %s)", len(self.active_connections))
 
     async def send_initial_snapshot(self, websocket: WebSocket):
         """Enviar snapshot inicial de métricas al conectar"""
@@ -55,7 +55,7 @@ class RealtimeMetricsManager:
             snapshot = self.get_current_metrics()
             await websocket.send_json({"type": "snapshot", "data": snapshot, "timestamp": datetime.now().isoformat()})
         except Exception as e:
-            logger.error(f"❌ Error enviando snapshot: {e}")
+            logger.error("❌ Error enviando snapshot: %s", e)
 
     async def broadcast(self, message: dict[str, Any]):
         """Enviar mensaje a todos los clientes conectados"""
@@ -68,7 +68,7 @@ class RealtimeMetricsManager:
             try:
                 await websocket.send_json(message)
             except Exception as e:
-                logger.error(f"❌ Error enviando a WebSocket: {e}")
+                logger.error("❌ Error enviando a WebSocket: %s", e)
                 disconnected.add(websocket)
 
         # Limpiar conexiones muertas
@@ -97,7 +97,7 @@ class RealtimeMetricsManager:
                 await asyncio.sleep(self.update_interval)
 
             except Exception as e:
-                logger.error(f"❌ Error en loop de broadcast: {e}")
+                logger.error("❌ Error en loop de broadcast: %s", e)
                 await asyncio.sleep(self.update_interval)
 
     def stop_broadcast_loop(self):
@@ -115,7 +115,7 @@ class RealtimeMetricsManager:
             try:
                 self.analytics.record_conversation_start(session_id, contact)
             except Exception as e:
-                logger.error(f"❌ Error registrando en analytics: {e}")
+                logger.error("❌ Error registrando en analytics: %s", e)
 
     def record_message(self, session_id: str, role: str, message: str):
         """Registrar mensaje"""
@@ -126,7 +126,7 @@ class RealtimeMetricsManager:
             try:
                 self.analytics.record_message(session_id, role, message)
             except Exception as e:
-                logger.error(f"❌ Error registrando mensaje: {e}")
+                logger.error("❌ Error registrando mensaje: %s", e)
 
     def record_llm_usage(self, provider: str, tokens: int, response_time: float):
         """Registrar uso de LLM"""
@@ -141,7 +141,7 @@ class RealtimeMetricsManager:
             try:
                 self.analytics.record_llm_call(provider, tokens, True, response_time)
             except Exception as e:
-                logger.error(f"❌ Error registrando LLM: {e}")
+                logger.error("❌ Error registrando LLM: %s", e)
 
     def record_error(self, error_type: str, details: str):
         """Registrar error"""

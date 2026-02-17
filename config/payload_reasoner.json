@@ -1,6 +1,6 @@
 {
   "business_context": {
-    "name": "Mi Negocio",
+    "name": "Negocio Integración",
     "primary_goal": "Define aquí el objetivo principal con cada cliente (ej: generar ventas, agendar citas, brindar soporte)",
     "conversion_keywords": [
       "comprar",

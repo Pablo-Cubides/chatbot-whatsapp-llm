@@ -37,7 +37,7 @@ class WebProvider(WhatsAppProvider):
             return SendResult(success=True, message_id=message_id, provider="web")
 
         except Exception as e:
-            logger.error(f"❌ Error enviando mensaje via Web: {e}")
+            logger.error("❌ Error enviando mensaje via Web: %s", e)
             return SendResult(success=False, error=str(e), provider="web")
 
     def receive_message(self, raw_event: dict[str, Any]) -> Optional[NormalizedMessage]:
@@ -55,7 +55,7 @@ class WebProvider(WhatsAppProvider):
                 metadata={"provider": "web"},
             )
         except Exception as e:
-            logger.error(f"❌ Error normalizando mensaje Web: {e}")
+            logger.error("❌ Error normalizando mensaje Web: %s", e)
             return None
 
     def is_available(self) -> bool:
@@ -75,7 +75,7 @@ class WebProvider(WhatsAppProvider):
             return False
 
         except Exception as e:
-            logger.error(f"❌ Error verificando disponibilidad Web: {e}")
+            logger.error("❌ Error verificando disponibilidad Web: %s", e)
             return False
 
     def get_status(self) -> dict[str, Any]:

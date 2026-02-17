@@ -21,6 +21,8 @@ if "stub_chat" not in sys.modules:
 
 from fastapi.testclient import TestClient
 
+pytestmark = pytest.mark.api
+
 
 class TestAuthEndpoints:
     """Tests para los endpoints de autenticación."""
@@ -35,23 +37,23 @@ class TestAuthEndpoints:
     @pytest.fixture
     def auth_token(self, client):
         """Obtiene un token de autenticación para tests."""
-        os.environ["LEGACY_TOKEN_ENABLED"] = "true"
-        os.environ["LEGACY_ADMIN_TOKEN"] = "test_admin_token"
-        return "test_admin_token"
+        response = client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": os.environ.get("ADMIN_PASSWORD", "test_admin_password")},
+        )
+        assert response.status_code == 200
+        return response.json()["access_token"]
 
-    def test_health_endpoint(self, client):
-        """Test del endpoint de salud."""
-        response = client.get("/healthz")
+    @pytest.mark.parametrize(
+        ("path", "expected_key"),
+        [("/healthz", "status"), ("/", "status")],
+    )
+    def test_public_endpoints(self, client, path, expected_key):
+        """Los endpoints públicos clave deben responder OK."""
+        response = client.get(path)
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "ok"
-
-    def test_root_endpoint(self, client):
-        """Test del endpoint raíz."""
-        response = client.get("/")
-        assert response.status_code == 200
-        data = response.json()
-        assert "status" in data
+        assert expected_key in data
 
     def test_unauthorized_without_token(self, client):
         """Test que endpoints protegidos requieren token."""

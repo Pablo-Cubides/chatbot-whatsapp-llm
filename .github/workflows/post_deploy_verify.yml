@@ -1,0 +1,87 @@
+name: Post Deploy Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL for smoke checks (optional, defaults to localhost)"
+        required: false
+        default: "http://localhost:8003"
+      deploy_path:
+        description: "Remote deploy path (optional, overrides DEPLOY_PATH secret)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  verify-remote-deploy:
+    name: ✅ Verify Remote Deploy
+    runs-on: ubuntu-latest
+    if: secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_SSH_KEY != ''
+    steps:
+      - name: Verify deployment health/smoke via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+
+            APP_DIR="${{ github.event.inputs.deploy_path }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="${{ secrets.DEPLOY_PATH }}"
+            fi
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="$HOME/chatbot-whatsapp-llm"
+            fi
+
+            BASE_URL="${{ github.event.inputs.base_url }}"
+            if [ -z "$BASE_URL" ]; then
+              BASE_URL="http://localhost:8003"
+            fi
+
+            cd "$APP_DIR"
+
+            export ADMIN_PASSWORD='${{ secrets.ADMIN_PASSWORD }}'
+
+            echo "=== compose status ==="
+            docker compose ps
+
+            for i in 1 2 3 4 5; do
+              if curl -fsS "${BASE_URL}/healthz" >/dev/null; then
+                break
+              fi
+              sleep 5
+            done
+
+            HEALTH_JSON=$(curl -fsS "${BASE_URL}/healthz")
+            printf '%s' "$HEALTH_JSON" | python3 -c "import json,sys; p=json.load(sys.stdin); c=p.get('components') or {}; req={'database','redis','disk','memory'}; missing=sorted(req-set(c.keys())); assert 'status' in p; assert isinstance(c, dict); assert not missing, f'missing components: {missing}'"
+
+            curl -fsS "${BASE_URL}/metrics" | head -n 20
+
+            ME_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/auth/me")
+            test "$ME_STATUS" = "401"
+
+            LOGIN_RESPONSE=$(curl -fsS -X POST "${BASE_URL}/api/auth/login" \
+              -H "Content-Type: application/json" \
+              -d "{\"username\":\"admin\",\"password\":\"${ADMIN_PASSWORD}\"}")
+            ACCESS_TOKEN=$(printf '%s' "$LOGIN_RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))")
+            test -n "$ACCESS_TOKEN"
+
+            curl -fsS "${BASE_URL}/api/auth/me" -H "Authorization: Bearer ${ACCESS_TOKEN}" | grep -q '"username":"admin"'
+
+            for svc in app worker-web scheduler; do
+              docker compose ps "$svc" | grep -Eiq "Up|running|healthy"
+            done
+
+            if docker compose ps | grep -Eiq "unhealthy|Exited|dead"; then
+              echo "Found unhealthy/exited services"
+              docker compose ps
+              docker compose logs --tail=120 app worker-web scheduler || true
+              exit 1
+            fi
+
+            echo "✅ Remote deploy verification passed"

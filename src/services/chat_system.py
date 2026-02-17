@@ -95,7 +95,7 @@ class ChatConnectionManager:
             )
 
         except Exception as e:
-            logger.error(f"Error procesando mensaje: {e}")
+            logger.error("Error procesando mensaje: %s", e)
             await self.send_personal_message(
                 {
                     "type": "error",
@@ -142,7 +142,7 @@ class ChatConnectionManager:
                 return f"Gracias por tu mensaje: '{user_message}'. Estoy procesando tu consulta con nuestra configuración de negocio personalizada. ¿Hay algo específico en lo que pueda ayudarte? 🤖"
 
         except Exception as e:
-            logger.error(f"Error generando respuesta: {e}")
+            logger.error("Error generando respuesta: %s", e)
             return "Disculpa, hubo un error procesando tu mensaje. ¿Podrías intentar reformular tu pregunta?"
 
     def get_session_stats(self) -> dict[str, Any]:

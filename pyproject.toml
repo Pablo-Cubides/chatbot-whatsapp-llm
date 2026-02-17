@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chatbot-whatsapp-llm"
+version = "1.0.0"
+description = "Enterprise WhatsApp AI chatbot platform"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+exclude = ["tests*", "docs*", "htmlcov*"]
+
+[tool.mutmut]
+paths_to_mutate = [
+	"src/services/auth_system.py",
+	"src/services/cache_system.py",
+	"crypto.py",
+]
+tests_dir = "tests"
+runner = "python -m pytest -q"

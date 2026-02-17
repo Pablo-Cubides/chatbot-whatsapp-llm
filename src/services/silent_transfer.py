@@ -7,7 +7,12 @@ import logging
 import os
 from datetime import datetime, timezone
 from enum import Enum
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
+
+import httpx
+from sqlalchemy import String, cast, func
 
 try:
     from src.models.admin_db import get_session
@@ -19,6 +24,20 @@ except ImportError:
     SilentTransfer = None
 
 logger = logging.getLogger(__name__)
+
+
+def _run_async_blocking(coro):
+    try:
+        asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(lambda: asyncio.run(coro)).result()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+
+async def _post_json_async(url: str, payload: dict[str, Any], timeout_seconds: float = 5) -> httpx.Response:
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        return await client.post(url, json=payload)
 
 
 class TransferReason(Enum):
@@ -165,11 +184,11 @@ class SilentTransferManager:
             session.add(transfer)
             session.commit()
 
-            logger.warning(f"🔇 TRANSFERENCIA SILENCIOSA creada: {transfer_id}")
-            logger.warning(f"   Razón: {reason.value}")
-            logger.warning(f"   Chat: {chat_id}")
-            logger.warning(f"   Mensaje: {trigger_message[:100]}")
-            logger.warning(f"   Cliente notificado: {notify_client}")
+            logger.warning("🔇 TRANSFERENCIA SILENCIOSA creada: %s", transfer_id)
+            logger.warning("   Razón: %s", reason.value)
+            logger.warning("   Chat: %s", chat_id)
+            logger.warning("   Mensaje: %s", trigger_message[:100])
+            logger.warning("   Cliente notificado: %s", notify_client)
 
             # Notificar a operadores humanos
             if not notify_client:
@@ -181,7 +200,7 @@ class SilentTransferManager:
             return transfer_id
 
         except Exception as e:
-            logger.error(f"❌ Error creando transferencia silenciosa: {e}")
+            logger.error("❌ Error creando transferencia silenciosa: %s", e)
             try:
                 session.rollback()
                 session.close()
@@ -217,31 +236,69 @@ class SilentTransferManager:
         logger.warning("=" * 80)
         logger.warning("🚨 ALERTA DE TRANSFERENCIA SILENCIOSA")
         logger.warning("=" * 80)
-        logger.warning(f"Transfer ID: {transfer_id}")
-        logger.warning(f"Chat ID: {chat_id}")
-        logger.warning(f"Razón: {reason.value}")
-        logger.warning(f"Mensaje: {trigger_message}")
+        logger.warning("Transfer ID: %s", transfer_id)
+        logger.warning("Chat ID: %s", chat_id)
+        logger.warning("Razón: %s", reason.value)
+        logger.warning("Mensaje: %s", trigger_message)
         logger.warning("")
         logger.warning("INSTRUCCIONES PARA OPERADOR HUMANO:")
         for instruction in notification["instructions"]:
-            logger.warning(f"  {instruction}")
+            logger.warning("  %s", instruction)
         logger.warning("=" * 80)
 
-        # TODO: Enviar a webhook/sistema de notificaciones
-        if self.notification_webhook:
-            try:
-                import requests
-
-                requests.post(self.notification_webhook, json=notification, timeout=5)
-            except Exception as e:
-                logger.error(f"Error enviando notificación: {e}")
+        self._dispatch_notification(notification)
 
     def _notify_operators_explicit(self, transfer_id: str, chat_id: str, reason: TransferReason):
         """
         Notifica transferencia EXPLÍCITA (cliente pidió hablar con humano)
         """
-        logger.info(f"📞 Transferencia explícita: {transfer_id} - {chat_id}")
-        # Notificación normal
+        logger.info("📞 Transferencia explícita: %s - %s", transfer_id, chat_id)
+        notification = {
+            "type": "EXPLICIT_TRANSFER",
+            "urgency": "MEDIUM",
+            "transfer_id": transfer_id,
+            "chat_id": chat_id,
+            "reason": reason.value,
+            "instructions": [
+                "Cliente pidió hablar con humano",
+                "Tomar conversación manualmente y confirmar atención",
+            ],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self._dispatch_notification(notification)
+
+    def _dispatch_notification(self, notification: dict[str, Any]) -> bool:
+        """Enviar notificación por webhook y fallback a alerta interna."""
+        delivered = False
+
+        if self.notification_webhook:
+            try:
+                response = _run_async_blocking(_post_json_async(self.notification_webhook, notification, timeout_seconds=5))
+                if response.status_code < 300:
+                    delivered = True
+                else:
+                    logger.warning("⚠️ Webhook de transferencia respondió %s", response.status_code)
+            except Exception as e:
+                logger.error("Error enviando notificación webhook: %s", e)
+
+        if not delivered:
+            try:
+                from src.services.alert_system import AlertSeverity, alert_manager
+
+                alert_id = alert_manager.create_alert(
+                    chat_id=notification.get("chat_id", "unknown"),
+                    severity=AlertSeverity.HIGH.value,
+                    message_text=f"Transferencia requerida: {notification.get('reason', 'unknown')}",
+                    metadata={"source": "silent_transfer", "notification": notification},
+                )
+                delivered = bool(alert_id)
+            except Exception as e:
+                logger.error("Error enviando fallback de notificación: %s", e)
+
+        if not delivered:
+            logger.warning("⚠️ No se pudo entregar notificación de transferencia")
+
+        return delivered
 
     def _get_reason_explanation(self, reason: TransferReason) -> str:
         """Explicación de la razón de transferencia para operadores"""
@@ -296,7 +353,7 @@ class SilentTransferManager:
             return result
 
         except Exception as e:
-            logger.error(f"Error obteniendo transferencias: {e}")
+            logger.error("Error obteniendo transferencias: %s", e)
             return []
 
     def assign_transfer(self, transfer_id: str, operator_username: str) -> bool:
@@ -312,7 +369,7 @@ class SilentTransferManager:
             transfer = session.query(SilentTransfer).filter(SilentTransfer.transfer_id == transfer_id).first()
 
             if not transfer:
-                logger.error(f"Transferencia {transfer_id} no encontrada")
+                logger.error("Transferencia %s no encontrada", transfer_id)
                 return False
 
             transfer.status = TransferStatus.IN_PROGRESS.value
@@ -322,11 +379,11 @@ class SilentTransferManager:
             session.commit()
             session.close()
 
-            logger.info(f"✅ Transferencia {transfer_id} asignada a {operator_username}")
+            logger.info("✅ Transferencia %s asignada a %s", transfer_id, operator_username)
             return True
 
         except Exception as e:
-            logger.error(f"Error asignando transferencia: {e}")
+            logger.error("Error asignando transferencia: %s", e)
             return False
 
     def complete_transfer(self, transfer_id: str, notes: str = None, resolution: str = None) -> bool:
@@ -358,11 +415,11 @@ class SilentTransferManager:
             session.commit()
             session.close()
 
-            logger.info(f"✅ Transferencia {transfer_id} completada")
+            logger.info("✅ Transferencia %s completada", transfer_id)
             return True
 
         except Exception as e:
-            logger.error(f"Error completando transferencia: {e}")
+            logger.error("Error completando transferencia: %s", e)
             return False
 
     def get_transfer_stats(self) -> dict[str, Any]:
@@ -374,8 +431,7 @@ class SilentTransferManager:
 
         try:
             session = get_session()
-
-            from sqlalchemy import func
+            dialect_name = (session.bind.dialect.name if session.bind else "").lower()
 
             # Total por estado
             stats = {}
@@ -397,24 +453,46 @@ class SilentTransferManager:
 
             stats["by_reason_24h"] = {reason: count for reason, count in recent}
 
-            # Tiempo promedio de atención
+            # Tiempo promedio de atención (cross-dialect)
+            if dialect_name.startswith("postgres"):
+                avg_minutes_expr = (
+                    func.extract("epoch", SilentTransfer.completed_at) - func.extract("epoch", SilentTransfer.created_at)
+                ) / 60.0
+            else:
+                # SQLite fallback
+                avg_minutes_expr = (
+                    func.julianday(SilentTransfer.completed_at) - func.julianday(SilentTransfer.created_at)
+                ) * 24 * 60
+
             avg_time = (
-                session.query(
-                    func.avg(func.julianday(SilentTransfer.completed_at) - func.julianday(SilentTransfer.created_at))
-                    * 24
-                    * 60  # Convertir a minutos
-                )
+                session.query(func.avg(avg_minutes_expr))
                 .filter(SilentTransfer.status == TransferStatus.COMPLETED.value, SilentTransfer.completed_at.isnot(None))
                 .scalar()
             )
 
             stats["avg_response_time_minutes"] = round(avg_time, 2) if avg_time else 0
 
+            # Cadena de chats pendientes (string_agg para PostgreSQL, group_concat para SQLite)
+            if dialect_name.startswith("postgres"):
+                pending_chat_ids_csv = (
+                    session.query(func.string_agg(cast(SilentTransfer.chat_id, String), ","))
+                    .filter(SilentTransfer.status == TransferStatus.PENDING.value)
+                    .scalar()
+                )
+            else:
+                pending_chat_ids_csv = (
+                    session.query(func.group_concat(cast(SilentTransfer.chat_id, String), ","))
+                    .filter(SilentTransfer.status == TransferStatus.PENDING.value)
+                    .scalar()
+                )
+
+            stats["pending_chat_ids_csv"] = pending_chat_ids_csv or ""
+
             session.close()
             return stats
 
         except Exception as e:
-            logger.error(f"Error obteniendo estadísticas: {e}")
+            logger.error("Error obteniendo estadísticas: %s", e)
             return {}
 
 

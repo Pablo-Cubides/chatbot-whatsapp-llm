@@ -1,5 +1,5 @@
-# Dockerfile para Scheduler Worker
-FROM python:3.11-slim
+# Dockerfile para Scheduler Worker (multi-stage)
+FROM python:3.11.8-slim AS builder
 
 LABEL maintainer="Pablo Cubides"
 LABEL description="Scheduler Worker para mensajes programados"
@@ -14,17 +14,30 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Crear usuario no-root
-RUN useradd -m -r -s /bin/bash appuser
-
-# Crear directorio de trabajo
 WORKDIR /app
 
 # Copiar requirements
 COPY requirements.txt .
 
-# Instalar dependencias Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+
+FROM python:3.11.8-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -r -s /bin/bash appuser
+
+WORKDIR /app
+
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
 # Copiar código
 COPY . .
@@ -37,5 +50,9 @@ RUN mkdir -p /app/data /app/logs && \
 # Cambiar a usuario no-root
 USER appuser
 
+# Healthcheck de liveness para detectar scheduler colgado
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import glob,pathlib,sys; files=glob.glob('/proc/[0-9]*/cmdline'); ok=any(('src.workers.scheduler_worker' in pathlib.Path(f).read_text(encoding='utf-8', errors='ignore')) or ('scheduler_worker.py' in pathlib.Path(f).read_text(encoding='utf-8', errors='ignore')) for f in files); sys.exit(0 if ok else 1)"
+
 # Comando por defecto
-CMD ["python", "src/workers/scheduler_worker.py"]
+CMD ["python", "-m", "src.workers.scheduler_worker"]

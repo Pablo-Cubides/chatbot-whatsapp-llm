@@ -23,6 +23,9 @@ select = [
     "UP",   # pyupgrade
     "S",    # flake8-bandit
     "SIM",  # flake8-simplify
+    "ANN",  # flake8-annotations
+    "RET",  # flake8-return
+    "C90",  # mccabe complexity
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
@@ -42,11 +45,15 @@ ignore = [
     "SIM108", # if-else-block to ternary (readability preference)
     "SIM115", # open-file-with-context-handler (style preference)
     "SIM117", # multiple-with-statements (style preference)
+    "ANN401", # dynamically typed expressions (Any) allowed in integration boundaries
 ]
 
 [lint.per-file-ignores]
-"tests/**/*.py" = ["S"]  # Disable security checks in tests
-"conftest.py" = ["S"]
+"tests/**/*.py" = ["S", "ANN", "RET"]  # Relax strict linting in tests
+"conftest.py" = ["S", "ANN", "RET"]
 
 [lint.isort]
 known-first-party = ["src"]
+
+[lint.mccabe]
+max-complexity = 15

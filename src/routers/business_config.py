@@ -5,9 +5,12 @@ Extracted from admin_panel.py — manages business config, export/import.
 
 import io
 import logging
+from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from src.services.auth_system import get_current_user, require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,7 @@ router = APIRouter(prefix="/api/business", tags=["business_config"])
 
 
 @router.get("/config")
-async def get_business_config():
+async def get_business_config(current_user: dict[str, Any] = Depends(get_current_user)) -> JSONResponse:
     """Obtiene la configuración actual del negocio"""
     try:
         return JSONResponse(content=business_config.config)
@@ -34,7 +37,7 @@ async def get_business_config():
 
 
 @router.post("/config")
-async def update_business_config(data: dict):
+async def update_business_config(data: dict[str, Any], current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
     """Actualiza la configuración completa del negocio"""
     try:
         business_config.config = business_config._merge_configs(
@@ -57,7 +60,7 @@ async def update_business_config(data: dict):
 
 
 @router.post("/config/field")
-async def update_business_field(data: dict):
+async def update_business_field(data: dict[str, Any], current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
     """Actualiza un campo específico de la configuración"""
     try:
         field_path = data.get("field")
@@ -81,7 +84,7 @@ async def update_business_field(data: dict):
 
 
 @router.get("/fields")
-async def get_editable_fields():
+async def get_editable_fields(current_user: dict[str, Any] = Depends(get_current_user)) -> JSONResponse:
     """Obtiene la lista de campos editables con sus metadatos"""
     try:
         return JSONResponse(content=business_config.get_editable_fields())
@@ -90,7 +93,7 @@ async def get_editable_fields():
 
 
 @router.post("/config/export")
-async def export_business_config():
+async def export_business_config(current_user: dict[str, Any] = Depends(get_current_user)) -> StreamingResponse:
     """Exporta la configuración como archivo JSON"""
     try:
         config_json = business_config.export_config()
@@ -105,14 +108,33 @@ async def export_business_config():
 
 
 @router.post("/config/import")
-async def import_business_config(file: UploadFile = File(...)):
+async def import_business_config(
+    file: UploadFile = File(...),
+    current_user: dict[str, Any] = Depends(require_admin),
+) -> JSONResponse:
     """Importa configuración desde archivo JSON"""
     try:
         if not file.filename or not file.filename.endswith(".json"):
             raise HTTPException(status_code=400, detail="Solo se permiten archivos JSON")
 
+        if file.content_type not in {"application/json", "application/octet-stream", "text/plain"}:
+            raise HTTPException(status_code=400, detail="Tipo de archivo inválido")
+
         content = await file.read()
-        config_json = content.decode("utf-8")
+        if len(content) > 2_000_000:
+            raise HTTPException(status_code=413, detail="Archivo demasiado grande")
+
+        try:
+            config_json = content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail="El archivo debe estar codificado en UTF-8") from exc
+
+        try:
+            import json
+
+            json.loads(config_json)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="El archivo no contiene JSON válido") from exc
 
         if business_config.import_config(config_json):
             return JSONResponse(
@@ -130,8 +152,8 @@ async def import_business_config(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/config/reset")
-async def reset_business_config():
+@router.post("/config/reset")
+async def reset_business_config(current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
     """Reinicia la configuración a los valores por defecto"""
     try:
         default_config = business_config.get_default_config()
@@ -152,7 +174,7 @@ async def reset_business_config():
 
 
 @router.get("/preview")
-async def preview_business_config():
+async def preview_business_config(current_user: dict[str, Any] = Depends(get_current_user)) -> JSONResponse:
     """Previsualiza cómo se verá el payload generado"""
     try:
         config = business_config.config

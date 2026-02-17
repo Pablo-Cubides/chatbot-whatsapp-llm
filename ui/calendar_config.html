@@ -4,195 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="common.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js" integrity="sha512-jB0TkTBeQC9ZSkBqDhdmfTv1qdfbWpGE72yJ/01Srq6hEzZIz2xkz1e57p9ai7IeHMwEG7HpzG6NdptChif5Pg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="/ui/auth.js"></script>
+    <script src="/ui/api.js"></script>
+    <script src="/ui/sanitize.js"></script>
 
     <title>📅 Configuración de Calendario - WhatsApp AI</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        .header {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        .header h1 { font-size: 2rem; margin-bottom: 10px; }
-        .header p { opacity: 0.9; }
-        .content { padding: 30px; }
-        
-        .back-link {
-            display: inline-block;
-            margin-bottom: 20px;
-            color: #4facfe;
-            text-decoration: none;
-            font-weight: 600;
-        }
-        .back-link:hover { text-decoration: underline; }
-        
-        .status-banner {
-            padding: 15px 20px;
-            border-radius: 10px;
-            margin-bottom: 25px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        .status-connected { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .status-disconnected { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
-        .status-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        
-        .provider-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .provider-card {
-            border: 2px solid #e9ecef;
-            border-radius: 15px;
-            padding: 25px;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-        .provider-card:hover { border-color: #4facfe; transform: translateY(-3px); }
-        .provider-card.selected { border-color: #4facfe; background: #f0f9ff; }
-        .provider-card.connected { border-color: #28a745; background: #f0fff4; }
-        
-        .provider-icon {
-            width: 60px;
-            height: 60px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 15px;
-            font-size: 1.8rem;
-        }
-        .google-icon { background: #fff; color: #4285f4; border: 2px solid #e9ecef; }
-        .outlook-icon { background: #0078d4; color: white; }
-        
-        .provider-name { font-size: 1.3rem; font-weight: bold; margin-bottom: 8px; }
-        .provider-status { font-size: 0.9rem; color: #6c757d; margin-bottom: 15px; }
-        .provider-status.connected { color: #28a745; }
-        
-        .config-section {
-            background: #f8f9fa;
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 25px;
-        }
-        .config-section h3 {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-            color: #333;
-        }
-        
-        .form-group { margin-bottom: 20px; }
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #495057;
-        }
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: border-color 0.3s;
-        }
-        .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: #4facfe;
-        }
-        .form-group small { color: #6c757d; margin-top: 5px; display: block; }
-        
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-        }
-        
-        .btn {
-            padding: 12px 25px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .btn-primary { background: #4facfe; color: white; }
-        .btn-primary:hover { background: #339af0; }
-        .btn-success { background: #28a745; color: white; }
-        .btn-success:hover { background: #218838; }
-        .btn-danger { background: #dc3545; color: white; }
-        .btn-danger:hover { background: #c82333; }
-        .btn-outline { background: white; border: 2px solid #e9ecef; color: #495057; }
-        .btn-outline:hover { border-color: #4facfe; color: #4facfe; }
-        
-        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
-        
-        .help-text {
-            background: #e7f3ff;
-            border-left: 4px solid #4facfe;
-            padding: 15px;
-            border-radius: 0 8px 8px 0;
-            margin-bottom: 20px;
-        }
-        .help-text h4 { margin-bottom: 8px; color: #0056b3; }
-        .help-text ol { margin-left: 20px; line-height: 1.8; }
-        .help-text a { color: #0056b3; }
-        
-        .credentials-upload {
-            border: 2px dashed #e9ecef;
-            border-radius: 10px;
-            padding: 30px;
-            text-align: center;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-        .credentials-upload:hover { border-color: #4facfe; background: #f8fbff; }
-        .credentials-upload.dragover { border-color: #28a745; background: #f0fff4; }
-        .credentials-upload i { font-size: 2.5rem; color: #4facfe; margin-bottom: 10px; }
-        
-        .working-hours-grid {
-            display: grid;
-            gap: 10px;
-        }
-        .day-row {
-            display: grid;
-            grid-template-columns: 120px 1fr 1fr 80px;
-            gap: 10px;
-            align-items: center;
-        }
-        .day-label { font-weight: 600; }
-        .day-row input[type="time"] { padding: 8px; }
-        .day-row .closed-toggle { text-align: center; }
-        
-        @media (max-width: 768px) {
-            .form-row { grid-template-columns: 1fr; }
-            .day-row { grid-template-columns: 1fr; gap: 5px; }
-        }
-    </style>
+    <link rel="stylesheet" href="/ui/calendar_config.css">
 </head>
 <body>
     <div class="container">
@@ -208,7 +27,7 @@
             
             <!-- Status Banner -->
             <div id="statusBanner" class="status-banner status-disconnected">
-                <i class="fas fa-info-circle" style="font-size: 1.5rem;"></i>
+                <i class="fas fa-info-circle status-icon-large"></i>
                 <div>
                     <strong>No hay calendario conectado</strong>
                     <p>Selecciona un proveedor y configura tus credenciales para comenzar</p>
@@ -220,24 +39,24 @@
                 <h3><i class="fas fa-plug"></i> Selecciona tu Proveedor de Calendario</h3>
                 
                 <div class="provider-cards">
-                    <div class="provider-card" id="googleCard" onclick="selectProvider('google_calendar')">
+                    <div class="provider-card" id="googleCard" data-provider="google_calendar">
                         <div class="provider-icon google-icon">
                             <i class="fab fa-google"></i>
                         </div>
                         <div class="provider-name">Google Calendar</div>
                         <div class="provider-status" id="googleStatus">No conectado</div>
-                        <button class="btn btn-primary" onclick="event.stopPropagation(); connectGoogle()">
+                        <button class="btn btn-primary" id="connectGoogleBtn">
                             <i class="fas fa-link"></i> Conectar
                         </button>
                     </div>
                     
-                    <div class="provider-card" id="outlookCard" onclick="selectProvider('outlook')">
+                    <div class="provider-card" id="outlookCard" data-provider="outlook">
                         <div class="provider-icon outlook-icon">
                             <i class="fab fa-microsoft"></i>
                         </div>
                         <div class="provider-name">Microsoft Outlook</div>
                         <div class="provider-status" id="outlookStatus">No conectado</div>
-                        <button class="btn btn-primary" onclick="event.stopPropagation(); connectOutlook()">
+                        <button class="btn btn-primary" id="connectOutlookBtn">
                             <i class="fas fa-link"></i> Conectar
                         </button>
                     </div>
@@ -245,7 +64,7 @@
             </div>
             
             <!-- Google Calendar Setup -->
-            <div class="config-section" id="googleSetup" style="display: none;">
+            <div class="config-section hidden" id="googleSetup">
                 <h3><i class="fab fa-google"></i> Configuración de Google Calendar</h3>
                 
                 <div class="help-text">
@@ -265,7 +84,7 @@
                     <div class="credentials-upload" id="googleCredentialsUpload">
                         <i class="fas fa-cloud-upload-alt"></i>
                         <p>Arrastra tu archivo credentials.json aquí o haz clic para seleccionar</p>
-                        <input type="file" id="googleCredentialsFile" accept=".json" style="display: none;">
+                        <input type="file" id="googleCredentialsFile" accept=".json" class="hidden-file-input">
                     </div>
                     <small>El archivo se almacena de forma segura en el servidor</small>
                 </div>
@@ -292,17 +111,17 @@
                 </div>
                 
                 <div class="btn-group">
-                    <button class="btn btn-success" onclick="saveGoogleConfig()">
+                    <button class="btn btn-success" id="saveGoogleConfigBtn">
                         <i class="fas fa-save"></i> Guardar Configuración
                     </button>
-                    <button class="btn btn-primary" onclick="authorizeGoogle()">
+                    <button class="btn btn-primary" id="authorizeGoogleBtn">
                         <i class="fas fa-key"></i> Autorizar Acceso
                     </button>
                 </div>
             </div>
             
             <!-- Outlook Setup -->
-            <div class="config-section" id="outlookSetup" style="display: none;">
+            <div class="config-section hidden" id="outlookSetup">
                 <h3><i class="fab fa-microsoft"></i> Configuración de Microsoft Outlook</h3>
                 
                 <div class="help-text">
@@ -341,10 +160,10 @@
                 </div>
                 
                 <div class="btn-group">
-                    <button class="btn btn-success" onclick="saveOutlookConfig()">
+                    <button class="btn btn-success" id="saveOutlookConfigBtn">
                         <i class="fas fa-save"></i> Guardar Configuración
                     </button>
-                    <button class="btn btn-primary" onclick="authorizeOutlook()">
+                    <button class="btn btn-primary" id="authorizeOutlookBtn">
                         <i class="fas fa-key"></i> Autorizar Acceso
                     </button>
                 </div>
@@ -353,10 +172,10 @@
             <!-- Working Hours -->
             <div class="config-section">
                 <h3><i class="fas fa-clock"></i> Horario de Atención</h3>
-                <p style="color: #6c757d; margin-bottom: 20px;">Define los horarios en que se pueden agendar citas</p>
+                <p class="muted-text mb-20">Define los horarios en que se pueden agendar citas</p>
                 
                 <div class="working-hours-grid">
-                    <div class="day-row" style="font-weight: bold; color: #6c757d;">
+                    <div class="day-row day-row-header">
                         <span>Día</span>
                         <span>Inicio</span>
                         <span>Fin</span>
@@ -406,7 +225,7 @@
                     </div>
                 </div>
                 
-                <div class="form-row" style="margin-top: 20px;">
+                <div class="form-row mt-20">
                     <div class="form-group">
                         <label>Duración por defecto (minutos)</label>
                         <select id="defaultDuration">
@@ -430,7 +249,7 @@
                     </div>
                 </div>
                 
-                <button class="btn btn-success" onclick="saveWorkingHours()">
+                <button class="btn btn-success" id="saveWorkingHoursBtn">
                     <i class="fas fa-save"></i> Guardar Horarios
                 </button>
             </div>
@@ -440,324 +259,22 @@
                 <h3><i class="fas fa-toggle-on"></i> Activar Sistema de Citas</h3>
                 
                 <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 15px; cursor: pointer;">
-                        <input type="checkbox" id="appointmentsEnabled" style="width: 24px; height: 24px;">
+                    <label class="appointments-label">
+                        <input type="checkbox" id="appointmentsEnabled" class="appointments-checkbox">
                         <span>Permitir que los usuarios agenden citas por WhatsApp</span>
                     </label>
                     <small>Cuando está activo, el bot detectará automáticamente cuando un usuario quiere agendar una cita</small>
                 </div>
                 
-                <button class="btn btn-primary" onclick="toggleAppointments()">
+                <button class="btn btn-primary" id="toggleAppointmentsBtn">
                     <i class="fas fa-power-off"></i> Aplicar Cambios
                 </button>
             </div>
         </div>
     </div>
 
-    <script>
-        const API_BASE = '';
-        let currentProvider = null;
-        let calendarStatus = {};
-        
-        // Initialize
-        document.addEventListener('DOMContentLoaded', async function() {
-            await loadCalendarStatus();
-            await loadCurrentConfig();
-            setupFileUpload();
-        });
-        
-        // Load calendar status
-        async function loadCalendarStatus() {
-            try {
-                const response = await fetch(`${API_BASE}/api/calendar/status`);
-                if (response.ok) {
-                    calendarStatus = await response.json();
-                    updateStatusUI();
-                }
-            } catch (error) {
-                console.error('Error loading calendar status:', error);
-            }
-        }
-        
-        // Load current configuration
-        async function loadCurrentConfig() {
-            try {
-                const response = await fetch(`${API_BASE}/api/calendar/config`);
-                if (response.ok) {
-                    const config = await response.json();
-                    applyConfigToUI(config);
-                }
-            } catch (error) {
-                console.error('Error loading config:', error);
-            }
-        }
-        
-        function applyConfigToUI(config) {
-            if (!config) return;
-            
-            // Provider
-            if (config.provider) {
-                selectProvider(config.provider);
-            }
-            
-            // Working hours
-            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-            const workingHours = config.working_hours || {};
-            
-            days.forEach(day => {
-                const dayConfig = workingHours[day] || {};
-                if (dayConfig.start) document.getElementById(`${day}_start`).value = dayConfig.start;
-                if (dayConfig.end) document.getElementById(`${day}_end`).value = dayConfig.end;
-                document.getElementById(`${day}_closed`).checked = dayConfig.closed || false;
-            });
-            
-            // Duration and buffer
-            if (config.default_duration_minutes) {
-                document.getElementById('defaultDuration').value = config.default_duration_minutes;
-            }
-            if (config.buffer_between_appointments !== undefined) {
-                document.getElementById('bufferTime').value = config.buffer_between_appointments;
-            }
-            
-            // Enabled
-            document.getElementById('appointmentsEnabled').checked = config.enabled || false;
-            
-            // Google config
-            if (config.google_calendar) {
-                document.getElementById('googleCalendarId').value = config.google_calendar.calendar_id || 'primary';
-                document.getElementById('googleNotifications').checked = config.google_calendar.send_notifications !== false;
-                document.getElementById('googleMeet').checked = config.google_calendar.add_google_meet !== false;
-            }
-            
-            // Outlook config
-            if (config.outlook) {
-                document.getElementById('outlookClientId').value = config.outlook.client_id || '';
-                document.getElementById('outlookTenantId').value = config.outlook.tenant_id || 'common';
-                document.getElementById('outlookTeams').checked = config.outlook.add_teams_meeting !== false;
-            }
-        }
-        
-        function updateStatusUI() {
-            const banner = document.getElementById('statusBanner');
-            
-            if (calendarStatus.is_ready) {
-                banner.className = 'status-banner status-connected';
-                banner.innerHTML = `
-                    <i class="fas fa-check-circle" style="font-size: 1.5rem;"></i>
-                    <div>
-                        <strong>✅ Calendario conectado</strong>
-                        <p>Proveedor activo: ${calendarStatus.active_provider}</p>
-                    </div>
-                `;
-                
-                // Update provider card
-                if (calendarStatus.active_provider === 'google_calendar') {
-                    document.getElementById('googleCard').classList.add('connected');
-                    document.getElementById('googleStatus').textContent = '✅ Conectado';
-                    document.getElementById('googleStatus').classList.add('connected');
-                } else if (calendarStatus.active_provider === 'outlook') {
-                    document.getElementById('outlookCard').classList.add('connected');
-                    document.getElementById('outlookStatus').textContent = '✅ Conectado';
-                    document.getElementById('outlookStatus').classList.add('connected');
-                }
-            }
-        }
-        
-        function selectProvider(provider) {
-            currentProvider = provider;
-            
-            // Update card selection
-            document.querySelectorAll('.provider-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-            
-            if (provider === 'google_calendar') {
-                document.getElementById('googleCard').classList.add('selected');
-                document.getElementById('googleSetup').style.display = 'block';
-                document.getElementById('outlookSetup').style.display = 'none';
-            } else if (provider === 'outlook') {
-                document.getElementById('outlookCard').classList.add('selected');
-                document.getElementById('outlookSetup').style.display = 'block';
-                document.getElementById('googleSetup').style.display = 'none';
-            }
-        }
-        
-        function setupFileUpload() {
-            const uploadArea = document.getElementById('googleCredentialsUpload');
-            const fileInput = document.getElementById('googleCredentialsFile');
-            
-            uploadArea.addEventListener('click', () => fileInput.click());
-            
-            uploadArea.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                uploadArea.classList.add('dragover');
-            });
-            
-            uploadArea.addEventListener('dragleave', () => {
-                uploadArea.classList.remove('dragover');
-            });
-            
-            uploadArea.addEventListener('drop', (e) => {
-                e.preventDefault();
-                uploadArea.classList.remove('dragover');
-                const file = e.dataTransfer.files[0];
-                if (file) handleGoogleCredentialsFile(file);
-            });
-            
-            fileInput.addEventListener('change', (e) => {
-                if (e.target.files[0]) handleGoogleCredentialsFile(e.target.files[0]);
-            });
-        }
-        
-        async function handleGoogleCredentialsFile(file) {
-            const formData = new FormData();
-            formData.append('credentials', file);
-            
-            try {
-                const response = await fetch(`${API_BASE}/api/calendar/google/credentials`, {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    alert('✅ Credenciales cargadas correctamente. Ahora haz clic en "Autorizar Acceso".');
-                    document.getElementById('googleCredentialsUpload').innerHTML = `
-                        <i class="fas fa-check-circle" style="color: #28a745;"></i>
-                        <p>✅ Archivo cargado: ${file.name}</p>
-                    `;
-                } else {
-                    const error = await response.json();
-                    alert('❌ Error: ' + (error.detail || 'No se pudo cargar el archivo'));
-                }
-            } catch (error) {
-                alert('❌ Error de conexión: ' + error.message);
-            }
-        }
-        
-        async function authorizeGoogle() {
-            try {
-                const response = await fetch(`${API_BASE}/api/calendar/oauth/google/authorize`);
-                if (response.ok) {
-                    const data = await response.json();
-                    // Open authorization URL in new window
-                    window.open(data.authorization_url, 'GoogleAuth', 'width=600,height=700');
-                    alert('Se abrió una ventana para autorizar el acceso a Google Calendar. Completa el proceso y luego regresa aquí.');
-                } else {
-                    const error = await response.json();
-                    alert('❌ Error: ' + (error.detail || 'No se pudo iniciar autorización'));
-                }
-            } catch (error) {
-                alert('❌ Error: ' + error.message);
-            }
-        }
-        
-        async function authorizeOutlook() {
-            // First save the config
-            await saveOutlookConfig();
-            
-            try {
-                const response = await fetch(`${API_BASE}/api/calendar/oauth/outlook/authorize`);
-                if (response.ok) {
-                    const data = await response.json();
-                    window.open(data.authorization_url, 'OutlookAuth', 'width=600,height=700');
-                    alert('Se abrió una ventana para autorizar el acceso a Outlook. Completa el proceso y luego regresa aquí.');
-                } else {
-                    const error = await response.json();
-                    alert('❌ Error: ' + (error.detail || 'No se pudo iniciar autorización'));
-                }
-            } catch (error) {
-                alert('❌ Error: ' + error.message);
-            }
-        }
-        
-        async function saveGoogleConfig() {
-            const config = {
-                provider: 'google_calendar',
-                google_calendar: {
-                    calendar_id: document.getElementById('googleCalendarId').value || 'primary',
-                    send_notifications: document.getElementById('googleNotifications').checked,
-                    add_google_meet: document.getElementById('googleMeet').checked
-                }
-            };
-            
-            await saveConfig(config);
-        }
-        
-        async function saveOutlookConfig() {
-            const config = {
-                provider: 'outlook',
-                outlook: {
-                    client_id: document.getElementById('outlookClientId').value,
-                    client_secret: document.getElementById('outlookClientSecret').value,
-                    tenant_id: document.getElementById('outlookTenantId').value || 'common',
-                    add_teams_meeting: document.getElementById('outlookTeams').checked
-                }
-            };
-            
-            await saveConfig(config);
-        }
-        
-        async function saveWorkingHours() {
-            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-            const working_hours = {};
-            
-            days.forEach(day => {
-                const closed = document.getElementById(`${day}_closed`).checked;
-                if (closed) {
-                    working_hours[day] = { closed: true };
-                } else {
-                    working_hours[day] = {
-                        start: document.getElementById(`${day}_start`).value,
-                        end: document.getElementById(`${day}_end`).value
-                    };
-                }
-            });
-            
-            const config = {
-                working_hours,
-                default_duration_minutes: parseInt(document.getElementById('defaultDuration').value),
-                buffer_between_appointments: parseInt(document.getElementById('bufferTime').value)
-            };
-            
-            await saveConfig(config);
-        }
-        
-        async function toggleAppointments() {
-            const config = {
-                enabled: document.getElementById('appointmentsEnabled').checked
-            };
-            
-            await saveConfig(config);
-        }
-        
-        async function saveConfig(config) {
-            try {
-                const response = await fetch(`${API_BASE}/api/calendar/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(config)
-                });
-                
-                if (response.ok) {
-                    alert('✅ Configuración guardada correctamente');
-                    await loadCalendarStatus();
-                } else {
-                    const error = await response.json();
-                    alert('❌ Error: ' + (error.detail || 'No se pudo guardar'));
-                }
-            } catch (error) {
-                alert('❌ Error de conexión: ' + error.message);
-            }
-        }
-        
-        function connectGoogle() {
-            selectProvider('google_calendar');
-        }
-        
-        function connectOutlook() {
-            selectProvider('outlook');
-        }
-    </script>
+    <!-- requireAuth('/ui/login.html') -->
+    <!-- window.Api apiJson apiRequest -->
+    <script src="/ui/calendar_config.js" defer></script>
 </body>
 </html>

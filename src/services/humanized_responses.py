@@ -1,6 +1,11 @@
 """
 🎭 Sistema de Respuestas Humanizadas
 Maneja errores y situaciones problemáticas SIN revelar que es un bot
+
+Legal/Compliance Disclosure:
+- Este módulo provee comportamiento técnico de conversación.
+- No sustituye obligaciones legales de transparencia o consentimiento.
+- El operador debe habilitar las divulgaciones requeridas por su jurisdicción.
 """
 
 import logging
@@ -461,5 +466,6 @@ class SensitiveBusinessHandler:
 
 # Instancia global
 humanized_responses = HumanizedResponseManager()
+response_manager = humanized_responses
 humanized_timing = HumanizedTiming()
 sensitive_handler = SensitiveBusinessHandler()

@@ -145,6 +145,7 @@ class TestMultiProviderLLM:
         self.mock_requests.return_value = mock_session
 
         llm_manager = MultiProviderLLM()
+        llm_manager.cache_enabled = False
         messages = [{"role": "user", "content": "Test message"}]
 
         result = await llm_manager.generate_response(messages)

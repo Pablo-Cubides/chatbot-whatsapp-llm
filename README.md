@@ -9,7 +9,7 @@
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-**Production-ready AI chatbot system with enterprise-grade architecture, multi-LLM support, and WhatsApp integration**
+**Production-ready AI chatbot system with modular FastAPI routers, security hardening, and WhatsApp integration**
 
 [🚀 Quick Start](#quick-start) • [📖 Documentation](#documentation) • [🏗️ Architecture](#architecture) • [🔧 Features](#features)
 
@@ -23,17 +23,22 @@ This is a **production-grade WhatsApp AI chatbot platform** built with modern Py
 
 ### 🎯 Key Highlights
 
-- **🏢 Enterprise Architecture**: Modular design with separation of concerns
+- **🏢 Consolidated Architecture**: Canonical API app in `admin_panel.py` + modular routers in `src/routers`
 - **🤖 Multi-AI Provider**: OpenAI, Google Gemini, Anthropic Claude, xAI Grok, Ollama, LM Studio
 - **⚡ High Performance**: Redis caching, connection pooling, async operations
 - **🔒 Security-First**: bcrypt authentication, JWT tokens, environment-based configuration
 - **📊 Scalable**: Supports 100+ concurrent users with circuit breaker patterns
-- **🧪 Test Coverage**: Comprehensive test suite with 60%+ coverage target
+- **🧪 Test Status**: Ejecuta `pytest` para validar estado actual en tu entorno
 - **🐳 DevOps Ready**: Docker, CI/CD prepared, cloud deployment guides
 
 ---
 
 ## 🏗️ Architecture
+
+### Runtime Entrypoints (current)
+
+- **Canonical API app**: `admin_panel:app` (used in Docker and production)
+- **Worker**: `whatsapp_automator.py` (Playwright WhatsApp Web automation)
 
 ### Technology Stack
 
@@ -53,9 +58,14 @@ This is a **production-grade WhatsApp AI chatbot platform** built with modern Py
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.9+
+- Python 3.10+
 - Redis (optional, for caching)
 - PostgreSQL (optional, for production)
+
+### Runtime Version Policy
+
+- Local development: Python 3.11+
+- Docker runtime (pinned): `python:3.11.8-slim`
 
 ### Installation
 
@@ -100,17 +110,17 @@ REDIS_URL=redis://localhost:6379/0
 ### Launch
 
 ```bash
-# Development
-python main_server.py
+# Development (recommended)
+python -m uvicorn admin_panel:app --host 127.0.0.1 --port 8003 --reload
 
 # Production
-uvicorn main_server:app --host 0.0.0.0 --port 8000
+uvicorn admin_panel:app --host 0.0.0.0 --port 8003
 
 # With Docker
 docker-compose up -d
 ```
 
-Access the dashboard at: http://localhost:8000
+Access the dashboard at: http://localhost:8003
 
 ---
 
@@ -155,8 +165,8 @@ Access the dashboard at: http://localhost:8000
 # Run full test suite
 pytest tests/ --cov=src --cov-report=html
 
-# Current coverage: 75%+ on critical paths
-# Target: 85%+ for production release
+# Estado actual: ejecutar suite en CI/local para validar métricas reales
+# Run lint: ruff check .
 ```
 
 **Test Categories:**
@@ -176,7 +186,7 @@ version: '3.8'
 services:
   chatbot:
     build: .
-    ports: ["8000:8000"]
+    ports: ["8003:8003"]
     environment:
       - DATABASE_URL=postgresql://postgres:password@db:5432/chatbot
       - REDIS_URL=redis://redis:6379/0
@@ -195,7 +205,7 @@ services:
 
 ### Cloud Deployment
 
-**AWS/GCP/Azure:** Full deployment guides available in `docs/`
+**AWS/GCP/Azure:** Deployment guide in `docs/DEPLOYMENT.md`
 
 **Heroku:** One-click deployment ready
 
@@ -208,6 +218,16 @@ services:
 - **24/7 availability** without additional staff
 - **95% of queries** answered in <30 seconds
 - **70% cost reduction** in customer service operations
+
+---
+
+## ⚖️ Legal Compliance & Disclosure
+
+- This project is a technical platform and does not constitute legal advice.
+- Operators are responsible for complying with local regulations on privacy, consent, and consumer communications.
+- If automated responses are used in regulated contexts, configure explicit disclosure policies as required by your jurisdiction.
+- Review and adapt retention, audit, and data-processing settings before production rollout.
+- Ensure third-party provider terms (OpenAI, Google, Anthropic, xAI, Meta, etc.) are respected for your intended use.
 
 ### Use Cases
 - **E-commerce**: Order processing, product recommendations

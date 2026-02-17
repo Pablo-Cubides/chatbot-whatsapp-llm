@@ -5,14 +5,48 @@ Integración con Meta WhatsApp Business Platform (Graph API)
 
 import logging
 import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
-import requests
+import httpx
 
 from src.services.audio_transcriber import audio_transcriber
 from src.services.whatsapp_provider import MessageType, NormalizedMessage, SendResult, WhatsAppProvider
 
 logger = logging.getLogger(__name__)
+
+
+def _run_async_blocking(coro):
+    try:
+        asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(lambda: asyncio.run(coro)).result()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+
+async def _request_json_async(
+    method: str,
+    url: str,
+    headers: Optional[dict[str, str]] = None,
+    payload: Optional[dict[str, Any]] = None,
+    timeout_seconds: float = 30,
+) -> tuple[int, Any, str]:
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        response = await client.request(method, url, headers=headers, json=payload)
+        text = response.text
+        try:
+            data = response.json()
+        except Exception:
+            data = None
+        return response.status_code, data, text
+
+
+async def _request_bytes_async(url: str, headers: Optional[dict[str, str]] = None, timeout_seconds: float = 60) -> tuple[int, bytes, str]:
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        response = await client.get(url, headers=headers)
+        return response.status_code, response.content, response.text
 
 
 class CloudProvider(WhatsAppProvider):
@@ -62,23 +96,25 @@ class CloudProvider(WhatsAppProvider):
                 payload["type"] = "text"
                 payload["text"] = {"body": text}
 
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            status_code, data, raw_text = _run_async_blocking(
+                _request_json_async("POST", url, headers=headers, payload=payload, timeout_seconds=30)
+            )
 
-            if response.status_code == 200:
-                data = response.json()
+            if status_code == 200:
+                data = data or {}
                 message_id = data.get("messages", [{}])[0].get("id")
 
-                logger.info(f"✅ Mensaje enviado via Cloud API: {message_id}")
+                logger.info("✅ Mensaje enviado via Cloud API: %s", message_id)
 
                 return SendResult(success=True, message_id=message_id, provider="cloud")
             else:
-                error_msg = response.json().get("error", {}).get("message", response.text)
-                logger.error(f"❌ Error Cloud API: {error_msg}")
+                error_msg = (data or {}).get("error", {}).get("message", raw_text)
+                logger.error("❌ Error Cloud API: %s", error_msg)
 
                 return SendResult(success=False, error=error_msg, provider="cloud")
 
         except Exception as e:
-            logger.error(f"❌ Excepción enviando via Cloud API: {e}")
+            logger.error("❌ Excepción enviando via Cloud API: %s", e)
             return SendResult(success=False, error=str(e), provider="cloud")
 
     def receive_message(self, raw_event: dict[str, Any]) -> Optional[NormalizedMessage]:
@@ -121,7 +157,7 @@ class CloudProvider(WhatsAppProvider):
                         transcribed = audio_transcriber.transcribe(audio_bytes, language="es", audio_id=media_id)
                         if transcribed:
                             text = f"[Audio transcrito]: {transcribed}"
-                            logger.info(f"🎤 Audio transcrito para {chat_id}")
+                            logger.info("🎤 Audio transcrito para %s", chat_id)
             elif message_type == "video":
                 media_id = message.get("video", {}).get("id")
                 text = message.get("video", {}).get("caption")
@@ -143,7 +179,7 @@ class CloudProvider(WhatsAppProvider):
             )
 
         except Exception as e:
-            logger.error(f"❌ Error normalizando mensaje Cloud API: {e}")
+            logger.error("❌ Error normalizando mensaje Cloud API: %s", e)
             return None
 
     def download_media(self, media_id: str) -> Optional[bytes]:
@@ -159,30 +195,34 @@ class CloudProvider(WhatsAppProvider):
             url = f"https://graph.facebook.com/{self.api_version}/{media_id}"
             headers = {"Authorization": f"Bearer {self.token}"}
 
-            response = requests.get(url, headers=headers, timeout=30)
+            meta_status, meta_data, meta_text = _run_async_blocking(
+                _request_json_async("GET", url, headers=headers, timeout_seconds=30)
+            )
 
-            if response.status_code != 200:
-                logger.error(f"❌ Error obteniendo URL de media: {response.text}")
+            if meta_status != 200:
+                logger.error("❌ Error obteniendo URL de media: %s", meta_text)
                 return None
 
-            media_url = response.json().get("url")
+            media_url = (meta_data or {}).get("url")
 
             if not media_url:
                 logger.error("❌ URL de media no encontrada")
                 return None
 
             # Paso 2: Descargar el archivo
-            media_response = requests.get(media_url, headers=headers, timeout=60)
+            media_status, media_content, media_text = _run_async_blocking(
+                _request_bytes_async(media_url, headers=headers, timeout_seconds=60)
+            )
 
-            if media_response.status_code == 200:
-                logger.info(f"✅ Media descargado: {media_id}")
-                return media_response.content
+            if media_status == 200:
+                logger.info("✅ Media descargado: %s", media_id)
+                return media_content
             else:
-                logger.error(f"❌ Error descargando media: {media_response.text}")
+                logger.error("❌ Error descargando media: %s", media_text)
                 return None
 
         except Exception as e:
-            logger.error(f"❌ Excepción descargando media: {e}")
+            logger.error("❌ Excepción descargando media: %s", e)
             return None
 
     def is_available(self) -> bool:
@@ -195,11 +235,11 @@ class CloudProvider(WhatsAppProvider):
             url = f"https://graph.facebook.com/{self.api_version}/{self.phone_id}"
             headers = {"Authorization": f"Bearer {self.token}"}
 
-            response = requests.get(url, headers=headers, timeout=10)
-            return response.status_code == 200
+            status_code, _data, _text = _run_async_blocking(_request_json_async("GET", url, headers=headers, timeout_seconds=10))
+            return status_code == 200
 
         except Exception as e:
-            logger.error(f"❌ Error verificando disponibilidad Cloud API: {e}")
+            logger.error("❌ Error verificando disponibilidad Cloud API: %s", e)
             return False
 
     def get_status(self) -> dict[str, Any]:

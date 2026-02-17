@@ -157,6 +157,7 @@ REGLAS:
 
             headers = {
                 "Content-Type": "application/json",
+                "x-goog-api-key": self.gemini_key,
             }
 
             payload = {
@@ -180,7 +181,7 @@ REGLAS:
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(f"{url}?key={self.gemini_key}", headers=headers, json=payload, timeout=30) as response:
+                async with session.post(url, headers=headers, json=payload, timeout=30) as response:
                     if response.status == 200:
                         data = await response.json()
                         if "candidates" in data and len(data["candidates"]) > 0:

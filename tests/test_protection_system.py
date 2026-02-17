@@ -3,6 +3,9 @@ Tests for the Protection System — Rate Limiting & Circuit Breaker.
 """
 
 import time
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from src.services.protection_system import (
     CircuitBreaker,
@@ -10,6 +13,8 @@ from src.services.protection_system import (
     RateLimiter,
     RateLimitRule,
 )
+
+pytestmark = pytest.mark.unit
 
 
 class TestRateLimiter:
@@ -44,6 +49,7 @@ class TestRateLimiter:
         assert allowed_u1 is False
         assert allowed_u2 is True
 
+    @pytest.mark.slow
     def test_window_expiry(self):
         """Requests outside the window should not count."""
         limiter = RateLimiter()
@@ -68,6 +74,7 @@ class TestRateLimiter:
         assert info["requests_made"] == 2  # before this call
         assert info["requests_limit"] == 10
 
+    @pytest.mark.slow
     def test_cleanup_removes_old_entries(self):
         """Cleanup should remove expired entries."""
         limiter = RateLimiter()
@@ -120,8 +127,7 @@ class TestCircuitBreaker:
         cb._on_failure()
         cb._on_failure()
         assert cb.state == CircuitBreakerState.OPEN
-
-        time.sleep(1.1)
+        cb.stats.last_failure_time = datetime.now(timezone.utc) - timedelta(seconds=2)
         # After timeout, _should_attempt_reset should be True
         assert cb._should_attempt_reset() is True
 
@@ -133,8 +139,14 @@ class TestCircuitBreaker:
         assert stats["state"] == "closed"
         assert stats["failure_threshold"] == 3
 
-    def test_state_transitions_string_values(self):
+    @pytest.mark.parametrize(
+        ("state", "expected"),
+        [
+            (CircuitBreakerState.CLOSED, "closed"),
+            (CircuitBreakerState.OPEN, "open"),
+            (CircuitBreakerState.HALF_OPEN, "half_open"),
+        ],
+    )
+    def test_state_transitions_string_values(self, state, expected):
         """CircuitBreakerState enum should have expected string values."""
-        assert CircuitBreakerState.CLOSED.value == "closed"
-        assert CircuitBreakerState.OPEN.value == "open"
-        assert CircuitBreakerState.HALF_OPEN.value == "half_open"
+        assert state.value == expected

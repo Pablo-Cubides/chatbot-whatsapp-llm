@@ -2,11 +2,11 @@
 Modelos Pydantic para validación de datos
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
 class BusinessType(str, Enum):
@@ -54,7 +54,8 @@ class BusinessInfoModel(BaseModel):
     website: Optional[str] = Field(None, max_length=200, description="Sitio web")
     location: Optional[str] = Field(None, max_length=200, description="Ubicación")
 
-    @validator("services")
+    @field_validator("services")
+    @classmethod
     def validate_services(cls, v):
         if not v:
             raise ValueError("Debe incluir al menos un servicio")
@@ -63,7 +64,8 @@ class BusinessInfoModel(BaseModel):
                 raise ValueError("Cada servicio debe tener al menos 2 caracteres")
         return v
 
-    @validator("website")
+    @field_validator("website")
+    @classmethod
     def validate_website(cls, v):
         if v and not (v.startswith("http://") or v.startswith("https://")):
             raise ValueError("La URL debe comenzar con http:// o https://")
@@ -78,7 +80,8 @@ class ClientObjectivesModel(BaseModel):
     conversion_keywords: list[str] = Field(default_factory=list, max_items=50, description="Palabras clave de conversión")
     qualification_questions: list[str] = Field(default_factory=list, max_items=20, description="Preguntas de calificación")
 
-    @validator("conversion_keywords")
+    @field_validator("conversion_keywords")
+    @classmethod
     def validate_keywords(cls, v):
         for keyword in v:
             if len(keyword.strip()) < 2:
@@ -93,13 +96,15 @@ class ConversationFlowModel(BaseModel):
     fallback_responses: list[str] = Field(default_factory=list, max_items=10, description="Respuestas de respaldo")
     escalation_triggers: list[str] = Field(default_factory=list, max_items=20, description="Triggers de escalación")
 
-    @validator("greeting_variants")
+    @field_validator("greeting_variants")
+    @classmethod
     def validate_greetings(cls, v):
         if not v:
             raise ValueError("Debe incluir al menos una variante de saludo")
         return v
 
-    @validator("fallback_responses")
+    @field_validator("fallback_responses")
+    @classmethod
     def validate_fallbacks(cls, v):
         if not v:
             raise ValueError("Debe incluir al menos una respuesta de respaldo")
@@ -119,14 +124,15 @@ class AIBehaviorModel(BaseModel):
 class WorkingScheduleModel(BaseModel):
     """Modelo para horario de trabajo de un día"""
 
-    start: Optional[str] = Field(None, regex=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Hora inicio (HH:MM)")
-    end: Optional[str] = Field(None, regex=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Hora fin (HH:MM)")
+    start: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Hora inicio (HH:MM)")
+    end: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Hora fin (HH:MM)")
     closed: bool = Field(default=False, description="Día cerrado")
 
-    @validator("end")
-    def validate_end_after_start(cls, v, values):
-        if v and "start" in values and values["start"]:
-            start_time = values["start"]
+    @field_validator("end")
+    @classmethod
+    def validate_end_after_start(cls, v, info: ValidationInfo):
+        start_time = info.data.get("start") if info and info.data else None
+        if v and start_time:
             if v <= start_time:
                 raise ValueError("La hora de fin debe ser posterior a la hora de inicio")
         return v
@@ -154,7 +160,8 @@ class WorkingHoursModel(BaseModel):
         description="Mensaje fuera de horario",
     )
 
-    @validator("schedule")
+    @field_validator("schedule")
+    @classmethod
     def validate_schedule_days(cls, v):
         required_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         for day in required_days:
@@ -180,24 +187,24 @@ class FullBusinessConfigModel(BaseModel):
     conversation_flow: ConversationFlowModel
     ai_behavior: AIBehaviorModel
     business_rules: BusinessRulesModel
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow, description="Fecha de creación")
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow, description="Fecha de actualización")
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), description="Fecha de creación")
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), description="Fecha de actualización")
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
 
 class LLMRequestModel(BaseModel):
     """Modelo para solicitudes de LLM"""
 
-    messages: list[dict[str, str]] = Field(..., min_items=1, description="Lista de mensajes")
+    messages: list[dict[str, str]] = Field(..., min_length=1, description="Lista de mensajes")
     max_tokens: int = Field(default=150, ge=1, le=4000, description="Máximo tokens")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Temperatura")
     provider: Optional[str] = Field(None, description="Proveedor específico")
     free_only: bool = Field(default=False, description="Solo modelos gratuitos")
-    use_case: str = Field(default="normal", regex="^(normal|reasoning)$", description="Caso de uso")
+    use_case: str = Field(default="normal", pattern="^(normal|reasoning)$", description="Caso de uso")
 
-    @validator("messages")
+    @field_validator("messages")
+    @classmethod
     def validate_messages(cls, v):
         for i, message in enumerate(v):
             if "role" not in message or "content" not in message:
@@ -212,7 +219,7 @@ class LLMRequestModel(BaseModel):
 class WhatsAppControlModel(BaseModel):
     """Modelo para control de WhatsApp"""
 
-    action: str = Field(..., regex="^(start|stop|restart)$", description="Acción a ejecutar")
+    action: str = Field(..., pattern="^(start|stop|restart)$", description="Acción a ejecutar")
     timeout: int = Field(default=60, ge=10, le=300, description="Timeout en segundos")
 
 
@@ -220,13 +227,15 @@ class AnalyticsFilterModel(BaseModel):
     """Modelo para filtros de analytics"""
 
     hours: int = Field(default=24, ge=1, le=8760, description="Horas a consultar")  # Max 1 año
-    metric: Optional[str] = Field(None, regex="^(conversations|messages|api_usage|errors)$", description="Métrica específica")
+    metric: Optional[str] = Field(None, pattern="^(conversations|messages|api_usage|errors)$", description="Métrica específica")
     start_date: Optional[datetime] = Field(None, description="Fecha inicio")
     end_date: Optional[datetime] = Field(None, description="Fecha fin")
 
-    @validator("end_date")
-    def validate_end_after_start(cls, v, values):
-        if v and "start_date" in values and values["start_date"] and v <= values["start_date"]:
+    @field_validator("end_date")
+    @classmethod
+    def validate_end_after_start(cls, v, info: ValidationInfo):
+        start_date = info.data.get("start_date") if info and info.data else None
+        if v and start_date and v <= start_date:
             raise ValueError("end_date debe ser posterior a start_date")
         return v
 
@@ -234,18 +243,21 @@ class AnalyticsFilterModel(BaseModel):
 class UserRegistrationModel(BaseModel):
     """Modelo para registro de usuarios"""
 
-    username: str = Field(..., min_length=3, max_length=50, regex="^[a-zA-Z0-9_-]+$", description="Nombre de usuario")
+    username: str = Field(..., min_length=3, max_length=50, pattern="^[a-zA-Z0-9_-]+$", description="Nombre de usuario")
     password: str = Field(..., min_length=8, max_length=128, description="Contraseña")
     confirm_password: str = Field(..., description="Confirmación de contraseña")
-    role: str = Field(default="operator", regex="^(admin|operator)$", description="Rol del usuario")
+    role: str = Field(default="operator", pattern="^(admin|operator)$", description="Rol del usuario")
 
-    @validator("confirm_password")
-    def passwords_match(cls, v, values):
-        if "password" in values and v != values["password"]:
+    @field_validator("confirm_password")
+    @classmethod
+    def passwords_match(cls, v, info: ValidationInfo):
+        password = info.data.get("password") if info and info.data else None
+        if password is not None and v != password:
             raise ValueError("Las contraseñas no coinciden")
         return v
 
-    @validator("password")
+    @field_validator("password")
+    @classmethod
     def validate_password_strength(cls, v):
         if not any(c.isupper() for c in v):
             raise ValueError("La contraseña debe contener al menos una mayúscula")
@@ -256,6 +268,13 @@ class UserRegistrationModel(BaseModel):
         return v
 
 
+class AuthLoginModel(BaseModel):
+    """Modelo para login de autenticación"""
+
+    username: str = Field(..., min_length=3, max_length=50, pattern="^[a-zA-Z0-9_.@-]+$", description="Usuario")
+    password: str = Field(..., min_length=1, max_length=128, description="Contraseña")
+
+
 class PasswordChangeModel(BaseModel):
     """Modelo para cambio de contraseña"""
 
@@ -263,13 +282,16 @@ class PasswordChangeModel(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128, description="Nueva contraseña")
     confirm_new_password: str = Field(..., description="Confirmación de nueva contraseña")
 
-    @validator("confirm_new_password")
-    def passwords_match(cls, v, values):
-        if "new_password" in values and v != values["new_password"]:
+    @field_validator("confirm_new_password")
+    @classmethod
+    def passwords_match(cls, v, info: ValidationInfo):
+        new_password = info.data.get("new_password") if info and info.data else None
+        if new_password is not None and v != new_password:
             raise ValueError("Las contraseñas nuevas no coinciden")
         return v
 
-    @validator("new_password")
+    @field_validator("new_password")
+    @classmethod
     def validate_password_strength(cls, v):
         if not any(c.isupper() for c in v):
             raise ValueError("La nueva contraseña debe contener al menos una mayúscula")
@@ -286,10 +308,9 @@ class ErrorResponseModel(BaseModel):
     error: bool = True
     message: str
     details: Optional[dict[str, Any]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
 
 class SuccessResponseModel(BaseModel):
@@ -298,7 +319,6 @@ class SuccessResponseModel(BaseModel):
     success: bool = True
     message: str
     data: Optional[dict[str, Any]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})

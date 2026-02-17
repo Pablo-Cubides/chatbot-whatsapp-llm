@@ -57,6 +57,7 @@ class GoogleCalendarProvider(BaseCalendarProvider):
         self._service = None
         self._credentials_path: Optional[Path] = None
         self._token_path: Optional[Path] = None
+        self._oauth_state: Optional[str] = None
 
         # Default paths
         project_root = Path(__file__).parent.parent.parent
@@ -136,7 +137,9 @@ class GoogleCalendarProvider(BaseCalendarProvider):
             logger.error(f"❌ Google Calendar authentication failed: {e}")
             return False
 
-    def get_oauth_url(self, redirect_uri: str = "http://localhost:8003/api/calendar/oauth/google/callback") -> Optional[str]:
+    def get_oauth_url(
+        self, redirect_uri: str = "http://localhost:8003/api/calendar/oauth/google/callback", state: Optional[str] = None
+    ) -> Optional[str]:
         """
         Generate OAuth authorization URL for user consent.
 
@@ -156,12 +159,12 @@ class GoogleCalendarProvider(BaseCalendarProvider):
         try:
             flow = Flow.from_client_secrets_file(str(self._credentials_path), scopes=SCOPES, redirect_uri=redirect_uri)
 
-            authorization_url, state = flow.authorization_url(
+            authorization_url, generated_state = flow.authorization_url(
                 access_type="offline", include_granted_scopes="true", prompt="consent"
             )
 
             # Store state for verification (in production, use session/redis)
-            self._oauth_state = state
+            self._oauth_state = state or generated_state
 
             return authorization_url
 
@@ -169,7 +172,7 @@ class GoogleCalendarProvider(BaseCalendarProvider):
             logger.error(f"❌ Failed to generate OAuth URL: {e}")
             return None
 
-    async def handle_oauth_callback(self, authorization_code: str, redirect_uri: str) -> bool:
+    async def handle_oauth_callback(self, authorization_code: str, redirect_uri: str, state: Optional[str] = None) -> bool:
         """
         Handle OAuth callback and exchange code for tokens.
 
@@ -184,6 +187,11 @@ class GoogleCalendarProvider(BaseCalendarProvider):
             return False
 
         try:
+            if self._oauth_state and state and state != self._oauth_state:
+                logger.warning("⚠️ OAuth state mismatch in Google callback")
+                self._oauth_state = None
+                return False
+
             flow = Flow.from_client_secrets_file(str(self._credentials_path), scopes=SCOPES, redirect_uri=redirect_uri)
 
             flow.fetch_token(code=authorization_code)
@@ -193,10 +201,13 @@ class GoogleCalendarProvider(BaseCalendarProvider):
             self._save_token(creds)
 
             # Authenticate with new credentials
-            return await self.authenticate()
+            success = await self.authenticate()
+            self._oauth_state = None
+            return success
 
         except Exception as e:
             logger.error(f"❌ OAuth callback failed: {e}")
+            self._oauth_state = None
             return False
 
     def _save_token(self, creds: "Credentials"):

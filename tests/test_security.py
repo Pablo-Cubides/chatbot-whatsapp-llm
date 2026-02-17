@@ -6,6 +6,7 @@ Tests específicos para verificar seguridad del sistema.
 import os
 import sys
 import types
+import importlib
 from unittest.mock import patch
 
 import pytest
@@ -55,6 +56,20 @@ class TestSecurityVulnerabilities:
             "<script>alert('xss')</script>",
             "<img src=x onerror=alert('xss')>",
             "javascript:alert('xss')",
+            "<svg onload=alert(1)>",
+            "&#x3C;script&#x3E;alert(1)&#x3C;/script&#x3E;",
+            "data:text/html,<script>alert(1)</script>",
+            "<a href='javascript:alert(1)'>x</a>",
+            "<div onmouseover='alert(1)'>hover</div>",
+            "<input onfocus=alert(1) autofocus>",
+            "<body onerror=alert(1)>",
+            "{{7*7}}",
+            "<style>div{background:url(javascript:alert(1))}</style>",
+            "<img src=x onerror=&#x61;alert(1)>",
+            "%253Cscript%253Ealert(1)%253C/script%253E",
+            "<iframe src='javascript:alert(1)'></iframe>",
+            "<math><mi xlink:href='data:x,<script>alert(1)</script>'>X</mi></math>",
+            "<details open ontoggle=alert(1)>x</details>",
         ]
 
         for payload in xss_payloads:
@@ -62,8 +77,24 @@ class TestSecurityVulnerabilities:
             response = client.get(f"/?test={payload}")
             if response.status_code == 200:
                 content = response.text
-                # Verificar que no se refleja el script sin escapar
-                assert "<script>" not in content or "&lt;script&gt;" in content
+                lowered = content.lower()
+                assert payload.lower() not in lowered
+                assert "<script" not in lowered
+                assert "javascript:alert(" not in lowered
+
+    @pytest.mark.security
+    def test_path_traversal_payloads_do_not_succeed(self, client):
+        """Test de payloads de path traversal en endpoints representativos."""
+        traversal_payloads = [
+            "../../etc/passwd",
+            "..\\..\\windows\\system32",
+            "%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+            "..%00/..%00/etc/passwd",
+        ]
+
+        for payload in traversal_payloads:
+            response = client.get(f"/user-contexts/{payload}")
+            assert response.status_code in [401, 403, 404, 422], f"Traversal payload inesperado permitido: {payload}"
 
     @pytest.mark.security
     def test_authentication_required(self, client):
@@ -210,6 +241,23 @@ class TestCORSConfiguration:
         # La configuración ahora usa variables de entorno
         cors_origins = os.environ.get("CORS_ORIGINS", "")
         assert "*" not in cors_origins or not cors_origins
+
+    @pytest.mark.security
+    def test_cors_wildcard_is_sanitized_at_runtime(self):
+        """Si CORS_ORIGINS='*', la app fuerza orígenes seguros por defecto."""
+        import admin_panel
+
+        with patch.dict(os.environ, {"CORS_ORIGINS": "*"}, clear=False):
+            importlib.reload(admin_panel)
+            app = admin_panel.app
+            cors_middlewares = [m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware"]
+            assert cors_middlewares, "CORSMiddleware no configurado"
+            allow_origins = cors_middlewares[0].kwargs.get("allow_origins", [])
+            assert "*" not in allow_origins
+            assert "http://localhost:8003" in allow_origins
+
+        # Restablecer módulo para no contaminar otros tests
+        importlib.reload(admin_panel)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ Implementación segura con Fernet para encriptar tokens OAuth, API keys, etc.
 
 import logging
 import os
+import subprocess
+from datetime import datetime, timezone
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -15,27 +17,72 @@ logger = logging.getLogger(__name__)
 KEY_PATH = os.path.join(os.path.dirname(__file__), "data", "fernet.key")
 
 
+def _harden_key_permissions(path: str) -> None:
+    """Apply best-effort restrictive permissions to Fernet key file."""
+    if os.name == "nt":
+        current_user = os.environ.get("USERNAME")
+        if not current_user:
+            logger.warning("No se pudo determinar usuario actual para endurecer ACL de Fernet key")
+            return
+
+        commands = [
+            ["icacls", path, "/inheritance:r"],
+            ["icacls", path, "/grant:r", f"{current_user}:(R,W)"],
+            ["icacls", path, "/remove:g", "Users", "Everyone", "Authenticated Users"],
+        ]
+        for command in commands:
+            try:
+                subprocess.run(command, check=False, capture_output=True, text=True)
+            except Exception as e:
+                logger.warning("No se pudo aplicar ACL segura a Fernet key: %s", e)
+                break
+        return
+
+    try:
+        import stat
+
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except (OSError, AttributeError) as e:
+        logger.warning("No se pudo aplicar permisos restrictivos a Fernet key: %s", e)
+
+
 def ensure_key() -> bytes:
     """
     Asegura que existe una clave Fernet.
     La genera si no existe.
     """
     os.makedirs(os.path.dirname(KEY_PATH), exist_ok=True)
-    if os.path.exists(KEY_PATH):
+    try:
+        file_descriptor = os.open(KEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        _harden_key_permissions(KEY_PATH)
         with open(KEY_PATH, "rb") as f:
             return f.read()
-    key = Fernet.generate_key()
-    with open(KEY_PATH, "wb") as f:
-        f.write(key)
-    # Restrict file permissions (owner read-only)
-    try:
-        import stat
 
-        os.chmod(KEY_PATH, stat.S_IRUSR | stat.S_IWUSR)
-    except (OSError, AttributeError):
-        pass  # Windows may not support all chmod modes
+    key = Fernet.generate_key()
+    with os.fdopen(file_descriptor, "wb") as f:
+        f.write(key)
+
+    _harden_key_permissions(KEY_PATH)
     logger.info("Nueva clave Fernet generada y guardada")
     return key
+
+
+def get_key_age_days() -> float:
+    """Return Fernet key file age in days (0 if file does not exist)."""
+    if not os.path.exists(KEY_PATH):
+        return 0.0
+
+    modified_at = datetime.fromtimestamp(os.path.getmtime(KEY_PATH), tz=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - modified_at).total_seconds() / 86400)
+
+
+def is_key_rotation_due(rotation_days: int = 90) -> tuple[bool, float]:
+    """Check whether Fernet key reached configured rotation age."""
+    age_days = get_key_age_days()
+    if rotation_days <= 0:
+        return False, age_days
+    return age_days >= rotation_days, age_days
 
 
 def get_fernet() -> Fernet:
@@ -43,11 +90,10 @@ def get_fernet() -> Fernet:
     Obtiene instancia de Fernet usando clave de entorno o archivo.
     Prioriza FERNET_KEY de variables de entorno.
     """
-    key = os.environ.get("FERNET_KEY")
-    if key:
-        if isinstance(key, str):
-            key = key.encode()
-        return Fernet(key)
+    env_key = os.environ.get("FERNET_KEY")
+    if env_key:
+        key_bytes = env_key.encode("utf-8")
+        return Fernet(key_bytes)
     return Fernet(ensure_key())
 
 
@@ -86,10 +132,10 @@ def decrypt_text(token: str) -> str:
         return pt.decode("utf-8")
     except InvalidToken:
         logger.warning("Token inválido para desencriptar - posible dato no encriptado")
-        return None
+        return token
     except Exception as e:
         logger.error(f"Error desencriptando: {e}")
-        return None
+        return token
 
 
 # =====================================

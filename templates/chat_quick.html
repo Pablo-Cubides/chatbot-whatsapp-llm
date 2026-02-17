@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chatbot - Admin Chat</title>
+    <link rel="stylesheet" href="/ui/common.css" />
+    <script src="/ui/auth.js"></script>
+    <script src="/ui/api.js"></script>
+    <script src="/ui/toast.js"></script>
+    <style>
+        .quick-wrap { max-width: 980px; margin: 0 auto; }
+        .quick-header { background: linear-gradient(135deg, #4f7ee8 0%, #3453a9 100%); color: #fff; border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+        #log { background: #fff; border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; height: 60vh; overflow: auto; }
+        .msg { margin-bottom: 8px; }
+        .msg.user { color: #0f2f70; font-weight: 600; }
+        .msg.bot { color: #0f6f3b; }
+        .quick-input { display: flex; gap: 8px; margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <main id="main-content" class="quick-wrap" role="main">
+        <section class="quick-header" role="banner">
+            <h2>Chatbot — Interfaz rápida</h2>
+        </section>
+        <section id="log" aria-live="polite" aria-relevant="additions text"></section>
+        <div class="quick-input">
+            <input id="input" placeholder="Escribe aquí..." maxlength="2000" autocomplete="off" />
+            <button id="send" class="btn btn-primary" type="button">Enviar</button>
+        </div>
+    </main>
+    <script>
+        const log = document.getElementById('log');
+        const input = document.getElementById('input');
+        const send = document.getElementById('send');
+        const CHAT_ID = 'local_web_user';
+
+        if (window.Auth && !window.Auth.requireAuth('/ui/login.html')) {
+            throw new Error('Unauthorized');
+        }
+
+        function append(role, text){
+            const d = document.createElement('div');
+            d.className = 'msg ' + (role==='user'?'user':'bot');
+            d.textContent = (role==='user'? 'Tú: ' : 'Bot: ') + text;
+            log.appendChild(d);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        send.addEventListener('click', async ()=>{
+            const v = input.value.trim(); if(!v) return;
+            append('user', v);
+            input.value = '';
+            try{
+                const j = await (window.Api
+                    ? window.Api.json('/api/chat', {
+                        method:'POST',
+                        headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({chat_id: CHAT_ID, message: v})
+                    })
+                    : fetch('/api/chat', {
+                        method:'POST',
+                        headers: {'Content-Type':'application/json', ...(window.Auth ? window.Auth.authHeaders() : {})},
+                        body: JSON.stringify({chat_id: CHAT_ID, message: v})
+                    }).then(r => r.json())
+                );
+                append('bot', j.reply || '(sin respuesta)');
+            } catch(e){ append('bot','(error contactando al servidor)'); window.showToast?.({ type: 'error', message: 'Error contactando al servidor' }); }
+        });
+
+        input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') send.click(); });
+    </script>
+</body>
+</html>

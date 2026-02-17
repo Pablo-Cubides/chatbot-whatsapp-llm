@@ -22,6 +22,13 @@ _histograms: dict[str, list] = defaultdict(list)
 _gauges: dict[str, float] = {}
 _start_time = time.monotonic()
 
+# Canonical metric keys (Phase 6 observability baseline)
+_counters["http_requests"] = 0
+_counters["llm_requests"] = 0
+_histograms["http_request_duration_seconds"] = []
+_histograms["llm_response_time"] = []
+_gauges["active_ws_connections"] = 0.0
+
 # Maximum histogram samples to keep per metric (sliding window)
 _MAX_HISTOGRAM_SAMPLES = 1000
 
@@ -65,6 +72,16 @@ def get_metrics_snapshot() -> dict[str, Any]:
                     "p95": sorted_s[int(n * 0.95)] if n >= 20 else sorted_s[-1],
                     "p99": sorted_s[int(n * 0.99)] if n >= 100 else sorted_s[-1],
                     "max": sorted_s[-1],
+                }
+            else:
+                histogram_stats[name] = {
+                    "count": 0,
+                    "sum": 0.0,
+                    "avg": 0.0,
+                    "p50": 0.0,
+                    "p95": 0.0,
+                    "p99": 0.0,
+                    "max": 0.0,
                 }
 
         return {

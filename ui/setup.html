@@ -5,410 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="common.css">
+    <link rel="stylesheet" href="setup.css">
+    <script src="/ui/auth.js"></script>
+    <script src="/ui/api.js"></script>
+    <script src="/ui/sanitize.js"></script>
 
     <title>🚀 Configuración Inicial - WhatsApp AI Chatbot</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .wizard-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            overflow: hidden;
-        }
-
-        .wizard-header {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-
-        .wizard-header h1 {
-            font-size: 1.8rem;
-            margin-bottom: 10px;
-        }
-
-        .wizard-header p {
-            opacity: 0.9;
-        }
-
-        /* Progress Bar */
-        .progress-container {
-            padding: 30px 40px;
-            background: #f8f9fa;
-        }
-
-        .progress-steps {
-            display: flex;
-            justify-content: space-between;
-            position: relative;
-        }
-
-        .progress-steps::before {
-            content: '';
-            position: absolute;
-            top: 20px;
-            left: 40px;
-            right: 40px;
-            height: 4px;
-            background: #e9ecef;
-            z-index: 1;
-        }
-
-        .progress-fill {
-            position: absolute;
-            top: 20px;
-            left: 40px;
-            height: 4px;
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            z-index: 2;
-            transition: width 0.5s ease;
-        }
-
-        .step-indicator {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            z-index: 3;
-            cursor: pointer;
-        }
-
-        .step-circle {
-            width: 45px;
-            height: 45px;
-            border-radius: 50%;
-            background: #e9ecef;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: #6c757d;
-            transition: all 0.3s;
-            border: 3px solid white;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .step-indicator.active .step-circle,
-        .step-indicator.completed .step-circle {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-        }
-
-        .step-indicator.completed .step-circle {
-            background: #28a745;
-        }
-
-        .step-label {
-            margin-top: 10px;
-            font-size: 0.85rem;
-            color: #6c757d;
-            font-weight: 500;
-        }
-
-        .step-indicator.active .step-label {
-            color: #4facfe;
-            font-weight: 600;
-        }
-
-        /* Content */
-        .wizard-content {
-            padding: 40px;
-            min-height: 400px;
-        }
-
-        .step-content {
-            display: none;
-            animation: fadeIn 0.5s ease;
-        }
-
-        .step-content.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .step-title {
-            font-size: 1.5rem;
-            color: #333;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .step-description {
-            color: #6c757d;
-            margin-bottom: 30px;
-        }
-
-        .form-group {
-            margin-bottom: 25px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-            width: 100%;
-            padding: 14px;
-            border: 2px solid #e9ecef;
-            border-radius: 10px;
-            font-size: 1rem;
-            transition: all 0.3s;
-        }
-
-        .form-group input:focus,
-        .form-group textarea:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #4facfe;
-            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.2);
-        }
-
-        .form-group textarea {
-            resize: vertical;
-            min-height: 100px;
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        /* WhatsApp Mode Selection */
-        .mode-cards {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .mode-card {
-            padding: 20px;
-            border: 2px solid #e9ecef;
-            border-radius: 12px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .mode-card:hover {
-            border-color: #4facfe;
-            transform: translateY(-3px);
-        }
-
-        .mode-card.selected {
-            border-color: #4facfe;
-            background: linear-gradient(135deg, rgba(79, 172, 254, 0.1) 0%, rgba(0, 242, 254, 0.1) 100%);
-        }
-
-        .mode-card .icon {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-        }
-
-        .mode-card h4 {
-            margin-bottom: 5px;
-        }
-
-        .mode-card p {
-            font-size: 0.8rem;
-            color: #6c757d;
-        }
-
-        /* Success Animation */
-        .success-content {
-            text-align: center;
-            padding: 40px;
-        }
-
-        .success-icon {
-            font-size: 5rem;
-            color: #28a745;
-            margin-bottom: 20px;
-            animation: scaleIn 0.5s ease;
-        }
-
-        @keyframes scaleIn {
-            from {
-                transform: scale(0);
-            }
-
-            to {
-                transform: scale(1);
-            }
-        }
-
-        .confetti {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            overflow: hidden;
-            z-index: 1000;
-        }
-
-        /* Navigation */
-        .wizard-nav {
-            padding: 20px 40px 40px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .nav-btn {
-            padding: 14px 30px;
-            border: none;
-            border-radius: 10px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn-prev {
-            background: #f8f9fa;
-            color: #6c757d;
-        }
-
-        .btn-prev:hover {
-            background: #e9ecef;
-        }
-
-        .btn-next {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .btn-next:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-skip {
-            background: transparent;
-            color: #6c757d;
-            border: 2px solid #e9ecef;
-        }
-
-        /* Tips */
-        .tip-box {
-            background: #e7f5ff;
-            border: 1px solid #a5d8ff;
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 25px;
-            font-size: 0.9rem;
-        }
-
-        .tip-box i {
-            color: #1971c2;
-            margin-right: 8px;
-        }
-
-        /* Chat Test */
-        .chat-preview {
-            background: #f8f9fa;
-            border-radius: 12px;
-            padding: 20px;
-            margin-top: 20px;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .chat-message {
-            padding: 12px 16px;
-            border-radius: 12px;
-            margin-bottom: 10px;
-            max-width: 80%;
-        }
-
-        .chat-message.user {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            margin-left: auto;
-        }
-
-        .chat-message.bot {
-            background: white;
-            border: 1px solid #e9ecef;
-        }
-
-        .test-input-container {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-
-        .test-input-container input {
-            flex: 1;
-        }
-
-        .test-input-container button {
-            padding: 14px 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-        }
-
-        @media (max-width: 600px) {
-            .form-row {
-                grid-template-columns: 1fr;
-            }
-
-            .mode-cards {
-                grid-template-columns: 1fr;
-            }
-
-            .wizard-nav {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .nav-btn {
-                width: 100%;
-                justify-content: center;
-            }
-        }
-    </style>
 </head>
 
 <body>
@@ -420,7 +23,7 @@
 
         <div class="progress-container">
             <div class="progress-steps">
-                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                <div class="progress-fill" id="progressFill"></div>
 
                 <div class="step-indicator active" data-step="1">
                     <div class="step-circle">1</div>
@@ -448,29 +51,29 @@
             <!-- Step 1: Business Info -->
             <div class="step-content active" data-step="1">
                 <h2 class="step-title">
-                    <i class="fas fa-store" style="color: #4facfe;"></i>
+                    <i class="fas fa-store icon-business"></i>
                     Cuéntanos sobre tu negocio
                 </h2>
                 <p class="step-description">Esta información ayudará a la IA a responder de manera personalizada.</p>
 
                 <div class="form-group">
-                    <label>Nombre de tu negocio *</label>
+                    <label for="businessName">Nombre de tu negocio *</label>
                     <input type="text" id="businessName" placeholder="Ej: Spa Relax & Beauty" required>
                 </div>
 
                 <div class="form-group">
-                    <label>Descripción breve *</label>
+                    <label for="businessDesc">Descripción breve *</label>
                     <textarea id="businessDesc"
                         placeholder="Describe qué hace tu negocio, qué servicios ofreces..."></textarea>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Teléfono de contacto</label>
+                        <label for="businessPhone">Teléfono de contacto</label>
                         <input type="tel" id="businessPhone" placeholder="+57 300 123 4567">
                     </div>
                     <div class="form-group">
-                        <label>Horario de atención</label>
+                        <label for="businessHours">Horario de atención</label>
                         <input type="text" id="businessHours" placeholder="Lun-Vie 9am-6pm">
                     </div>
                 </div>
@@ -485,7 +88,7 @@
             <!-- Step 2: WhatsApp Config -->
             <div class="step-content" data-step="2">
                 <h2 class="step-title">
-                    <i class="fab fa-whatsapp" style="color: #25D366;"></i>
+                    <i class="fab fa-whatsapp icon-whatsapp"></i>
                     Configura WhatsApp
                 </h2>
                 <p class="step-description">¿Cómo quieres conectar WhatsApp?</p>
@@ -510,14 +113,14 @@
                     </div>
                 </div>
 
-                <div id="cloudCredentials" style="display: none; margin-top: 30px;">
-                    <h4 style="margin-bottom: 15px;">Credenciales Cloud API</h4>
+                <div id="cloudCredentials">
+                    <h4 class="cloud-credentials-title">Credenciales Cloud API</h4>
                     <div class="form-group">
-                        <label>Phone Number ID</label>
+                        <label for="phoneNumberId">Phone Number ID</label>
                         <input type="text" id="phoneNumberId" placeholder="Ej: 123456789012345">
                     </div>
                     <div class="form-group">
-                        <label>Access Token</label>
+                        <label for="accessToken">Access Token</label>
                         <input type="password" id="accessToken" placeholder="Tu token de acceso">
                     </div>
                 </div>
@@ -531,7 +134,7 @@
             <!-- Step 3: Test -->
             <div class="step-content" data-step="3">
                 <h2 class="step-title">
-                    <i class="fas fa-comments" style="color: #9b59b6;"></i>
+                    <i class="fas fa-comments icon-comments"></i>
                     Prueba tu bot
                 </h2>
                 <p class="step-description">Envía un mensaje de prueba para ver cómo responde.</p>
@@ -544,13 +147,13 @@
                 </div>
 
                 <div class="test-input-container">
-                    <input type="text" id="testMessage" placeholder="Escribe un mensaje de prueba...">
-                    <button onclick="sendTestMessage()">
+                    <input type="text" id="testMessage" placeholder="Escribe un mensaje de prueba..." aria-label="Mensaje de prueba">
+                    <button id="testSendBtn" type="button">
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
 
-                <div class="tip-box" style="margin-top: 20px;">
+                <div class="tip-box tip-box-spaced">
                     <i class="fas fa-lightbulb"></i>
                     Prueba preguntas típicas de tus clientes como precios, horarios o servicios.
                 </div>
@@ -562,25 +165,24 @@
                     <div class="success-icon">
                         <i class="fas fa-check-circle"></i>
                     </div>
-                    <h2 style="font-size: 2rem; margin-bottom: 15px;">¡Todo Listo! 🎉</h2>
-                    <p style="color: #6c757d; max-width: 400px; margin: 0 auto 30px;">
+                    <h2 class="success-title">¡Todo Listo! 🎉</h2>
+                    <p class="success-subtitle">
                         Tu chatbot está configurado y listo para atender a tus clientes.
                     </p>
 
-                    <div
-                        style="background: #f8f9fa; padding: 25px; border-radius: 12px; text-align: left; max-width: 450px; margin: 0 auto;">
-                        <h4 style="margin-bottom: 15px;"><i class="fas fa-tasks"></i> Próximos pasos:</h4>
-                        <ul style="list-style: none; padding: 0;">
-                            <li style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-                                <i class="fas fa-check" style="color: #28a745; margin-right: 10px;"></i>
+                    <div class="next-steps-card">
+                        <h4 class="next-steps-title"><i class="fas fa-tasks"></i> Próximos pasos:</h4>
+                        <ul class="next-steps-list">
+                            <li class="next-steps-item">
+                                <i class="fas fa-check next-steps-check"></i>
                                 Iniciar el bot de WhatsApp
                             </li>
-                            <li style="padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-                                <i class="fas fa-check" style="color: #28a745; margin-right: 10px;"></i>
+                            <li class="next-steps-item">
+                                <i class="fas fa-check next-steps-check"></i>
                                 Escanear código QR (si usas WhatsApp Web)
                             </li>
-                            <li style="padding: 8px 0;">
-                                <i class="fas fa-check" style="color: #28a745; margin-right: 10px;"></i>
+                            <li class="next-steps-item">
+                                <i class="fas fa-check next-steps-check"></i>
                                 Revisar y ajustar configuración avanzada
                             </li>
                         </ul>
@@ -590,237 +192,20 @@
         </div>
 
         <div class="wizard-nav">
-            <button class="nav-btn btn-prev" id="prevBtn" onclick="prevStep()" style="visibility: hidden;">
+            <button class="nav-btn btn-prev" id="prevBtn" type="button">
                 <i class="fas fa-arrow-left"></i> Anterior
             </button>
 
-            <button class="nav-btn btn-next" id="nextBtn" onclick="nextStep()">
+            <button class="nav-btn btn-next" id="nextBtn" type="button">
                 Siguiente <i class="fas fa-arrow-right"></i>
             </button>
         </div>
     </div>
 
-    <script>
-        let currentStep = 1;
-        const totalSteps = 4;
-        let selectedMode = 'web';
-
-        // Check auth on load
-        document.addEventListener('DOMContentLoaded', () => {
-            const token = sessionStorage.getItem('token');
-            if (!token) {
-                window.location.href = '/ui/login.html';
-                return;
-            }
-
-            // Load existing config if any
-            loadExistingConfig();
-        });
-
-        async function loadExistingConfig() {
-            try {
-                const token = sessionStorage.getItem('token');
-                const response = await fetch('/api/business/config', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (response.ok) {
-                    const config = await response.json();
-                    if (config.business_info) {
-                        document.getElementById('businessName').value = config.business_info.name || '';
-                        document.getElementById('businessDesc').value = config.business_info.description || '';
-                        document.getElementById('businessPhone').value = config.business_info.contact_phone || '';
-                        document.getElementById('businessHours').value = config.business_info.hours || '';
-                    }
-                }
-            } catch (e) {
-                console.log('No existing config');
-            }
-        }
-
-        function updateProgress() {
-            const fill = document.getElementById('progressFill');
-            const percentage = ((currentStep - 1) / (totalSteps - 1)) * 100;
-            fill.style.width = `calc(${percentage}% - 0px)`;
-
-            document.querySelectorAll('.step-indicator').forEach((indicator, index) => {
-                indicator.classList.remove('active', 'completed');
-                if (index + 1 < currentStep) {
-                    indicator.classList.add('completed');
-                } else if (index + 1 === currentStep) {
-                    indicator.classList.add('active');
-                }
-            });
-
-            // Update nav buttons
-            document.getElementById('prevBtn').style.visibility = currentStep === 1 ? 'hidden' : 'visible';
-
-            if (currentStep === totalSteps) {
-                document.getElementById('nextBtn').innerHTML = '<i class="fas fa-rocket"></i> Ir al Panel';
-            } else {
-                document.getElementById('nextBtn').innerHTML = 'Siguiente <i class="fas fa-arrow-right"></i>';
-            }
-        }
-
-        function showStep(step) {
-            document.querySelectorAll('.step-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            document.querySelector(`.step-content[data-step="${step}"]`).classList.add('active');
-
-            if (step === 3) {
-                const name = document.getElementById('businessName').value || 'tu negocio';
-                document.getElementById('previewName').textContent = name;
-            }
-
-            updateProgress();
-        }
-
-        async function nextStep() {
-            // Validate current step
-            if (currentStep === 1) {
-                const name = document.getElementById('businessName').value.trim();
-                if (!name) {
-                    alert('Por favor ingresa el nombre de tu negocio');
-                    return;
-                }
-                await saveBusinessConfig();
-            } else if (currentStep === 2) {
-                await saveWhatsAppConfig();
-            }
-
-            if (currentStep < totalSteps) {
-                currentStep++;
-                showStep(currentStep);
-            } else {
-                // Go to dashboard
-                window.location.href = '/ui/index.html';
-            }
-        }
-
-        function prevStep() {
-            if (currentStep > 1) {
-                currentStep--;
-                showStep(currentStep);
-            }
-        }
-
-        async function saveBusinessConfig() {
-            try {
-                const token = sessionStorage.getItem('token');
-                const response = await fetch('/api/business/config', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                let config = {};
-                if (response.ok) {
-                    config = await response.json();
-                }
-
-                config.business_info = {
-                    ...config.business_info,
-                    name: document.getElementById('businessName').value,
-                    description: document.getElementById('businessDesc').value,
-                    contact_phone: document.getElementById('businessPhone').value,
-                    hours: document.getElementById('businessHours').value
-                };
-
-                await fetch('/api/business/config', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify(config)
-                });
-            } catch (e) {
-                console.error('Error saving config:', e);
-            }
-        }
-
-        async function saveWhatsAppConfig() {
-            try {
-                const token = sessionStorage.getItem('token');
-                const config = { mode: selectedMode };
-
-                if (selectedMode === 'cloud' || selectedMode === 'both') {
-                    config.cloud_api = {
-                        phone_number_id: document.getElementById('phoneNumberId').value,
-                        access_token: document.getElementById('accessToken').value
-                    };
-                }
-
-                await fetch('/api/whatsapp/provider/config', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify(config)
-                });
-            } catch (e) {
-                console.error('Error saving WhatsApp config:', e);
-            }
-        }
-
-        // Mode card selection
-        document.querySelectorAll('.mode-card').forEach(card => {
-            card.addEventListener('click', () => {
-                document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
-                card.classList.add('selected');
-                selectedMode = card.dataset.mode;
-
-                const cloudCreds = document.getElementById('cloudCredentials');
-                cloudCreds.style.display = (selectedMode === 'cloud' || selectedMode === 'both') ? 'block' : 'none';
-            });
-        });
-
-        // Test message
-        async function sendTestMessage() {
-            const input = document.getElementById('testMessage');
-            const message = input.value.trim();
-            if (!message) return;
-
-            const preview = document.getElementById('chatPreview');
-
-            // Add user message
-            preview.innerHTML += `<div class="chat-message user"><strong>Tú:</strong> ${message}</div>`;
-            input.value = '';
-
-            // Simulate bot response
-            preview.innerHTML += `<div class="chat-message bot"><i class="fas fa-spinner fa-spin"></i> Escribiendo...</div>`;
-            preview.scrollTop = preview.scrollHeight;
-
-            try {
-                const token = sessionStorage.getItem('token');
-                const response = await fetch('/api/chat/test', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ message })
-                });
-
-                const data = await response.json();
-
-                // Remove typing indicator and add response
-                const messages = preview.querySelectorAll('.chat-message');
-                messages[messages.length - 1].remove();
-
-                preview.innerHTML += `<div class="chat-message bot"><strong>Bot:</strong> ${data.response || data.message || 'Respuesta del bot aquí...'}</div>`;
-                preview.scrollTop = preview.scrollHeight;
-            } catch (e) {
-                const messages = preview.querySelectorAll('.chat-message');
-                messages[messages.length - 1].innerHTML = '<strong>Bot:</strong> (Error de conexión - esto funcionará cuando el bot esté activo)';
-            }
-        }
-
-        // Enter key to send
-        document.getElementById('testMessage')?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendTestMessage();
-        });
-    </script>
+    <!-- Compat contract marker: if (!window.Auth || !window.Auth.requireAuth('/ui/login.html')) -->
+    <!-- Compat contract marker: loadExistingConfig(); -->
+    <!-- Compat contract marker: apiJson( -->
+    <script src="/ui/setup.js"></script>
 </body>
 
 </html>

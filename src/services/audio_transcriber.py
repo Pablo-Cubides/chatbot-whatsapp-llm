@@ -37,7 +37,7 @@ class AudioTranscriber:
         self.max_duration_seconds = int(os.environ.get("MAX_AUDIO_DURATION_SECONDS", "300"))  # 5 min
 
         if self.enabled and WHISPER_AVAILABLE:
-            logger.info(f"🎤 AudioTranscriber inicializando (model={self.model_size}, device={self.device})")
+            logger.info("🎤 AudioTranscriber inicializando (model=%s, device=%s)", self.model_size, self.device)
             self._initialize_model()
         elif self.enabled and not WHISPER_AVAILABLE:
             logger.warning("⚠️ Transcripción habilitada pero faster-whisper no disponible")
@@ -50,9 +50,9 @@ class AudioTranscriber:
             self.model = WhisperModel(
                 self.model_size, device=self.device, compute_type="int8" if self.device == "cpu" else "float16"
             )
-            logger.info(f"✅ Modelo Whisper '{self.model_size}' cargado")
+            logger.info("✅ Modelo Whisper '%s' cargado", self.model_size)
         except Exception as e:
-            logger.error(f"❌ Error cargando modelo Whisper: {e}")
+            logger.error("❌ Error cargando modelo Whisper: %s", e)
             self.enabled = False
 
     def transcribe(self, audio_bytes: bytes, language: str = "es", audio_id: Optional[str] = None) -> Optional[str]:
@@ -75,7 +75,7 @@ class AudioTranscriber:
             # Verificar tamaño
             size_mb = len(audio_bytes) / (1024 * 1024)
             if size_mb > self.max_file_size_mb:
-                logger.warning(f"⚠️ Audio demasiado grande: {size_mb:.2f}MB > {self.max_file_size_mb}MB")
+                logger.warning("⚠️ Audio demasiado grande: %.2fMB > %sMB", size_mb, self.max_file_size_mb)
                 return None
 
             # Verificar caché
@@ -83,7 +83,7 @@ class AudioTranscriber:
             cached_text = self._get_from_cache(cache_key)
 
             if cached_text:
-                logger.info(f"✅ Transcripción desde caché: {cache_key[:8]}...")
+                logger.info("✅ Transcripción desde caché: %s...", cache_key[:8])
                 return cached_text
 
             # Guardar temporalmente
@@ -92,7 +92,7 @@ class AudioTranscriber:
                 f.write(audio_bytes)
 
             # Transcribir
-            logger.info(f"🎤 Transcribiendo audio ({size_mb:.2f}MB)...")
+            logger.info("🎤 Transcribiendo audio (%.2fMB)...", size_mb)
 
             segments, info = self.model.transcribe(
                 str(temp_audio_path),
@@ -118,13 +118,13 @@ class AudioTranscriber:
             # Guardar en caché
             self._save_to_cache(cache_key, transcribed_text)
 
-            logger.info(f"✅ Audio transcrito: {len(transcribed_text)} caracteres")
-            logger.debug(f"Texto: {transcribed_text[:100]}...")
+            logger.info("✅ Audio transcrito: %s caracteres", len(transcribed_text))
+            logger.debug("Texto: %s...", transcribed_text[:100])
 
             return transcribed_text
 
         except Exception as e:
-            logger.error(f"❌ Error transcribiendo audio: {e}")
+            logger.error("❌ Error transcribiendo audio: %s", e)
             # Limpiar archivo temporal si existe
             try:
                 if temp_audio_path and temp_audio_path.exists():
@@ -146,7 +146,7 @@ class AudioTranscriber:
                 with open(cache_file, encoding="utf-8") as f:
                     return f.read()
         except Exception as e:
-            logger.warning(f"⚠️ Error leyendo caché: {e}")
+            logger.warning("⚠️ Error leyendo caché: %s", e)
 
         return None
 
@@ -158,7 +158,7 @@ class AudioTranscriber:
             with open(cache_file, "w", encoding="utf-8") as f:
                 f.write(text)
         except Exception as e:
-            logger.warning(f"⚠️ Error guardando en caché: {e}")
+            logger.warning("⚠️ Error guardando en caché: %s", e)
 
     def clear_cache(self):
         """Limpiar caché de transcripciones"""
@@ -167,7 +167,7 @@ class AudioTranscriber:
                 cache_file.unlink()
             logger.info("🗑️ Caché de transcripciones limpiado")
         except Exception as e:
-            logger.error(f"❌ Error limpiando caché: {e}")
+            logger.error("❌ Error limpiando caché: %s", e)
 
     def get_stats(self) -> dict:
         """Obtener estadísticas del transcriptor"""

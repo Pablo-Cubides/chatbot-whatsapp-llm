@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-chatbot}
       POSTGRES_USER: ${POSTGRES_USER:-chatbot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_THIS_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -18,6 +18,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 768m
+    cpus: "0.75"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
       - chatbot-network
 
@@ -30,7 +37,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-CHANGE_THIS_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatbot}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-chatbot}
     ports:
       - "8003:8003"
     volumes:
@@ -40,7 +47,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/healthz', timeout=3)\""]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    stop_grace_period: 35s
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: "1.00"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
       - chatbot-network
 
@@ -53,7 +73,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-CHANGE_THIS_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatbot}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-chatbot}
       WHATSAPP_MODE: web
       DISPLAY: ${DISPLAY:-:0}
     volumes:
@@ -61,9 +81,24 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
     depends_on:
-      - postgres
-      - app
+      postgres:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import glob, pathlib, sys; files=glob.glob('/proc/[0-9]*/cmdline'); ok=any('whatsapp_automator.py' in pathlib.Path(f).read_text(encoding='utf-8', errors='ignore') for f in files); sys.exit(0 if ok else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    stop_grace_period: 60s
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: "1.00"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
       - chatbot-network
 
@@ -76,14 +111,29 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD:-CHANGE_THIS_PASSWORD}@postgres:5432/${POSTGRES_DB:-chatbot}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-chatbot}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     depends_on:
-      - postgres
-      - app
+      postgres:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import glob, pathlib, sys; files=glob.glob('/proc/[0-9]*/cmdline'); ok=any(('src.workers.scheduler_worker' in pathlib.Path(f).read_text(encoding='utf-8', errors='ignore')) or ('scheduler_worker.py' in pathlib.Path(f).read_text(encoding='utf-8', errors='ignore')) for f in files); sys.exit(0 if ok else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    stop_grace_period: 30s
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: "0.75"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
       - chatbot-network
 
@@ -91,16 +141,23 @@ services:
   redis:
     image: redis:7-alpine
     container_name: chatbot-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme_redis_password}
+    command: redis-server --requirepass ${REDIS_PASSWORD?REDIS_PASSWORD is required}
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD?REDIS_PASSWORD is required}\" ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 384m
+    cpus: "0.50"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
       - chatbot-network
 

@@ -9,9 +9,12 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Optional
+
+from src.models.admin_db import get_db_session
+from src.models.models import ConversationProfile
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +158,7 @@ class DeepAnalyzer:
 
             # Guardar análisis
             self.analysis_history.append(analysis)
+            self._save_profile_to_db(analysis)
 
             # Registrar en analytics si está disponible
             if self.analytics:
@@ -195,6 +199,7 @@ class DeepAnalyzer:
         # Resetear contador
         self.conversations_since_last_analysis = 0
         self.last_analysis_date = datetime.now()
+        self._evict_old_profiles(days=30)
 
         # Generar reporte agregado
         aggregate_report = self._generate_aggregate_report(results)
@@ -358,6 +363,69 @@ Responde SOLO con JSON válido, sin explicaciones adicionales."""
             logger.info(f"💾 Guardando análisis de {analysis.session_id}")
         except Exception as e:
             logger.error(f"❌ Error guardando análisis: {e}")
+
+    def _save_profile_to_db(self, analysis: ConversationAnalysis) -> None:
+        """Persist deep analyzer output so state survives restarts."""
+        try:
+            payload = {
+                "session_id": analysis.session_id,
+                "contact": analysis.contact,
+                "primary_emotion": analysis.primary_emotion.value,
+                "emotion_confidence": analysis.emotion_confidence,
+                "emotion_timeline": analysis.emotion_timeline,
+                "bot_suspicion_detected": analysis.bot_suspicion_detected,
+                "bot_suspicion_indicators": analysis.bot_suspicion_indicators,
+                "bot_suspicion_severity": analysis.bot_suspicion_severity,
+                "objective_status": analysis.objective_status.value,
+                "objective_name": analysis.objective_name,
+                "objective_achieved_at": analysis.objective_achieved_at.isoformat()
+                if analysis.objective_achieved_at
+                else None,
+                "success_factors": analysis.success_factors,
+                "failure_factors": analysis.failure_factors,
+                "conversation_quality_score": analysis.conversation_quality_score,
+                "response_naturalness_score": analysis.response_naturalness_score,
+                "customer_satisfaction_score": analysis.customer_satisfaction_score,
+                "insights": analysis.insights,
+                "recommended_actions": analysis.recommended_actions,
+                "warnings": analysis.warnings,
+                "analyzed_at": analysis.analyzed_at.isoformat(),
+            }
+
+            with get_db_session() as session:
+                session.add(
+                    ConversationProfile(
+                        session_id=analysis.session_id,
+                        contact=analysis.contact,
+                        primary_emotion=analysis.primary_emotion.value,
+                        emotion_confidence=float(analysis.emotion_confidence),
+                        objective_status=analysis.objective_status.value,
+                        objective_name=analysis.objective_name,
+                        conversation_quality_score=float(analysis.conversation_quality_score),
+                        response_naturalness_score=float(analysis.response_naturalness_score),
+                        customer_satisfaction_score=float(analysis.customer_satisfaction_score),
+                        payload=payload,
+                        analyzed_at=analysis.analyzed_at,
+                    )
+                )
+        except Exception as e:
+            logger.warning("⚠️ Error persistiendo conversation_profile: %s", e)
+
+    def _evict_old_profiles(self, days: int = 30) -> int:
+        """Delete old persisted profiles to keep storage bounded."""
+        safe_days = max(1, int(days or 30))
+        cutoff = datetime.now(timezone.utc) - timedelta(days=safe_days)
+        try:
+            with get_db_session() as session:
+                deleted = (
+                    session.query(ConversationProfile)
+                    .filter(ConversationProfile.analyzed_at < cutoff)
+                    .delete(synchronize_session=False)
+                )
+            return int(deleted or 0)
+        except Exception as e:
+            logger.warning("⚠️ Error aplicando evicción de conversation_profiles: %s", e)
+            return 0
 
     def _generate_aggregate_report(self, analyses: list[ConversationAnalysis]) -> dict[str, Any]:
         """Genera reporte agregado de múltiples análisis"""

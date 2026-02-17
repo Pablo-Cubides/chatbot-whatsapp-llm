@@ -1,0 +1,24 @@
+.error-card {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.error-code {
+  font-size: 56px;
+  margin-bottom: 8px;
+}
+
+.error-title {
+  font-size: 20px;
+  margin-bottom: 20px;
+  color: #4b5563;
+}
+
+.error-description {
+  margin-bottom: 28px;
+  color: #4b5563;
+}
+
+.error-link {
+  text-decoration: none;
+}

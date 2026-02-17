@@ -3,12 +3,13 @@ Sistema de base de datos mejorado con soporte para PostgreSQL y SQLite
 Pool de conexiones y configuración optimizada para producción
 """
 
+import atexit
 import logging
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, inspect, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool, StaticPool
@@ -19,37 +20,49 @@ logger = logging.getLogger(__name__)
 
 # Configuración de base de datos desde variables de entorno
 DATABASE_URL = os.environ.get("DATABASE_URL") or "sqlite:///chatbot_context.db"
+ALLOW_CREATE_ALL = os.getenv("DB_ALLOW_CREATE_ALL", "false").lower() == "true"
 
 
 def create_database_engine():
     """Crear engine de base de datos con configuración optimizada"""
+    sql_echo = os.getenv("SQL_ECHO", "false").lower() == "true"
 
     if DATABASE_URL.startswith("sqlite"):
         # Configuración para SQLite
+        sqlite_timeout = int(os.getenv("SQLITE_TIMEOUT_SECONDS", "20") or "20")
         engine = create_engine(
             DATABASE_URL,
-            connect_args={"check_same_thread": False, "timeout": 20},
+            connect_args={"check_same_thread": False, "timeout": sqlite_timeout},
             poolclass=StaticPool,
-            echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+            echo=sql_echo,
         )
         logger.info("🗃️ Configurando SQLite database")
 
     elif DATABASE_URL.startswith("postgresql"):
         # Configuración para PostgreSQL
+        pool_size = int(os.getenv("DB_POOL_SIZE", "20") or "20")
+        max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "30") or "30")
+        pool_recycle = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "3600") or "3600")
+        pool_timeout = int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "30") or "30")
         engine = create_engine(
             DATABASE_URL,
             poolclass=QueuePool,
-            pool_size=20,
-            max_overflow=30,
+            pool_size=max(1, pool_size),
+            max_overflow=max(0, max_overflow),
             pool_pre_ping=True,
-            pool_recycle=3600,
-            echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+            pool_recycle=max(30, pool_recycle),
+            pool_timeout=max(1, pool_timeout),
+            echo=sql_echo,
         )
-        logger.info("🐘 Configurando PostgreSQL database con pool de conexiones")
+        logger.info(
+            "🐘 Configurando PostgreSQL database con pool de conexiones (size=%s, overflow=%s)",
+            pool_size,
+            max_overflow,
+        )
 
     else:
         # Fallback genérico
-        engine = create_engine(DATABASE_URL, echo=os.getenv("SQL_ECHO", "false").lower() == "true")
+        engine = create_engine(DATABASE_URL, echo=sql_echo)
         logger.info(f"🗄️ Configurando database genérica: {DATABASE_URL.split('://')[0]}")
 
     return engine
@@ -96,6 +109,10 @@ def get_db_session() -> Generator:
 
 def initialize_schema():
     """Inicializar esquema de base de datos"""
+    if not ALLOW_CREATE_ALL:
+        logger.info("⏭️ initialize_schema omitido (DB_ALLOW_CREATE_ALL=false)")
+        return
+
     try:
         logger.info("🚀 Inicializando esquema de base de datos...")
         Base.metadata.create_all(engine)
@@ -113,10 +130,7 @@ def test_connection():
     try:
         with get_db_session() as db:
             # Ejecutar query simple para probar conexión
-            if DATABASE_URL.startswith("postgresql"):
-                db.execute("SELECT 1")
-            else:
-                db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
         logger.info("✅ Conexión a base de datos exitosa")
         return True
     except Exception as e:
@@ -154,6 +168,9 @@ def cleanup_connections():
         logger.error(f"Error limpiando conexiones: {e}")
 
 
+atexit.register(cleanup_connections)
+
+
 # FastAPI dependency para inyección de dependencias
 def get_db():
     """
@@ -166,6 +183,10 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -180,30 +201,56 @@ def migrate_sqlite_to_postgresql(postgresql_url: str):
         logger.error("Esta función solo funciona desde SQLite")
         return False
 
+    pg_engine = None
     try:
-        # Crear engine de PostgreSQL
-        pg_engine = create_engine(postgresql_url)
+        source_engine = engine
 
-        # Crear esquema en PostgreSQL
+        # Crear engine de PostgreSQL
+        pg_engine = create_engine(postgresql_url, pool_pre_ping=True)
+
+        # Crear esquema en PostgreSQL (solo cuando está explícitamente permitido)
+        if not ALLOW_CREATE_ALL:
+            logger.error("Migración cancelada: DB_ALLOW_CREATE_ALL=false")
+            return False
         Base.metadata.create_all(pg_engine)
 
-        # TODO: Implementar migración de datos
-        # Esta es una implementación básica, para casos reales usar Alembic
+        source_tables = set(inspect(source_engine).get_table_names())
+        migrated_rows = 0
 
-        logger.info("⚠️ Migración básica completada. Revisar datos manualmente.")
+        with source_engine.connect() as source_conn, pg_engine.begin() as target_conn:
+            for table in Base.metadata.sorted_tables:
+                if table.name not in source_tables:
+                    logger.info(f"ℹ️ Tabla {table.name} no existe en origen, omitiendo")
+                    continue
+
+                rows = source_conn.execute(table.select()).mappings().all()
+                if not rows:
+                    logger.info(f"ℹ️ Tabla {table.name} sin registros para migrar")
+                    continue
+
+                target_count = target_conn.execute(select(func.count()).select_from(table)).scalar_one()
+                if target_count > 0:
+                    logger.warning(
+                        f"⚠️ Tabla destino {table.name} ya tiene {target_count} registros, se omite para evitar duplicados"
+                    )
+                    continue
+
+                target_conn.execute(table.insert(), [dict(row) for row in rows])
+                migrated_rows += len(rows)
+                logger.info(f"✅ Migrados {len(rows)} registros en {table.name}")
+
+        logger.info(f"✅ Migración completada. Total registros migrados: {migrated_rows}")
         return True
 
     except Exception as e:
         logger.error(f"Error en migración: {e}")
         return False
+    finally:
+        if pg_engine is not None:
+            pg_engine.dispose()
 
 
-# Inicializar base de datos al importar el módulo
-if __name__ != "__main__":
-    try:
-        initialize_schema()
-    except Exception as e:
-        logger.warning(f"No se pudo inicializar la base de datos automáticamente: {e}")
+# No crear/modificar esquema en import-time.
 
 
 if __name__ == "__main__":

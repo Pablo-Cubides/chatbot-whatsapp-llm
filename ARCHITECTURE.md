@@ -1,6 +1,16 @@
 # 🏗️ Arquitectura del Sistema
 
-Este documento describe la arquitectura del **Enterprise WhatsApp AI Chatbot Platform**.
+Este documento describe la arquitectura actual del **Enterprise WhatsApp AI Chatbot Platform**.
+
+## ✅ Estado Actual (Feb 2026)
+
+- **App canónica HTTP**: `admin_panel:app`
+- **Routers modulares activos**: `src/routers/*` (auth, business_config, campaigns, monitoring, webhooks, analysis_adaptive, chat_core, analytics, ai_models_admin, calendar_admin, contexts_data, contacts, chat_files_admin, models_online, model_switch_admin, manual_messaging_admin, legacy_compat, legacy_admin_data, system_admin, whatsapp_provider, whatsapp_runtime_admin, lmstudio_admin)
+- **Worker separado**: `whatsapp_automator.py`
+- **Seguridad activa**: middleware global de auth para `/api/*`, verificación de firma webhook, compare_digest para token legacy, CSP/headers de hardening
+- **Documentación operativa**: API en `docs/API.md`, runbook en `docs/SECURITY_RUNBOOK.md`, ADR inicial en `docs/adr/0001-security-hardening.md`
+- **Rate limiting HTTP**: middleware global con buckets por endpoint (`/api/*`, `/api/auth/login`, `/api/system/*`), backend Redis con fallback en memoria
+- **Rotación Fernet**: verificación periódica de antigüedad de clave en scheduler (`FERNET_KEY_ROTATION_DAYS`)
 
 ## 📊 Diagrama de Alto Nivel
 
@@ -66,11 +76,21 @@ graph TB
 chatbot-whatsapp-llm/
 ├── 📁 src/                     # Código fuente principal
 │   ├── 📁 models/              # Modelos SQLAlchemy
-│   ├── 📁 routers/             # Routers FastAPI modulares
+│   ├── 📁 routers/             # Routers FastAPI modulares (fuente de verdad)
 │   │   ├── auth.py             # Autenticación
 │   │   ├── monitoring.py       # Monitoreo y métricas
 │   │   ├── campaigns.py        # Campañas y cola
 │   │   ├── business_config.py  # Configuración de negocio
+│   │   ├── ai_models_admin.py  # Configuración avanzada de proveedores IA
+│   │   ├── calendar_admin.py   # Configuración e integración calendario
+│   │   ├── chat_files_admin.py # Gestión de archivos/chat contextos
+│   │   ├── model_switch_admin.py # Cambio de modelos activos (reasoner/current)
+│   │   ├── manual_messaging_admin.py # Composición/envío manual, bulk y uploads
+│   │   ├── legacy_compat.py   # Endpoints legacy de compatibilidad
+│   │   ├── legacy_admin_data.py # Endpoints legacy (/models, /rules, /contacts)
+│   │   ├── system_admin.py     # Control de procesos/sistema
+│   │   ├── whatsapp_runtime_admin.py # Control runtime de WhatsApp (start/stop/status)
+│   │   ├── lmstudio_admin.py   # Gestión LM Studio (modelos/arranque/carga)
 │   │   ├── webhooks.py         # Webhooks WhatsApp
 │   │   └── deps.py             # Dependencias compartidas
 │   └── 📁 services/            # 30+ servicios de negocio
@@ -84,6 +104,8 @@ chatbot-whatsapp-llm/
 │       └── ...
 │
 ├── 📁 tests/                   # Suite de tests
+│   ├── api/                    # Tests API por dominio
+│   ├── unit/                   # Tests unitarios por dominio
 │   ├── test_auth_system.py
 │   ├── test_api_endpoints.py
 │   ├── test_crypto.py
@@ -96,8 +118,7 @@ chatbot-whatsapp-llm/
 ├── 📁 ui/                      # UI web estática
 ├── 📁 alembic/                 # Migraciones de base de datos
 │
-├── admin_panel.py              # Entry point: API de administración
-├── main_server.py              # Entry point: Servidor principal
+├── admin_panel.py              # Entry point canónico (FastAPI)
 ├── whatsapp_automator.py       # Entry point: Worker WhatsApp
 ├── crypto.py                   # Encriptación Fernet
 ├── chat_sessions.py            # Gestión de sesiones de chat
@@ -112,11 +133,13 @@ chatbot-whatsapp-llm/
 
 ### 1. API Layer (FastAPI)
 
+**Nota:** El tráfico productivo debe entrar por `admin_panel:app`.
+
 | Endpoint Group | Prefijo | Descripción |
 |---------------|---------|-------------|
 | Auth | `/api/auth` | Login, logout, tokens JWT |
 | Business | `/api/business` | Configuración del negocio |
-| Queue | `/api/queue` | Cola de mensajes |
+| Queue/Campaigns | `/api/campaigns` | Cola de mensajes y campañas |
 | Campaigns | `/api/campaigns` | Campañas masivas |
 | Alerts | `/api/alerts` | Sistema de alertas |
 | Analytics | `/api/analytics` | Métricas y estadísticas |
@@ -150,6 +173,8 @@ graph LR
 - **JWT Authentication**: Tokens con expiración
 - **bcrypt**: Hash seguro de passwords
 - **Fernet**: Encriptación de tokens OAuth
+- **HTTP Rate Limiter**: middleware global con headers `X-RateLimit-*` y respuesta `429`
+- **Fernet Key Hardening**: permisos restrictivos POSIX + ACL endurecida en Windows
 
 ### 4. Sistema de Cola
 
@@ -210,6 +235,10 @@ sequenceDiagram
 | `DATABASE_URL` | ❌ | PostgreSQL (default: SQLite) |
 | `REDIS_URL` | ❌ | Cache Redis (default: memoria) |
 | `CORS_ORIGINS` | ❌ | Orígenes permitidos |
+| `WHATSAPP_APP_SECRET` | ✅ (Cloud) | Necesario para validar `X-Hub-Signature-256` |
+| `RATE_LIMIT_ENABLED` | ❌ | Habilita rate limiting HTTP global |
+| `RATE_LIMIT_REDIS_ENABLED` | ❌ | Usa Redis para contadores de límite |
+| `FERNET_KEY_ROTATION_DAYS` | ❌ | Umbral de rotación de clave Fernet |
 
 ## 📈 Métricas de Performance
 

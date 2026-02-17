@@ -6,8 +6,12 @@ import logging
 import logging.handlers
 import os
 import os as _os
+import signal
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from string import Template
+from typing import Any
 
 from admin_db import get_session
 from dotenv import load_dotenv
@@ -17,11 +21,42 @@ from stub_chat import chat as stub_chat
 
 import chat_sessions
 from models import Conversation
+from src.services.queue_system import queue_manager
 
 # --------------------------------------------
 # Definición de logger
 # --------------------------------------------
 log = logging.getLogger(__name__)
+
+# --------------------------------------------
+# Constantes operativas (evitar valores mágicos)
+# --------------------------------------------
+NAVIGATION_TIMEOUT_MS = 30000
+PAGE_LOAD_TIMEOUT_MS = 30000
+REPLY_DELAY_SECONDS = 0.05
+LOOP_SLEEP_INTERVAL = 2
+COOLDOWN_SECONDS = 120
+TEXT_LENGTH_TYPING_THRESHOLD = 60
+MAX_REPLY_LENGTH = 8000
+PER_CHAR_TYPING_DELAY = 0.05
+
+
+def sanitize_message_content(text: str) -> str:
+    """Redacta contenido de mensajes en logs conservando metadatos operativos."""
+    if not text:
+        return ""
+
+    redacted = str(text)
+    # Patrones comunes de logs que incluyen contenido textual del mensaje.
+    redacted = redacted.replace("mensaje válido:", "mensaje válido: [contenido redactado]")
+    redacted = redacted.replace("Contexto enviado:", "Contexto enviado: [contenido redactado]")
+    redacted = redacted.replace("enviando al modelo:", "enviando al modelo: [contenido redactado]")
+
+    # También redacción defensiva de trazas tipo key=value para contenido.
+    import re
+
+    redacted = re.sub(r"(message|content|texto|mensaje)\s*[=:]\s*.+", r"\1=[contenido redactado]", redacted, flags=re.IGNORECASE)
+    return redacted
 
 
 def load_config() -> dict:
@@ -53,7 +88,7 @@ def load_config() -> dict:
             "headless": False,
             "messageCheckInterval": "2",
             "maxRetries": 3,
-            "navigationTimeout": 30000,
+            "navigationTimeout": NAVIGATION_TIMEOUT_MS,
         }
 
     log.debug(f"Configuración cargada: {cfg}")
@@ -90,7 +125,8 @@ def setup_logging(log_path: str) -> None:
         def filter(self, record):
             # Aplicar el filtro de números
             original_msg = record.getMessage()
-            record.msg = self.regex.sub("[número oculto]", original_msg)
+            sanitized_msg = sanitize_message_content(original_msg)
+            record.msg = self.regex.sub("[número oculto]", sanitized_msg)
             record.args = ()
 
             # Filtrado inteligente para reducir spam
@@ -129,8 +165,10 @@ def setup_logging(log_path: str) -> None:
                     last_time = self.last_logged_time.get(key, 0)
 
                     if (
-                        self.repeated_count[key] == 1 or self.repeated_count[key] % 25 == 0 or current_time - last_time > 120
-                    ):  # 2 minutos
+                        self.repeated_count[key] == 1
+                        or self.repeated_count[key] % 25 == 0
+                        or current_time - last_time > COOLDOWN_SECONDS
+                    ):
                         if self.repeated_count[key] > 1:
                             record.msg = f"[x{self.repeated_count[key]}] {record.msg}"
                         self.last_logged_time[key] = current_time
@@ -183,6 +221,14 @@ def setup_logging(log_path: str) -> None:
 
 # Registro de últimas respuestas para evitar bucles
 LAST_REPLIED = {}
+MAX_LAST_REPLIED = int(os.getenv("MAX_LAST_REPLIED", "5000"))
+SHUTDOWN_EVENT = threading.Event()
+
+
+def _request_shutdown(signum, _frame) -> None:
+    """Signal handler para detener el loop principal sin cortar recursos abruptamente."""
+    SHUTDOWN_EVENT.set()
+    log.info("Señal %s recibida. Iniciando apagado ordenado...", signum)
 
 
 def fetch_new_message(page, respond_to_all=False):
@@ -238,7 +284,7 @@ def fetch_new_message(page, respond_to_all=False):
             # PASO 4: Anti-bucle (cooldown)
             try:
                 last_time = LAST_REPLIED.get(chat_id, 0)
-                if time.time() - last_time < 120:  # 2 minutos
+                if time.time() - last_time < COOLDOWN_SECONDS:
                     log.info(f"– {chat_id} en cooldown, saltar")
                     continue
             except Exception as e:
@@ -340,8 +386,8 @@ def send_reply(page, chat_id, reply_text):
     log.info(f"Mensaje enviado a {chat_id}")
 
 
-def send_reply_with_typing(page, chat_id, reply_text, per_char_delay=0.05):
-    """Simula typing enviando caracter por caracter."""
+def send_reply_with_typing(page, chat_id, reply_text, per_char_delay=PER_CHAR_TYPING_DELAY):
+    """Simula typing de forma eficiente (chunked/instant/human) evitando latencias extremas."""
     log.debug(f"📝 Iniciando envío con typing para {chat_id}: {reply_text[:30]}...")
 
     try:
@@ -386,20 +432,41 @@ def send_reply_with_typing(page, chat_id, reply_text, per_char_delay=0.05):
     try:
         # Limpiar el input
         input_box.fill("")
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(60)
 
-        # Escribir caracter por caracter
-        chunk = ""
-        for ch in reply_text:
-            chunk += ch
-            input_box.fill(chunk)
-            page.wait_for_timeout(int(per_char_delay * 1000))
+        mode = os.getenv("AUTOMATOR_TYPING_MODE", "chunked").lower()
+        text_len = len(reply_text or "")
 
-        log.debug(f"✅ Texto escrito: {chunk[:30]}...")
+        if mode == "instant" or text_len > 900:
+            input_box.fill(reply_text)
+            page.wait_for_timeout(80)
+            log.debug("✅ Texto escrito en modo instant")
+        elif mode == "human":
+            # Mantener modo humano para mensajes cortos; para largos cae a chunked
+            if text_len <= (TEXT_LENGTH_TYPING_THRESHOLD * 3):
+                input_box.type(reply_text, delay=max(1, int(per_char_delay * 1000)))
+            else:
+                mode = "chunked"
+
+        if mode == "chunked":
+            chunk_size = max(
+                25,
+                int(os.getenv("AUTOMATOR_TYPING_CHUNK_SIZE", str(TEXT_LENGTH_TYPING_THRESHOLD)) or str(TEXT_LENGTH_TYPING_THRESHOLD)),
+            )
+            base_pause_ms = max(10, int(os.getenv("AUTOMATOR_TYPING_CHUNK_PAUSE_MS", "35") or "35"))
+
+            current = ""
+            for i in range(0, text_len, chunk_size):
+                current += reply_text[i : i + chunk_size]
+                input_box.fill(current)
+                # Pausa ligera para simular escritura sin costo O(n^2) en segundos
+                page.wait_for_timeout(base_pause_ms)
+
+            log.debug(f"✅ Texto escrito en modo chunked: {current[:30]}...")
 
         # Presionar Enter para enviar
         input_box.press("Enter")
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(180)
 
         log.info(f"✅ Mensaje (typing-sim) enviado a {chat_id}")
         return True
@@ -678,21 +745,9 @@ def exit_chat_safely(page):
 
 
 def process_manual_queue(page) -> bool:
-    """Procesa la cola de mensajes manuales. Retorna True si se procesó algún mensaje."""
+    """Procesa mensajes pendientes desde cola DB. Retorna True si se procesó algún mensaje."""
     try:
-        here = os.path.dirname(__file__)
-        queue_file = os.path.join(here, "data", "manual_queue.json")
-
-        if not os.path.exists(queue_file):
-            return False
-
-        # Cargar cola
-        with open(queue_file, encoding="utf-8") as f:
-            queue = json.load(f)
-
-        # Filtrar mensajes pendientes
-        pending_messages = [msg for msg in queue if msg.get("status") == "pending"]
-
+        pending_messages = queue_manager.get_pending_messages(limit=1, include_scheduled=True)
         if not pending_messages:
             return False
 
@@ -700,6 +755,7 @@ def process_manual_queue(page) -> bool:
         message = pending_messages[0]
         chat_id = message["chat_id"]
         content = message["message"]
+        queue_id = message.get("message_id")
 
         log.info(f"📤 Procesando mensaje manual para {chat_id}: {content[:50]}...")
 
@@ -712,22 +768,13 @@ def process_manual_queue(page) -> bool:
         # Usar la nueva función que incluye navegación al chat
         success = send_manual_message(page, chat_id, content, per_char_delay=per_char)
 
-        # Marcar como enviado O como fallido (para evitar bucles infinitos)
-        for msg in queue:
-            if msg["id"] == message["id"]:
-                if success:
-                    msg["status"] = "sent"
-                    msg["sent_timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    log.info(f"✅ Mensaje manual enviado a {chat_id}")
-                else:
-                    msg["status"] = "failed"
-                    msg["failed_timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    log.error(f"❌ Mensaje manual falló para {chat_id} - marcado como failed")
-                break
-
-        # Guardar cola actualizada (siempre, exitoso o fallido)
-        with open(queue_file, "w", encoding="utf-8") as f:
-            json.dump(queue, f, indent=2, ensure_ascii=False)
+        if queue_id:
+            if success:
+                queue_manager.mark_as_sent(queue_id)
+                log.info(f"✅ Mensaje en cola enviado a {chat_id}")
+            else:
+                queue_manager.mark_as_failed(queue_id, "send_manual_message_failed")
+                log.error(f"❌ Mensaje en cola falló para {chat_id} - marcado como failed/retry")
 
         return success
 
@@ -736,7 +783,7 @@ def process_manual_queue(page) -> bool:
         return False
 
 
-def main() -> None:
+def _prepare_runtime() -> tuple[dict[str, Any], str, bool, int, int, int]:
     load_dotenv(override=True)
     log_path = os.getenv("LOG_PATH")
     if log_path:
@@ -744,180 +791,196 @@ def main() -> None:
     log.debug("Variables de entorno cargadas")
 
     cfg = load_config()
-    cfg["messageCheckInterval"] = int(cfg.get("messageCheckInterval", 2))
+    cfg["messageCheckInterval"] = int(cfg.get("messageCheckInterval", LOOP_SLEEP_INTERVAL))
     cfg["maxRetries"] = int(cfg.get("maxRetries", 3))
-    cfg["navigationTimeout"] = int(cfg.get("navigationTimeout", 30000))
+    cfg["navigationTimeout"] = int(cfg.get("navigationTimeout", NAVIGATION_TIMEOUT_MS))
 
     chat_sessions.initialize_db()
     log.info("Base de datos de contexto inicializada")
 
     profile_dir = cfg["userDataDir"]
-    # Verificar si es un archivo y eliminarlo si es necesario
     try:
         if os.path.exists(profile_dir) and os.path.isfile(profile_dir):
             os.remove(profile_dir)
-            # Si ya es un directorio, no hacer nada
         os.makedirs(profile_dir, exist_ok=True)
     except (OSError, FileExistsError) as e:
         log.debug(f"Error creando directorio de perfil: {e}")
-        # Intentar usar el directorio existente si es válido
         if not os.path.isdir(profile_dir):
-            # Si no es un directorio válido, usar uno temporal
             import tempfile
 
             profile_dir = tempfile.mkdtemp(prefix="whatsapp_profile_")
             log.warning(f"Usando directorio temporal: {profile_dir}")
-    log.debug(f"Perfil de Chromium: {profile_dir}")
 
     keep_open = os.getenv("KEEP_AUTOMATOR_OPEN", "false").lower() == "true"
+    llm_workers = max(1, int(os.getenv("AUTOMATOR_LLM_WORKERS", "2") or "2"))
+    reasoner_timeout = max(5, int(os.getenv("AUTOMATOR_REASONER_TIMEOUT", "90") or "90"))
+    llm_timeout = max(5, int(os.getenv("AUTOMATOR_LLM_TIMEOUT", "60") or "60"))
 
-    with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(user_data_dir=profile_dir, headless=cfg["headless"])
-        log.info(f"Browser iniciado. Headless={cfg['headless']}")
-        page = ctx.new_page()
+    return cfg, profile_dir, keep_open, llm_workers, reasoner_timeout, llm_timeout
 
-        try:
-            page.goto(cfg["whatsappUrl"], timeout=cfg["navigationTimeout"])
-            log.info(f"Navegando a {cfg['whatsappUrl']}")
-            # Simplemente esperar a que aparezca el panel de chats
-            log.info("Esperando que cargue WhatsApp Web...")
-            page.wait_for_selector("#pane-side", timeout=30000)
-            log.info("WhatsApp Web cargado correctamente")
-        except Exception:
-            log.exception("Error al cargar WhatsApp Web", exc_info=True)
-            if not keep_open:
-                with contextlib.suppress(Exception):
-                    ctx.close()
-                return
 
-        try:
-            page.wait_for_selector("#pane-side", timeout=15000)
-            log.info("Panel de chats cargado, entrando al loop principal")
-        except TimeoutError:
-            log.error("Timeout cargando panel de chats")
+def _setup_browser(playwright_instance, cfg: dict[str, Any], profile_dir: str):
+    ctx = playwright_instance.chromium.launch_persistent_context(user_data_dir=profile_dir, headless=cfg["headless"])
+    log.info(f"Browser iniciado. Headless={cfg['headless']}")
+    page = ctx.new_page()
+    return ctx, page
+
+
+def _navigate_to_whatsapp(page, cfg: dict[str, Any], keep_open: bool, ctx) -> bool:
+    try:
+        page.goto(cfg["whatsappUrl"], timeout=cfg["navigationTimeout"])
+        log.info(f"Navegando a {cfg['whatsappUrl']}")
+        log.info("Esperando que cargue WhatsApp Web...")
+        page.wait_for_selector("#pane-side", timeout=PAGE_LOAD_TIMEOUT_MS)
+        log.info("WhatsApp Web cargado correctamente")
+        page.wait_for_selector("#pane-side", timeout=15000)
+        log.info("Panel de chats cargado, entrando al loop principal")
+        return True
+    except Exception:
+        log.exception("Error al cargar WhatsApp Web", exc_info=True)
+        if not keep_open:
             with contextlib.suppress(Exception):
                 ctx.close()
+        return False
+
+
+def _read_respond_to_all_flag() -> bool:
+    respond_to_all = False
+    try:
+        settings_file = os.path.join(os.path.dirname(__file__), "data", "settings.json")
+        if os.path.exists(settings_file):
+            with open(settings_file, encoding="utf-8") as f:
+                settings = json.load(f)
+                respond_to_all = settings.get("respond_to_all", False)
+    except Exception:
+        pass
+    return respond_to_all
+
+
+def _resolve_typing_delay() -> float:
+    try:
+        return float(os.getenv("TYPING_PER_CHAR", str(PER_CHAR_TYPING_DELAY)))
+    except Exception:
+        return REPLY_DELAY_SECONDS
+
+
+def _graceful_shutdown(page, ctx, keep_open: bool) -> None:
+    if keep_open and not SHUTDOWN_EVENT.is_set():
+        return
+    with contextlib.suppress(Exception):
+        page.close()
+    with contextlib.suppress(Exception):
+        ctx.close()
+    with contextlib.suppress(Exception):
+        if getattr(ctx, "browser", None):
+            ctx.browser.close()
+    log.info("Recursos Playwright cerrados correctamente")
+
+
+def _process_incoming_messages(page, worker_pool, llm_timeout: int, reasoner_timeout: int) -> bool:
+    respond_to_all = _read_respond_to_all_flag()
+    chat_id, incoming = fetch_new_message(page, respond_to_all)
+    log.debug(f"fetch_new_message retornó: {chat_id}, {incoming}")
+
+    if not chat_id or incoming is None:
+        return False
+
+    log.info(f"[{chat_id}] Mensaje entrante: '{incoming}'")
+    history = chat_sessions.load_last_context(chat_id)
+    history.append({"role": "user", "content": incoming})
+
+    try:
+        mm = ModelManager()
+        session = get_session()
+        msg_count = session.query(Conversation).filter(Conversation.chat_id == chat_id).count()
+        session.close()
+        chosen_model = mm.choose_model_for_conversation(chat_id, msg_count)
+        log.debug(f"[{chat_id}] Modelo elegido: {chosen_model}")
+        reply = worker_pool.submit(stub_chat, incoming, chat_id, history).result(timeout=llm_timeout)
+        if not reply or not reply.strip():
+            log.warning(f"[{chat_id}] No se generó respuesta (posible problema con LM Studio)")
+            return True
+    except FuturesTimeoutError:
+        log.error(f"[{chat_id}] Timeout generando respuesta con modelo")
+        return True
+    except Exception:
+        log.exception("Error generando respuesta con stub_chat")
+        return True
+
+    history.append({"role": "assistant", "content": (reply or "")[:MAX_REPLY_LENGTH]})
+    chat_sessions.save_context(chat_id, history)
+
+    try:
+        send_reply_with_typing(page, chat_id, (reply or "")[:MAX_REPLY_LENGTH], per_char_delay=_resolve_typing_delay())
+        exit_chat_safely(page)
+        LAST_REPLIED[chat_id] = time.time()
+        if len(LAST_REPLIED) > MAX_LAST_REPLIED:
+            oldest_chat = min(LAST_REPLIED, key=LAST_REPLIED.get)
+            LAST_REPLIED.pop(oldest_chat, None)
+    except Exception:
+        log.exception("Fallo enviando el mensaje a WhatsApp")
+
+    try:
+        n = chat_sessions.increment_reply_counter(chat_id)
+        threshold = int(_os.getenv("STRATEGY_REFRESH_EVERY", "10") or "10")
+        if n >= threshold:
+            chat_sessions.reset_reply_counter(chat_id)
+            from reasoner import update_chat_context_and_profile
+
+            reasoner_future = worker_pool.submit(update_chat_context_and_profile, chat_id)
+            try:
+                res = reasoner_future.result(timeout=reasoner_timeout) or {}
+                log.info(
+                    f"[{chat_id}] Razonador ejecutado. Estrategia v{res.get('version')} | contexto={res.get('wrote_contexto')} perfil={res.get('wrote_perfil')}"
+                )
+            except FuturesTimeoutError:
+                log.warning(f"[{chat_id}] Razonador en background excedió timeout")
+    except Exception:
+        log.exception("Error actualizando contadores/razonador")
+
+    exit_chat_safely(page)
+    return True
+
+
+def main() -> None:
+    cfg, profile_dir, keep_open, llm_workers, reasoner_timeout, llm_timeout = _prepare_runtime()
+    with contextlib.suppress(Exception):
+        signal.signal(signal.SIGTERM, _request_shutdown)
+    with contextlib.suppress(Exception):
+        signal.signal(signal.SIGINT, _request_shutdown)
+
+    with ThreadPoolExecutor(max_workers=llm_workers) as worker_pool, sync_playwright() as p:
+        ctx, page = _setup_browser(p, cfg, profile_dir)
+        if not _navigate_to_whatsapp(page, cfg, keep_open, ctx):
             return
 
         try:
             while True:
+                if SHUTDOWN_EVENT.is_set():
+                    log.info("Shutdown solicitado. Saliendo del loop principal...")
+                    break
+
                 load_dotenv(override=True)
                 toggle = os.getenv("AUTOMATION_ACTIVE", "true").lower()
-                log.debug(f"Toggle AUTOMATION_ACTIVE={toggle}")
                 if toggle != "true":
                     log.info("Automatización desactivada, durmiendo…")
                     time.sleep(cfg["messageCheckInterval"])
                     continue
 
-                # Leer respond_to_all
-                respond_to_all = False
-                try:
-                    settings_file = os.path.join(os.path.dirname(__file__), "data", "settings.json")
-                    if os.path.exists(settings_file):
-                        with open(settings_file, encoding="utf-8") as f:
-                            settings = json.load(f)
-                            respond_to_all = settings.get("respond_to_all", False)
-                except Exception:
-                    pass
-
-                chat_id, incoming = fetch_new_message(page, respond_to_all)
-                log.debug(f"fetch_new_message retornó: {chat_id}, {incoming}")
-
-                if not chat_id or incoming is None:
-                    # No hay mensajes nuevos, verificar cola de mensajes manuales
+                handled_incoming = _process_incoming_messages(page, worker_pool, llm_timeout, reasoner_timeout)
+                if not handled_incoming:
                     manual_processed = process_manual_queue(page)
-                    if manual_processed:
-                        # Si se procesó un mensaje manual, continuar el ciclo inmediatamente
-                        continue
-
-                    log.debug("No hay nuevos mensajes, durmiendo…")
-                    time.sleep(cfg["messageCheckInterval"])
+                    if not manual_processed:
+                        time.sleep(cfg["messageCheckInterval"])
                     continue
 
-                log.info(f"[{chat_id}] Mensaje entrante: '{incoming}'")
-
-                # Generar respuesta
-                history = chat_sessions.load_last_context(chat_id)
-                history.append({"role": "user", "content": incoming})
-
-                try:
-                    mm = ModelManager()
-                    session = get_session()
-                    msg_count = session.query(Conversation).filter(Conversation.chat_id == chat_id).count()
-                    session.close()
-                    chosen_model = mm.choose_model_for_conversation(chat_id, msg_count)
-                    log.debug(f"[{chat_id}] Modelo elegido: {chosen_model}")
-
-                    reply = stub_chat(incoming, chat_id, history)
-                    log.info(f"[{chat_id}] reply generado: '{reply}'")
-
-                    # Si no hay respuesta disponible (LM Studio no conectado), no enviar nada
-                    if not reply or reply.strip() == "":
-                        log.warning(f"[{chat_id}] No se generó respuesta (posible problema con LM Studio)")
-                        continue
-                except Exception:
-                    log.exception("Error generando respuesta con stub_chat")
-                    # No enviar mensaje de error al usuario, simplemente continuar sin responder
-                    continue
-
-                history.append({"role": "assistant", "content": reply})
-                chat_sessions.save_context(chat_id, history)
-                log.info(f"[{chat_id}] Historial actualizado y guardado ({len(history)} turnos)")
-
-                # Enviar respuesta
-                try:
-                    per_char = float(os.getenv("TYPING_PER_CHAR", "0.05"))
-                except Exception:
-                    per_char = 0.05
-
-                try:
-                    if not reply:
-                        reply = ""
-                    send_reply_with_typing(page, chat_id, reply, per_char_delay=per_char)
-
-                    # IMPORTANTE: Salir del chat para evitar quedarse en modo escritura
-                    exit_chat_safely(page)
-                    log.debug("Salida segura del chat después de enviar mensaje")
-
-                    # Marcar tiempo de respuesta
-                    LAST_REPLIED[chat_id] = time.time()
-
-                except Exception:
-                    log.exception("Fallo enviando el mensaje a WhatsApp")
-
-                # Ejecutar reasoner si es necesario
-                try:
-                    n = chat_sessions.increment_reply_counter(chat_id)
-                    threshold = int(_os.getenv("STRATEGY_REFRESH_EVERY", "10") or "10")
-                    if n >= threshold:
-                        chat_sessions.reset_reply_counter(chat_id)
-                        try:
-                            from reasoner import update_chat_context_and_profile
-
-                            res = update_chat_context_and_profile(chat_id)
-                            log.info(
-                                f"[{chat_id}] Razonador ejecutado. Estrategia v{res.get('version')} | contexto={res.get('wrote_contexto')} perfil={res.get('wrote_perfil')}"
-                            )
-                        except Exception:
-                            log.exception(f"[{chat_id}] Falló el razonador")
-                except Exception:
-                    log.exception("Error actualizando contadores/razonador")
-
-                # Salir del chat de forma segura
-                exit_chat_safely(page)
-
-                log.debug(f"Durmiendo {cfg['messageCheckInterval']}s antes del próximo ciclo")
                 time.sleep(cfg["messageCheckInterval"])
-
         except KeyboardInterrupt:
             log.info("Interrupción manual recibida, cerrando…")
         except Exception:
             log.exception("Excepción no controlada en el loop principal", exc_info=True)
         finally:
-            if not keep_open:
-                with contextlib.suppress(Exception):
-                    ctx.close()
-                log.info("Contexto del navegador cerrado, fin del programa")
+            _graceful_shutdown(page, ctx, keep_open)
 
 
 if __name__ == "__main__":

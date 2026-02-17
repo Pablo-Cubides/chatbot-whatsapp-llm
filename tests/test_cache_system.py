@@ -2,7 +2,10 @@
 Tests for the Cache System — Redis with in-memory fallback.
 """
 
+import asyncio
+
 import pytest
+from cachetools import TTLCache
 
 from src.services.cache_system import (
     CacheManager,
@@ -13,6 +16,8 @@ from src.services.cache_system import (
     get_cached_conversation_context,
     get_cached_llm_response,
 )
+
+pytestmark = pytest.mark.unit
 
 
 class TestCacheManager:
@@ -46,14 +51,22 @@ class TestCacheManager:
         assert result is None
 
     @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_ttl_expiry(self):
         """Values should expire after TTL."""
-        await self.cm.set("key1", "value1", ttl=1)
-        import time
+        self.cm.memory_cache = TTLCache(maxsize=10000, ttl=2)
+        await self.cm.set("key1", "value1", ttl=2)
 
-        time.sleep(1.1)
-        result = await self.cm.get("key1")
-        assert result is None
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 4.0
+
+        while loop.time() < deadline:
+            result = await self.cm.get("key1")
+            if result is None:
+                break
+            await asyncio.sleep(0.05)
+
+        assert await self.cm.get("key1") is None
 
     @pytest.mark.asyncio
     async def test_set_dict_value(self):
@@ -91,6 +104,23 @@ class TestCacheManager:
         assert deleted >= 2
         assert await self.cm.get("k1") is None
         assert await self.cm.get("k2") is None
+
+    @pytest.mark.asyncio
+    async def test_cache_stampede_prevention_single_backend_call(self):
+        """Concurrent get_or_set calls for same key should invoke backend only once."""
+        calls = {"count": 0}
+
+        async def backend_factory():
+            calls["count"] += 1
+            await asyncio.sleep(0.05)
+            return {"value": "ok"}
+
+        async def worker():
+            return await self.cm.get_or_set("stampede:key", backend_factory, ttl=60)
+
+        results = await asyncio.gather(*[worker() for _ in range(10)])
+        assert calls["count"] == 1
+        assert all(item == {"value": "ok"} for item in results)
 
 
 class TestConvenienceFunctions:

@@ -1,5 +1,5 @@
-# Dockerfile para WhatsApp Web Worker (Playwright)
-FROM mcr.microsoft.com/playwright/python:v1.51.0-noble
+# Dockerfile para WhatsApp Web Worker (Playwright, multi-stage)
+FROM mcr.microsoft.com/playwright/python:v1.51.0-noble AS builder
 
 LABEL maintainer="Pablo Cubides"
 LABEL description="WhatsApp Web Automator Worker con Playwright"
@@ -9,17 +9,26 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-# Crear usuario no-root
-RUN useradd -m -r -s /bin/bash appuser
-
-# Crear directorio de trabajo
 WORKDIR /app
 
 # Copiar requirements
 COPY requirements.txt requirements-worker.txt ./
 
-# Instalar dependencias Python (worker includes playwright)
-RUN pip install --no-cache-dir -r requirements-worker.txt
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements-worker.txt
+
+
+FROM mcr.microsoft.com/playwright/python:v1.51.0-noble AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN useradd -m -r -s /bin/bash appuser
+
+WORKDIR /app
+
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
 # Instalar navegadores Playwright
 RUN playwright install chromium
@@ -37,6 +46,10 @@ USER appuser
 
 # Volumen para perfil de WhatsApp (persistencia de sesión)
 VOLUME ["/app/data/whatsapp-profile"]
+
+# Healthcheck de liveness para detectar worker colgado
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import glob,pathlib,sys; files=glob.glob('/proc/[0-9]*/cmdline'); ok=any('whatsapp_automator.py' in pathlib.Path(f).read_text(encoding='utf-8', errors='ignore') for f in files); sys.exit(0 if ok else 1)"
 
 # Comando por defecto
 CMD ["python", "whatsapp_automator.py"]

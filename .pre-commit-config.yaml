@@ -35,10 +35,20 @@ repos:
         args: [-r, src/, app/, -ll, --skip, B101]
         # B101 = assert usage (OK in tests)
 
-  # ── Type checking (optional, runs slower) ──
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.11.0
-  #   hooks:
-  #     - id: mypy
-  #       args: [--ignore-missing-imports]
-  #       additional_dependencies: [pydantic, fastapi]
+  # ── Type checking (targeted hardened modules) ──
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.0
+    hooks:
+      - id: mypy
+        args: [--config-file, mypy.ini]
+        files: ^(src/services/http_rate_limit.py|crypto.py|src/workers/scheduler_worker.py)$
+        additional_dependencies: [pydantic, fastapi]
+
+  # ── Fast test gate (unit scope) ──
+  - repo: local
+    hooks:
+      - id: pytest-fast
+        name: pytest fast markers
+        entry: pytest -q -m "unit and not integration"
+        language: system
+        pass_filenames: false

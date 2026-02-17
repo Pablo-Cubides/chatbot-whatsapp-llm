@@ -45,6 +45,19 @@ Reconocemos y agradecemos a los investigadores de seguridad responsables:
 
 ## 🛡️ Mejores Prácticas de Seguridad
 
+### Controles activos en el proyecto (estado actual)
+
+- Middleware global de autenticación para rutas `/api/*` (excepto login)
+- Endpoints de control de procesos (`/api/system/*`, `/api/lmstudio/*`) restringidos a rol admin
+- Verificación de firma `X-Hub-Signature-256` en webhook de WhatsApp Cloud
+- Autenticación JWT-only para API y dependencias de router (`get_current_user` / `require_admin`)
+- Claves de Gemini enviadas por header (`x-goog-api-key`) y no en query string
+- Cabeceras de hardening HTTP: CSP, `X-Frame-Options`, `X-Content-Type-Options`, COOP/CORP, `Referrer-Policy`
+- Rate limiting HTTP global con buckets por endpoint (`/api/*`, `/api/auth/login`, `/api/system/*`) y backend Redis con fallback en memoria
+- CORS estricto: si `CORS_ORIGINS` contiene `*` y hay credenciales, el servidor fuerza una lista segura por defecto
+- Endurecimiento de permisos de `data/fernet.key` (ACL en Windows + permisos restrictivos en POSIX)
+- Verificación programada de antigüedad de Fernet key para cumplir política de rotación (`FERNET_KEY_ROTATION_DAYS`)
+
 ### Para Usuarios
 
 #### 🔑 Configuración Segura
@@ -78,6 +91,14 @@ CLAUDE_API_KEY=your_claude_key
 
 # CORS (solo dominios necesarios)
 CORS_ORIGINS=https://tu-dominio.com,https://admin.tu-dominio.com
+
+# Rate limiting global (Redis recomendado)
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_REDIS_ENABLED=true
+RATE_LIMIT_REDIS_URL=redis://redis:6379/0
+
+# Rotación de clave Fernet
+FERNET_KEY_ROTATION_DAYS=90
 ```
 
 #### 🚧 Configuración de Producción
@@ -158,7 +179,7 @@ Ninguna conocida actualmente.
 
 ```bash
 # Verificar vulnerabilidades en dependencias
-pip audit
+pip-audit -r requirements.txt
 
 # Actualizar dependencias con fixes de seguridad
 pip install --upgrade package_name
@@ -241,6 +262,8 @@ Configurar alertas para:
 - 🟢 **Media**: Degradación menor del servicio
 - ⚪ **Baja**: Issue cosmético o documentación
 
+Runbook operativo: ver [docs/SECURITY_RUNBOOK.md](docs/SECURITY_RUNBOOK.md).
+
 ### 3. Respuesta
 
 **Crítica:**
@@ -312,8 +335,8 @@ Configurar alertas para:
 ## 🔖 Versión de esta Política
 
 - **Versión**: 1.0
-- **Última actualización**: Enero 2026
-- **Próxima revisión**: Julio 2026
+- **Última actualización**: Febrero 2026
+- **Próxima revisión**: Mayo 2026
 - **Responsable**: Equipo de Seguridad
 
 ---

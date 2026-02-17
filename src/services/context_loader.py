@@ -14,9 +14,8 @@ logger = logging.getLogger(__name__)
 class ContextLoader:
     """Carga y gestiona contextos para inyección en prompts"""
 
-    def __init__(self):
-        self.cache = {}
-        self.cache_ttl = 300  # 5 minutos
+    def __init__(self) -> None:
+        self.cache: dict[str, Any] = {}
 
     def load_all_contexts(self, chat_id: str, user_id: Optional[str] = None) -> dict[str, Any]:
         """
@@ -51,27 +50,29 @@ class ContextLoader:
     def load_daily_context(self) -> Optional[dict[str, Any]]:
         """Carga el contexto diario activo"""
         try:
-            from admin_db import get_session
+            from src.models.admin_db import get_db_session
+            from src.models.models import DailyContext
 
-            from models import DailyContext
+            with get_db_session() as session:
+                today = date.today()
 
-            session = get_session()
-            today = date.today()
+                # Buscar contexto más reciente (prioriza el de hoy si existe)
+                daily = (
+                    session.query(DailyContext)
+                    .filter(DailyContext.date.is_not(None))
+                    .order_by(DailyContext.date.desc())
+                    .first()
+                )
 
-            # Buscar contexto para hoy
-            daily = session.query(DailyContext).filter(DailyContext.effective_date == today).first()
+                if daily:
+                    result = {
+                        "id": daily.id,
+                        "text": daily.text,
+                        "effective_date": str(daily.date.date() if hasattr(daily.date, "date") else today),
+                        "source": getattr(daily, "created_by", "system"),
+                    }
+                    return result
 
-            if daily:
-                result = {
-                    "id": daily.id,
-                    "text": daily.text,
-                    "effective_date": str(daily.effective_date),
-                    "source": daily.source,
-                }
-                session.close()
-                return result
-
-            session.close()
             return None
 
         except Exception as e:
@@ -81,33 +82,30 @@ class ContextLoader:
     def load_user_contexts(self, user_id: str) -> list[dict[str, Any]]:
         """Carga contextos específicos del usuario"""
         try:
-            from admin_db import get_session
+            from src.models.admin_db import get_db_session
+            from src.models.models import UserContext
 
-            from models import UserContext
-
-            session = get_session()
-
-            contexts = (
-                session.query(UserContext)
-                .filter(UserContext.user_id == user_id)
-                .order_by(UserContext.created_at.desc())
-                .limit(5)
-                .all()
-            )
-
-            result = []
-            for ctx in contexts:
-                result.append(
-                    {
-                        "id": ctx.id,
-                        "text": ctx.text,
-                        "source": ctx.source,
-                        "created_at": ctx.created_at.isoformat() if ctx.created_at else None,
-                    }
+            with get_db_session() as session:
+                contexts = (
+                    session.query(UserContext)
+                    .filter(UserContext.user_id == user_id)
+                    .order_by(UserContext.created_at.desc())
+                    .limit(5)
+                    .all()
                 )
 
-            session.close()
-            return result
+                result = []
+                for ctx in contexts:
+                    result.append(
+                        {
+                            "id": ctx.id,
+                            "text": ctx.text,
+                            "source": ctx.source,
+                            "created_at": ctx.created_at.isoformat() if ctx.created_at else None,
+                        }
+                    )
+
+                return result
 
         except Exception as e:
             logger.warning(f"Error cargando contextos de usuario: {e}")
@@ -116,41 +114,35 @@ class ContextLoader:
     def load_contact_profile(self, chat_id: str) -> Optional[dict[str, Any]]:
         """Carga el perfil del contacto con objetivo y contexto inicial"""
         try:
-            from admin_db import get_session
+            from src.models.admin_db import get_db_session
+            from src.models.models import ChatProfile, Contact
 
-            from models import AllowedContact, ChatProfile
+            with get_db_session() as session:
+                # Intentar ChatProfile primero
+                profile = session.query(ChatProfile).filter(ChatProfile.chat_id == chat_id).first()
 
-            session = get_session()
+                if profile:
+                    result = {
+                        "chat_id": profile.chat_id,
+                        "initial_context": profile.initial_context,
+                        "objective": profile.objective,
+                        "instructions": profile.instructions,
+                        "perfil": getattr(profile, "perfil", None),
+                    }
+                    return result
 
-            # Intentar ChatProfile primero
-            profile = session.query(ChatProfile).filter(ChatProfile.chat_id == chat_id).first()
+                # Fallback a contacto básico
+                contact = session.query(Contact).filter(Contact.chat_id == chat_id).first()
+                if contact:
+                    result = {
+                        "chat_id": contact.chat_id,
+                        "initial_context": None,
+                        "objective": None,
+                        "instructions": None,
+                        "perfil": contact.name,
+                    }
+                    return result
 
-            if profile:
-                result = {
-                    "chat_id": profile.chat_id,
-                    "initial_context": profile.initial_context,
-                    "objective": profile.objective,
-                    "instructions": profile.instructions,
-                    "perfil": getattr(profile, "perfil", None),
-                }
-                session.close()
-                return result
-
-            # Fallback a AllowedContact
-            allowed = session.query(AllowedContact).filter(AllowedContact.chat_id == chat_id).first()
-
-            if allowed:
-                result = {
-                    "chat_id": allowed.chat_id,
-                    "initial_context": getattr(allowed, "initial_context", None),
-                    "objective": getattr(allowed, "objective", None),
-                    "instructions": getattr(allowed, "instructions", None),
-                    "perfil": getattr(allowed, "perfil", None),
-                }
-                session.close()
-                return result
-
-            session.close()
             return None
 
         except Exception as e:

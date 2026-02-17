@@ -8,6 +8,8 @@ from src.models.admin_db import engine
 from src.models.models import Base
 from src.services.queue_system import QueueManager
 
+pytestmark = pytest.mark.unit
+
 
 class TestQueueSystem:
     @classmethod
@@ -47,27 +49,27 @@ class TestQueueSystem:
         self.queue_manager.enqueue_message("chat_pending_1", "Message 1")
         self.queue_manager.enqueue_message("chat_pending_2", "Message 2")
 
-        pending = self.queue_manager.get_pending_messages(limit=10)
+        pending = self.queue_manager.get_pending_messages(limit=1000)
 
         assert isinstance(pending, list)
-        # There should be at least some pending messages (may not be exactly 2
-        # due to the SQLAlchemy filter issue with 'is None' on non-None columns)
-        assert len(pending) >= 0  # Just verify no crash and returns list
+        assert len(pending) >= 2
 
-    def test_mark_as_sent(self):
-        """Test marcar mensaje como enviado"""
+        chat_ids = {msg["chat_id"] for msg in pending}
+        assert "chat_pending_1" in chat_ids
+        assert "chat_pending_2" in chat_ids
+
+    @pytest.mark.parametrize(
+        ("operation", "args"),
+        [
+            ("mark_as_sent", tuple()),
+            ("mark_as_failed", ("Test error",)),
+        ],
+    )
+    def test_message_status_transitions(self, operation, args):
+        """Test marcar mensajes en distintos estados finales."""
         message_id = self.queue_manager.enqueue_message("chat1", "Test")
-
-        result = self.queue_manager.mark_as_sent(message_id)
-
-        assert result is True
-
-    def test_mark_as_failed(self):
-        """Test marcar mensaje como fallido"""
-        message_id = self.queue_manager.enqueue_message("chat1", "Test")
-
-        result = self.queue_manager.mark_as_failed(message_id, "Test error")
-
+        method = getattr(self.queue_manager, operation)
+        result = method(message_id, *args)
         assert result is True
 
     def test_create_campaign(self):

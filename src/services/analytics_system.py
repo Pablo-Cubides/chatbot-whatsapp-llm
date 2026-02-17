@@ -5,123 +5,111 @@ Métricas en tiempo real del chatbot
 
 import json
 import logging
-import sqlite3
-from datetime import datetime, timedelta
+import os
+from collections import defaultdict
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from src.models.admin_db import SessionLocal
+from src.models.models import AnalyticsApiUsage, AnalyticsConversation, AnalyticsMetric, Base
 
 logger = logging.getLogger(__name__)
 
 
 class AnalyticsManager:
-    def __init__(self, db_path: str = "analytics.db"):
+    def __init__(self, db_path: str | None = None):
         self.db_path = db_path
-        self.init_database()
         self.metrics_cache = {}
+        self._is_local_sqlite = bool(db_path)
+
+        if self._is_local_sqlite:
+            sqlite_path = os.path.abspath(db_path or "analytics.db")
+            self._engine = create_engine(
+                f"sqlite:///{sqlite_path}",
+                connect_args={"check_same_thread": False},
+            )
+            self._session_factory = sessionmaker(autocommit=False, autoflush=False, bind=self._engine)
+            self.init_database()
+        else:
+            self._engine = None
+            self._session_factory = SessionLocal
 
     def init_database(self):
-        """Inicializar base de datos de analytics"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # Tabla de métricas generales
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS metrics (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                metric_type TEXT NOT NULL,
-                metric_value REAL NOT NULL,
-                metadata TEXT
+        """Inicializar esquema para pruebas locales con SQLite."""
+        if self._is_local_sqlite and self._engine is not None:
+            Base.metadata.create_all(
+                bind=self._engine,
+                tables=[
+                    AnalyticsMetric.__table__,
+                    AnalyticsConversation.__table__,
+                    AnalyticsApiUsage.__table__,
+                ],
             )
-        """)
 
-        # Tabla de conversaciones
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                user_id TEXT,
-                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                ended_at DATETIME,
-                message_count INTEGER DEFAULT 0,
-                duration_seconds INTEGER,
-                satisfaction_score REAL,
-                converted BOOLEAN DEFAULT FALSE,
-                api_provider TEXT,
-                business_config_version TEXT
-            )
-        """)
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
 
-        # Tabla de uso de APIs
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS api_usage (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                api_provider TEXT NOT NULL,
-                endpoint TEXT,
-                tokens_used INTEGER,
-                response_time_ms INTEGER,
-                success BOOLEAN,
-                error_message TEXT,
-                cost_estimate REAL
-            )
-        """)
+    @staticmethod
+    def _normalize_dt(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
-        conn.commit()
-        conn.close()
+    @contextmanager
+    def _session_scope(self):
+        session = self._session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
     def record_conversation_start(self, session_id: str, user_id: str = None) -> int:
         """Registrar inicio de conversación"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO conversations (session_id, user_id, started_at)
-            VALUES (?, ?, ?)
-        """,
-            (session_id, user_id, datetime.now()),
-        )
-
-        conversation_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-
-        return conversation_id
+        with self._session_scope() as session:
+            row = AnalyticsConversation(
+                session_id=session_id,
+                user_id=user_id,
+                started_at=self._now(),
+            )
+            session.add(row)
+            session.flush()
+            return int(row.id or 0)
 
     def record_conversation_end(
         self, session_id: str, message_count: int, satisfaction_score: float = None, converted: bool = False
     ):
         """Registrar fin de conversación"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # Calcular duración
-        cursor.execute(
-            """
-            SELECT started_at FROM conversations
-            WHERE session_id = ? AND ended_at IS NULL
-            ORDER BY id DESC LIMIT 1
-        """,
-            (session_id,),
-        )
-
-        result = cursor.fetchone()
-        if result:
-            start_time = datetime.fromisoformat(result[0])
-            duration = (datetime.now() - start_time).total_seconds()
-
-            cursor.execute(
-                """
-                UPDATE conversations
-                SET ended_at = ?, message_count = ?, duration_seconds = ?,
-                    satisfaction_score = ?, converted = ?
-                WHERE session_id = ? AND ended_at IS NULL
-            """,
-                (datetime.now(), message_count, duration, satisfaction_score, converted, session_id),
+        with self._session_scope() as session:
+            conversation = (
+                session.query(AnalyticsConversation)
+                .filter(AnalyticsConversation.session_id == session_id, AnalyticsConversation.ended_at.is_(None))
+                .order_by(AnalyticsConversation.id.desc())
+                .first()
             )
 
-        conn.commit()
-        conn.close()
+            if not conversation:
+                return
+
+            now = self._now()
+            start_time = self._normalize_dt(conversation.started_at) or now
+            duration = int(max(0, (now - start_time).total_seconds()))
+
+            conversation.ended_at = now
+            conversation.message_count = int(message_count)
+            conversation.duration_seconds = duration
+            conversation.satisfaction_score = float(satisfaction_score) if satisfaction_score is not None else None
+            conversation.converted = bool(converted)
 
     def record_api_usage(
         self,
@@ -134,126 +122,96 @@ class AnalyticsManager:
         cost_estimate: float = None,
     ):
         """Registrar uso de API"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO api_usage (api_provider, endpoint, tokens_used, response_time_ms,
-                                 success, error_message, cost_estimate)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-            (api_provider, endpoint, tokens_used, response_time_ms, success, error_message, cost_estimate),
-        )
-
-        conn.commit()
-        conn.close()
+        with self._session_scope() as session:
+            session.add(
+                AnalyticsApiUsage(
+                    timestamp=self._now(),
+                    api_provider=api_provider,
+                    endpoint=endpoint,
+                    tokens_used=tokens_used,
+                    response_time_ms=response_time_ms,
+                    success=bool(success),
+                    error_message=error_message,
+                    cost_estimate=cost_estimate,
+                )
+            )
 
     def record_metric(self, metric_type: str, value: float, metadata: dict = None):
         """Registrar métrica general"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        metadata_json = json.dumps(metadata) if metadata else None
-
-        cursor.execute(
-            """
-            INSERT INTO metrics (metric_type, metric_value, metadata)
-            VALUES (?, ?, ?)
-        """,
-            (metric_type, value, metadata_json),
-        )
-
-        conn.commit()
-        conn.close()
+        with self._session_scope() as session:
+            session.add(
+                AnalyticsMetric(
+                    timestamp=self._now(),
+                    metric_type=metric_type,
+                    metric_value=float(value),
+                    metric_metadata=metadata if metadata else None,
+                )
+            )
 
     def get_dashboard_metrics(self, hours: int = 24) -> dict[str, Any]:
         """Obtener métricas principales para dashboard"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        since = self._now() - timedelta(hours=hours)
 
-        since = datetime.now() - timedelta(hours=hours)
+        with self._session_scope() as session:
+            conv_rows = (
+                session.query(AnalyticsConversation)
+                .filter(AnalyticsConversation.started_at >= since)
+                .all()
+            )
+            api_rows = (
+                session.query(AnalyticsApiUsage)
+                .filter(AnalyticsApiUsage.timestamp >= since)
+                .all()
+            )
 
-        # Conversaciones totales
-        cursor.execute(
-            """
-            SELECT COUNT(*) FROM conversations
-            WHERE started_at >= ?
-        """,
-            (since,),
-        )
-        total_conversations = cursor.fetchone()[0]
+            total_conversations = len(conv_rows)
+            active_conversations = sum(1 for c in conv_rows if c.ended_at is None)
 
-        # Conversaciones activas
-        cursor.execute(
-            """
-            SELECT COUNT(*) FROM conversations
-            WHERE started_at >= ? AND ended_at IS NULL
-        """,
-            (since,),
-        )
-        active_conversations = cursor.fetchone()[0]
+            completed = [c for c in conv_rows if c.ended_at is not None]
+            avg_messages = (
+                sum(max(0, int(c.message_count or 0)) for c in conv_rows) / total_conversations if total_conversations else 0
+            )
 
-        # Mensajes promedio por conversación
-        cursor.execute(
-            """
-            SELECT AVG(message_count) FROM conversations
-            WHERE started_at >= ? AND message_count > 0
-        """,
-            (since,),
-        )
-        avg_messages = cursor.fetchone()[0] or 0
+            duration_values = [int(c.duration_seconds) for c in conv_rows if c.duration_seconds is not None]
+            avg_duration = sum(duration_values) / len(duration_values) if duration_values else 0
 
-        # Duración promedio de conversación
-        cursor.execute(
-            """
-            SELECT AVG(duration_seconds) FROM conversations
-            WHERE started_at >= ? AND duration_seconds IS NOT NULL
-        """,
-            (since,),
-        )
-        avg_duration = cursor.fetchone()[0] or 0
+            converted_count = sum(1 for c in completed if c.converted)
+            conversion_rate = (converted_count * 100.0 / len(completed)) if completed else 0
 
-        # Tasa de conversión
-        cursor.execute(
-            """
-            SELECT
-                COUNT(CASE WHEN converted THEN 1 END) * 100.0 / COUNT(*) as conversion_rate
-            FROM conversations
-            WHERE started_at >= ? AND ended_at IS NOT NULL
-        """,
-            (since,),
-        )
-        conversion_rate = cursor.fetchone()[0] or 0
+            satisfaction_values = [float(c.satisfaction_score) for c in conv_rows if c.satisfaction_score is not None]
+            avg_satisfaction = sum(satisfaction_values) / len(satisfaction_values) if satisfaction_values else 0
 
-        # Uso de APIs por proveedor
-        cursor.execute(
-            """
-            SELECT api_provider, COUNT(*), SUM(tokens_used), AVG(response_time_ms),
-                   SUM(CASE WHEN success THEN 0 ELSE 1 END) as errors
-            FROM api_usage
-            WHERE timestamp >= ?
-            GROUP BY api_provider
-        """,
-            (since,),
-        )
-        api_usage = cursor.fetchall()
+            grouped_usage: dict[str, dict[str, float | int]] = defaultdict(
+                lambda: {"requests": 0, "tokens": 0, "response_sum": 0, "response_count": 0, "errors": 0}
+            )
+            for row in api_rows:
+                key = row.api_provider or "unknown"
+                bucket = grouped_usage[key]
+                bucket["requests"] = int(bucket["requests"]) + 1
+                bucket["tokens"] = int(bucket["tokens"]) + int(row.tokens_used or 0)
+                if row.response_time_ms is not None:
+                    bucket["response_sum"] = float(bucket["response_sum"]) + float(row.response_time_ms)
+                    bucket["response_count"] = int(bucket["response_count"]) + 1
+                if not bool(row.success):
+                    bucket["errors"] = int(bucket["errors"]) + 1
 
-        # Satisfacción promedio
-        cursor.execute(
-            """
-            SELECT AVG(satisfaction_score) FROM conversations
-            WHERE started_at >= ? AND satisfaction_score IS NOT NULL
-        """,
-            (since,),
-        )
-        avg_satisfaction = cursor.fetchone()[0] or 0
-
-        conn.close()
+            api_usage = []
+            for provider, stats in grouped_usage.items():
+                response_count = int(stats["response_count"])
+                avg_response = (float(stats["response_sum"]) / response_count) if response_count else 0
+                api_usage.append(
+                    {
+                        "provider": provider,
+                        "requests": int(stats["requests"]),
+                        "tokens": int(stats["tokens"]),
+                        "avg_response_ms": round(avg_response, 2),
+                        "errors": int(stats["errors"]),
+                    }
+                )
 
         return {
             "period_hours": hours,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": self._now().isoformat(),
             "conversations": {
                 "total": total_conversations,
                 "active": active_conversations,
@@ -261,109 +219,85 @@ class AnalyticsManager:
                 "avg_duration_minutes": round(avg_duration / 60, 2) if avg_duration else 0,
                 "conversion_rate": round(conversion_rate, 2),
             },
-            "quality": {"avg_satisfaction": round(avg_satisfaction, 2), "total_errors": sum(row[4] for row in api_usage)},
-            "api_usage": [
-                {
-                    "provider": row[0],
-                    "requests": row[1],
-                    "tokens": row[2] or 0,
-                    "avg_response_ms": round(row[3], 2) if row[3] else 0,
-                    "errors": row[4],
-                }
-                for row in api_usage
-            ],
+            "quality": {
+                "avg_satisfaction": round(avg_satisfaction, 2),
+                "total_errors": sum(item["errors"] for item in api_usage),
+            },
+            "api_usage": api_usage,
         }
 
     def get_time_series_data(self, metric: str, hours: int = 24, interval_minutes: int = 60) -> list[dict]:
         """Obtener datos de serie temporal para gráficos"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        safe_hours = max(1, int(hours or 1))
+        safe_interval = max(1, int(interval_minutes or 60))
+        interval_seconds = safe_interval * 60
 
-        since = datetime.now() - timedelta(hours=hours)
+        now = self._now().replace(second=0, microsecond=0)
+        since = now - timedelta(hours=safe_hours)
+        buckets: dict[datetime, int] = defaultdict(int)
 
-        if metric == "conversations":
-            cursor.execute(
-                """
-                SELECT
-                    datetime(started_at, 'localtime') as hour,
-                    COUNT(*) as count
-                FROM conversations
-                WHERE started_at >= ?
-                GROUP BY strftime('%Y-%m-%d %H', started_at)
-                ORDER BY hour
-            """,
-                (since,),
-            )
+        with self._session_scope() as session:
+            if metric == "conversations":
+                rows = (
+                    session.query(AnalyticsConversation.started_at)
+                    .filter(AnalyticsConversation.started_at >= since)
+                    .all()
+                )
+                timestamps = [self._normalize_dt(row[0]) for row in rows]
+            elif metric == "errors":
+                rows = (
+                    session.query(AnalyticsApiUsage.timestamp)
+                    .filter(AnalyticsApiUsage.timestamp >= since, AnalyticsApiUsage.success.is_(False))
+                    .all()
+                )
+                timestamps = [self._normalize_dt(row[0]) for row in rows]
+            else:
+                rows = (
+                    session.query(AnalyticsApiUsage.timestamp)
+                    .filter(AnalyticsApiUsage.timestamp >= since)
+                    .all()
+                )
+                timestamps = [self._normalize_dt(row[0]) for row in rows]
 
-        elif metric == "api_calls":
-            cursor.execute(
-                """
-                SELECT
-                    datetime(timestamp, 'localtime') as hour,
-                    COUNT(*) as count
-                FROM api_usage
-                WHERE timestamp >= ?
-                GROUP BY strftime('%Y-%m-%d %H', timestamp)
-                ORDER BY hour
-            """,
-                (since,),
-            )
+        for ts in timestamps:
+            if ts is None:
+                continue
+            delta_seconds = int((ts - since).total_seconds())
+            bucket_offset = max(0, delta_seconds // interval_seconds)
+            bucket_time = since + timedelta(seconds=bucket_offset * interval_seconds)
+            buckets[bucket_time] += 1
 
-        elif metric == "errors":
-            cursor.execute(
-                """
-                SELECT
-                    datetime(timestamp, 'localtime') as hour,
-                    COUNT(*) as count
-                FROM api_usage
-                WHERE timestamp >= ? AND success = 0
-                GROUP BY strftime('%Y-%m-%d %H', timestamp)
-                ORDER BY hour
-            """,
-                (since,),
-            )
+        points: list[dict[str, Any]] = []
+        total_buckets = int((safe_hours * 3600) // interval_seconds) + 1
+        for idx in range(total_buckets):
+            ts = since + timedelta(seconds=idx * interval_seconds)
+            points.append({"timestamp": ts.isoformat(), "value": buckets.get(ts, 0)})
 
-        data = cursor.fetchall()
-        conn.close()
-
-        return [{"timestamp": row[0], "value": row[1]} for row in data]
+        return points
 
     def get_realtime_stats(self) -> dict[str, Any]:
         """Estadísticas en tiempo real"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        recent = self._now() - timedelta(minutes=5)
 
-        # Últimas 5 minutos
-        recent = datetime.now() - timedelta(minutes=5)
-
-        cursor.execute(
-            """
-            SELECT COUNT(*) FROM api_usage WHERE timestamp >= ?
-        """,
-            (recent,),
-        )
-        recent_api_calls = cursor.fetchone()[0]
-
-        cursor.execute(
-            """
-            SELECT COUNT(*) FROM conversations WHERE started_at >= ?
-        """,
-            (recent,),
-        )
-        recent_conversations = cursor.fetchone()[0]
-
-        cursor.execute(
-            """
-            SELECT COUNT(*) FROM api_usage WHERE timestamp >= ? AND success = 0
-        """,
-            (recent,),
-        )
-        recent_errors = cursor.fetchone()[0]
-
-        conn.close()
+        with self._session_scope() as session:
+            recent_api_calls = (
+                session.query(AnalyticsApiUsage)
+                .filter(AnalyticsApiUsage.timestamp >= recent)
+                .count()
+            )
+            recent_conversations = (
+                session.query(AnalyticsConversation)
+                .filter(AnalyticsConversation.started_at >= recent)
+                .count()
+            )
+            recent_errors = (
+                session.query(AnalyticsApiUsage)
+                .filter(AnalyticsApiUsage.timestamp >= recent, AnalyticsApiUsage.success.is_(False))
+                .count()
+            )
 
         return {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": self._now().isoformat(),
             "last_5_minutes": {
                 "api_calls": recent_api_calls,
                 "new_conversations": recent_conversations,

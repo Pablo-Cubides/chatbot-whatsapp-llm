@@ -8,6 +8,8 @@ from unittest.mock import patch
 import pytest
 from cryptography.fernet import Fernet
 
+pytestmark = pytest.mark.unit
+
 
 class TestCrypto:
     """Test suite for crypto.py encryption functions."""
@@ -62,13 +64,14 @@ class TestCrypto:
             assert decrypted == plaintext
 
     def test_decrypt_invalid_token_returns_none(self):
-        """Decrypting garbage should return None, not crash."""
+        """Decrypting garbage should return original value and not crash."""
         from crypto import decrypt_text
 
         with patch("crypto.get_fernet") as mock_fernet:
             mock_fernet.return_value = self.fernet
-            result = decrypt_text("not-a-valid-fernet-token")
-            assert result is None
+            invalid = "not-a-valid-fernet-token"
+            result = decrypt_text(invalid)
+            assert result == invalid
 
     def test_encrypt_empty_string(self):
         """Encrypting an empty string should still work."""

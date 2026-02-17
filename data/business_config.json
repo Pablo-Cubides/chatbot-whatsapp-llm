@@ -1,6 +1,6 @@
 {
   "business_info": {
-    "name": "Mi Negocio",
+    "name": "Negocio Integración",
     "description": "Coloca aquí la descripción de tu negocio, qué servicios ofreces, cuál es tu especialidad y qué te diferencia de la competencia",
     "greeting": "¡Hola! Bienvenido/a a [NOMBRE_NEGOCIO]. ¿En qué puedo ayudarte hoy?",
     "closing": "Gracias por contactarnos. ¡Que tengas un excelente día!",
@@ -107,8 +107,52 @@
   "integrations": {
     "calendar_booking": {
       "enabled": false,
-      "service": "calendly",
-      "link": "https://calendly.com/tu-negocio"
+      "provider": "google_calendar",
+      "default_duration_minutes": 30,
+      "buffer_between_appointments": 15,
+      "max_advance_booking_days": 30,
+      "working_hours": {
+        "monday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "tuesday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "wednesday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "thursday": {
+          "start": "09:00",
+          "end": "18:00"
+        },
+        "friday": {
+          "start": "09:00",
+          "end": "17:00"
+        },
+        "saturday": {
+          "closed": true
+        },
+        "sunday": {
+          "closed": true
+        }
+      },
+      "google_calendar": {
+        "credentials_file": "config/google_credentials.json",
+        "token_file": "config/google_token.json",
+        "calendar_id": "primary",
+        "send_notifications": true,
+        "add_google_meet": true
+      },
+      "outlook": {
+        "client_id": "",
+        "client_secret": "",
+        "tenant_id": "common",
+        "calendar_id": "",
+        "add_teams_meeting": true
+      }
     },
     "crm_integration": {
       "enabled": false,
@@ -120,5 +164,39 @@
       "service": "stripe",
       "links": {}
     }
+  },
+  "whatsapp_provider": {
+    "mode": "web",
+    "cloud_api": {
+      "access_token": "",
+      "phone_number_id": "",
+      "verify_token": "",
+      "business_account_id": ""
+    }
+  },
+  "analysis_settings": {
+    "deep_analysis_enabled": true,
+    "deep_analysis_trigger_conversations": 50,
+    "deep_analysis_trigger_days": 7,
+    "image_analysis_enabled": true,
+    "audio_transcription_enabled": true,
+    "whisper_model_size": "base",
+    "whisper_device": "cpu"
+  },
+  "ai_models": {
+    "default_provider": "gemini",
+    "response_layer": {
+      "provider": "auto",
+      "model": ""
+    },
+    "reasoner_layer": {
+      "provider": "lmstudio",
+      "model": ""
+    },
+    "analyzer_layer": {
+      "provider": "auto",
+      "model": ""
+    },
+    "custom_providers": []
   }
 }

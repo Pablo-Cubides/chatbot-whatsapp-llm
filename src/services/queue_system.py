@@ -4,20 +4,23 @@ Gestión centralizada de todos los mensajes salientes (bulk, scheduled, manual)
 """
 
 import contextlib
-import json
 import logging
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Optional
 
+from sqlalchemy import Index, or_
 from sqlalchemy import JSON, Column, DateTime, Integer, String, Text
 
 from src.models.admin_db import get_session
 from src.models.models import Base
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class MessageStatus(str, Enum):
@@ -35,6 +38,7 @@ class QueuedMessage(Base):
     """Modelo de mensaje en cola"""
 
     __tablename__ = "message_queue"
+    __table_args__ = (Index("ix_queued_message_status_scheduled", "status", "scheduled_at"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     message_id = Column(String(100), unique=True, nullable=False, index=True)
@@ -43,7 +47,7 @@ class QueuedMessage(Base):
     status = Column(String(20), default=MessageStatus.PENDING, nullable=False, index=True)
     priority = Column(Integer, default=0, nullable=False)
     scheduled_at = Column(DateTime, nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
     processed_at = Column(DateTime, nullable=True)
     sent_at = Column(DateTime, nullable=True)
     retry_count = Column(Integer, default=0, nullable=False)
@@ -62,7 +66,7 @@ class Campaign(Base):
     name = Column(String(200), nullable=False)
     status = Column(String(20), default="active", nullable=False, index=True)
     created_by = Column(String(100), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
     total_messages = Column(Integer, default=0, nullable=False)
     sent_messages = Column(Integer, default=0, nullable=False)
     failed_messages = Column(Integer, default=0, nullable=False)
@@ -73,9 +77,6 @@ class QueueManager:
     """Gestor de la cola de mensajes"""
 
     def __init__(self):
-        self.json_backup_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "manual_queue.json"
-        )
         logger.info("📬 Queue Manager inicializado")
 
     def enqueue_message(
@@ -122,17 +123,52 @@ class QueueManager:
             session.add(queued_msg)
             session.commit()
 
-            # Backup en JSON para compatibilidad
-            self._backup_to_json(queued_msg)
-
-            logger.info(f"✅ Mensaje encolado: {message_id} para {chat_id}")
+            logger.info("✅ Mensaje encolado: %s para %s", message_id, chat_id)
             return message_id
 
         except Exception as e:
-            logger.error(f"❌ Error encolando mensaje: {e}")
+            logger.error("❌ Error encolando mensaje: %s", e)
             with contextlib.suppress(Exception):
                 session.rollback()
             raise
+        finally:
+            with contextlib.suppress(Exception):
+                session.close()
+
+    def enqueue_bulk_messages(self, rows: list[dict[str, Any]]) -> list[str]:
+        """Bulk enqueue messages with a single DB transaction for campaign-scale throughput."""
+        if not rows:
+            return []
+
+        session = get_session()
+        try:
+            prepared: list[QueuedMessage] = []
+            ids: list[str] = []
+
+            for row in rows:
+                message_id = f"msg_{uuid.uuid4().hex[:16]}"
+                ids.append(message_id)
+                prepared.append(
+                    QueuedMessage(
+                        message_id=message_id,
+                        chat_id=str(row.get("chat_id") or "").strip(),
+                        message=str(row.get("message") or ""),
+                        status=MessageStatus.PENDING,
+                        priority=int(row.get("priority") or 0),
+                        scheduled_at=row.get("when"),
+                        extra_data=row.get("metadata") or {},
+                        max_retries=max(1, int(row.get("max_retries") or 3)),
+                    )
+                )
+
+            session.bulk_save_objects(prepared)
+            session.commit()
+            return ids
+        except Exception as e:
+            logger.error("❌ Error encolando bulk messages: %s", e)
+            with contextlib.suppress(Exception):
+                session.rollback()
+            return []
         finally:
             with contextlib.suppress(Exception):
                 session.close()
@@ -156,9 +192,9 @@ class QueueManager:
             if include_scheduled:
                 # Solo incluir mensajes cuya hora llegó
                 now = datetime.now(timezone.utc)
-                query = query.filter((QueuedMessage.scheduled_at is None) | (QueuedMessage.scheduled_at <= now))
+                query = query.filter(or_(QueuedMessage.scheduled_at.is_(None), QueuedMessage.scheduled_at <= now))
             else:
-                query = query.filter(QueuedMessage.scheduled_at is None)
+                query = query.filter(QueuedMessage.scheduled_at.is_(None))
 
             query = query.order_by(QueuedMessage.priority.desc(), QueuedMessage.created_at.asc()).limit(limit)
 
@@ -168,7 +204,7 @@ class QueueManager:
             return [self._message_to_dict(msg) for msg in messages]
 
         except Exception as e:
-            logger.error(f"❌ Error obteniendo mensajes pendientes: {e}")
+            logger.error("❌ Error obteniendo mensajes pendientes: %s", e)
             return []
 
     def mark_as_sent(self, message_id: str) -> bool:
@@ -192,7 +228,7 @@ class QueueManager:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error marcando mensaje como enviado: {e}")
+            logger.error("❌ Error marcando mensaje como enviado: %s", e)
             return False
 
     def mark_as_failed(self, message_id: str, error: str) -> bool:
@@ -223,7 +259,7 @@ class QueueManager:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error marcando mensaje como fallido: {e}")
+            logger.error("❌ Error marcando mensaje como fallido: %s", e)
             return False
 
     def create_campaign(
@@ -249,11 +285,11 @@ class QueueManager:
             session.commit()
             session.close()
 
-            logger.info(f"✅ Campaña creada: {campaign_id}")
+            logger.info("✅ Campaña creada: %s", campaign_id)
             return campaign_id
 
         except Exception as e:
-            logger.error(f"❌ Error creando campaña: {e}")
+            logger.error("❌ Error creando campaña: %s", e)
             raise
 
     def get_campaign_status(self, campaign_id: str) -> Optional[dict[str, Any]]:
@@ -285,8 +321,39 @@ class QueueManager:
             return result
 
         except Exception as e:
-            logger.error(f"❌ Error obteniendo estado de campaña: {e}")
+            logger.error("❌ Error obteniendo estado de campaña: %s", e)
             return None
+
+    def list_campaigns(self, status: Optional[str] = None, limit: int = 50) -> list[dict[str, Any]]:
+        """Listar campañas con filtro opcional por estado."""
+        try:
+            session = get_session()
+            query = session.query(Campaign)
+            if status:
+                query = query.filter(Campaign.status == status)
+
+            campaigns = query.order_by(Campaign.created_at.desc()).limit(limit).all()
+            return [
+                {
+                    "campaign_id": camp.campaign_id,
+                    "name": camp.name,
+                    "status": camp.status,
+                    "created_by": camp.created_by,
+                    "created_at": camp.created_at.isoformat(),
+                    "total_messages": camp.total_messages,
+                    "sent_messages": camp.sent_messages,
+                    "failed_messages": camp.failed_messages,
+                    "pending_messages": camp.total_messages - camp.sent_messages - camp.failed_messages,
+                    "metadata": camp.extra_data,
+                }
+                for camp in campaigns
+            ]
+        except Exception as e:
+            logger.error("❌ Error listando campañas: %s", e)
+            return []
+        finally:
+            with contextlib.suppress(Exception):
+                session.close()
 
     def pause_campaign(self, campaign_id: str) -> bool:
         """Pausar una campaña"""
@@ -304,28 +371,35 @@ class QueueManager:
             # Actualizar estado de campaña
             campaign = session.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
 
-            if campaign:
-                campaign.status = "cancelled"
+            if not campaign:
+                return False
+
+            campaign.status = "cancelled"
 
             # Cancelar mensajes pendientes de esta campaña
             # Obtener todos los mensajes pendientes y filtrar por campaign_id
-            pending_messages = (
+            queued_messages = (
                 session.query(QueuedMessage)
                 .filter(QueuedMessage.status.in_([MessageStatus.PENDING, MessageStatus.RETRY]))
                 .all()
             )
 
-            for msg in pending_messages:
+            for msg in queued_messages:
                 if msg.extra_data and msg.extra_data.get("campaign_id") == campaign_id:
                     msg.status = MessageStatus.CANCELLED
+                    msg.processed_at = datetime.now(timezone.utc)
 
             session.commit()
-            session.close()
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error cancelando campaña: {e}")
+            logger.error("❌ Error cancelando campaña: %s", e)
+            with contextlib.suppress(Exception):
+                session.rollback()
             return False
+        finally:
+            with contextlib.suppress(Exception):
+                session.close()
 
     def _update_campaign_status(self, campaign_id: str, status: str) -> bool:
         """Actualizar estado de campaña"""
@@ -342,7 +416,7 @@ class QueueManager:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error actualizando estado de campaña: {e}")
+            logger.error("❌ Error actualizando estado de campaña: %s", e)
             return False
 
     def _update_campaign_stats(self, campaign_id: str, sent: bool = False, failed: bool = False):
@@ -362,7 +436,7 @@ class QueueManager:
             session.close()
 
         except Exception as e:
-            logger.error(f"❌ Error actualizando stats de campaña: {e}")
+            logger.error("❌ Error actualizando stats de campaña: %s", e)
 
     def _message_to_dict(self, msg: QueuedMessage) -> dict[str, Any]:
         """Convertir mensaje a diccionario"""
@@ -377,36 +451,6 @@ class QueueManager:
             "retry_count": msg.retry_count,
             "metadata": msg.extra_data,  # Mantener 'metadata' en API por compatibilidad
         }
-
-    def _backup_to_json(self, msg: QueuedMessage):
-        """Backup de mensaje en JSON para compatibilidad"""
-        try:
-            os.makedirs(os.path.dirname(self.json_backup_path), exist_ok=True)
-
-            # Leer queue actual
-            queue = []
-            if os.path.exists(self.json_backup_path):
-                with open(self.json_backup_path, encoding="utf-8") as f:
-                    queue = json.load(f)
-
-            # Agregar nuevo mensaje
-            queue.append(
-                {
-                    "id": msg.message_id,
-                    "chat_id": msg.chat_id,
-                    "message": msg.message,
-                    "timestamp": msg.created_at.isoformat(),
-                    "status": msg.status,
-                }
-            )
-
-            # Guardar
-            with open(self.json_backup_path, "w", encoding="utf-8") as f:
-                json.dump(queue, f, indent=2, ensure_ascii=False)
-
-        except Exception as e:
-            logger.warning(f"⚠️ No se pudo hacer backup JSON: {e}")
-
 
 # Instancia global
 queue_manager = QueueManager()

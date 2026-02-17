@@ -5,6 +5,7 @@ Integración completa con configuración de negocio, multi-API y análisis de im
 
 import asyncio
 import logging
+import os
 import re
 from datetime import datetime
 from typing import Any, Optional
@@ -51,6 +52,8 @@ class WhatsAppManager:
         self.page = None
         self.is_running = False
         self.active_chats = {}
+        self.max_active_chats = int(os.getenv("WHATSAPP_MAX_ACTIVE_CHATS", "300"))
+        self.max_processed_messages_per_chat = int(os.getenv("WHATSAPP_MAX_PROCESSED_MSG_IDS", "2000"))
 
     async def start(self) -> dict[str, Any]:
         """Iniciar el sistema de WhatsApp"""
@@ -89,7 +92,7 @@ class WhatsAppManager:
             }
 
         except Exception as e:
-            logger.error(f"Error iniciando WhatsApp bot: {e}")
+            logger.error("Error iniciando WhatsApp bot: %s", e)
             return {"success": False, "message": f"Error: {str(e)}"}
 
     async def stop(self) -> dict[str, Any]:
@@ -112,7 +115,7 @@ class WhatsAppManager:
             return {"success": True, "message": "WhatsApp bot detenido exitosamente", "status": "stopped"}
 
         except Exception as e:
-            logger.error(f"Error deteniendo WhatsApp bot: {e}")
+            logger.error("Error deteniendo WhatsApp bot: %s", e)
             return {"success": False, "message": f"Error: {str(e)}"}
 
     async def _setup_message_listeners(self):
@@ -159,7 +162,7 @@ class WhatsAppManager:
                 await asyncio.sleep(1)  # Check cada segundo
 
             except Exception as e:
-                logger.error(f"Error en loop de mensajes: {e}")
+                logger.error("Error en loop de mensajes: %s", e)
                 await asyncio.sleep(5)
 
     async def _process_incoming_message(self):
@@ -180,7 +183,7 @@ class WhatsAppManager:
             # Detectar y analizar imagen si existe
             image_description = None
             if has_image and IMAGE_ANALYSIS_AVAILABLE:
-                logger.info(f"📸 Detectada imagen en mensaje de {contact_name}")
+                logger.info("📸 Detectada imagen en mensaje de %s", contact_name)
 
                 # Descargar imagen
                 image_bytes = await self._detect_and_download_image()
@@ -202,7 +205,12 @@ class WhatsAppManager:
                         provider = analysis["provider"]
                         cached = analysis.get("cached", False)
 
-                        logger.info(f"✅ Imagen analizada ({provider}, cached={cached}): {image_description[:100]}...")
+                        logger.info(
+                            "✅ Imagen analizada (%s, cached=%s): %s...",
+                            provider,
+                            cached,
+                            image_description[:100],
+                        )
 
                         # Combinar texto + descripción de imagen
                         if message_text:
@@ -210,7 +218,7 @@ class WhatsAppManager:
                         else:
                             message_text = f"[Usuario envió imagen: {image_description}]"
                     else:
-                        logger.error(f"❌ Error analizando imagen: {analysis.get('error')}")
+                        logger.error("❌ Error analizando imagen: %s", analysis.get("error"))
                         # Continuar con el mensaje de texto si existe
                         if not message_text:
                             message_text = "[Usuario envió una imagen pero no se pudo analizar]"
@@ -223,10 +231,17 @@ class WhatsAppManager:
             if message_id in self.active_chats.get(contact_name, {}).get("processed_messages", set()):
                 return
 
-            logger.info(f"Procesando mensaje de {contact_name}: {message_text[:100]}...")
+            logger.info("Procesando mensaje de %s: %s...", contact_name, message_text[:100])
 
             # Inicializar chat si es necesario
             if contact_name not in self.active_chats:
+                if len(self.active_chats) >= self.max_active_chats:
+                    oldest_chat = min(
+                        self.active_chats.items(),
+                        key=lambda item: item[1].get("started_at", datetime.now()),
+                    )[0]
+                    self.active_chats.pop(oldest_chat, None)
+
                 self.active_chats[contact_name] = {
                     "messages": [],
                     "started_at": datetime.now(),
@@ -240,6 +255,10 @@ class WhatsAppManager:
 
             # Agregar mensaje procesado
             self.active_chats[contact_name]["processed_messages"].add(message_id)
+            if len(self.active_chats[contact_name]["processed_messages"]) > self.max_processed_messages_per_chat:
+                stale_id = next(iter(self.active_chats[contact_name]["processed_messages"]))
+                self.active_chats[contact_name]["processed_messages"].discard(stale_id)
+
             self.active_chats[contact_name]["messages"].append(
                 {
                     "role": "user",
@@ -277,10 +296,10 @@ class WhatsAppManager:
                     {"role": "assistant", "content": response, "timestamp": datetime.now().isoformat()}
                 )
 
-                logger.info(f"Respuesta enviada a {contact_name}: {response[:100]}...")
+                logger.info("Respuesta enviada a %s: %s...", contact_name, response[:100])
 
         except Exception as e:
-            logger.error(f"Error procesando mensaje: {e}")
+            logger.error("Error procesando mensaje: %s", e)
 
     async def _get_current_chat_info(self) -> Optional[dict[str, Any]]:
         """Obtener información del chat actual"""
@@ -331,7 +350,7 @@ class WhatsAppManager:
             if not blob_url:
                 return None
 
-            logger.info(f"📸 Detectada imagen: {blob_url[:50]}...")
+            logger.info("📸 Detectada imagen: %s...", blob_url[:50])
 
             # Descargar blob como bytes
             image_bytes = await self.page.evaluate(
@@ -369,12 +388,12 @@ class WhatsAppManager:
 
             decoded_bytes = base64.b64decode(image_bytes)
 
-            logger.info(f"✅ Imagen descargada: {len(decoded_bytes) / 1024:.2f}KB")
+            logger.info("✅ Imagen descargada: %.2fKB", len(decoded_bytes) / 1024)
 
             return decoded_bytes
 
         except Exception as e:
-            logger.error(f"❌ Error detectando/descargando imagen: {e}")
+            logger.error("❌ Error detectando/descargando imagen: %s", e)
             return None
 
     async def _generate_response(self, contact_name: str, message_text: str) -> Optional[str]:
@@ -401,31 +420,41 @@ class WhatsAppManager:
             # Generar respuesta con Multi-API
             if self.multi_llm:
                 start_time = datetime.now()
-                response = await self.multi_llm.generate_response(
+                llm_result = await self.multi_llm.generate_response(
                     messages=context_messages,
-                    max_tokens=150,  # Respuesta concisa para WhatsApp
-                    temperature=0.7,
+                    inject_contexts=True,
                 )
                 response_time = (datetime.now() - start_time).total_seconds() * 1000
+
+                response_text = None
+                if isinstance(llm_result, dict):
+                    if llm_result.get("success"):
+                        response_text = llm_result.get("response")
+                elif isinstance(llm_result, str):
+                    response_text = llm_result
+
+                if not response_text:
+                    logger.warning("multi_llm no devolvió respuesta válida, usando fallback")
+                    response_text = "Disculpa, estoy verificando tu caso. En un momento te doy más detalles."
 
                 # Registrar uso de API
                 if self.analytics:
                     self.analytics.record_api_usage(
                         api_provider="multi_llm",
                         endpoint="generate_response",
-                        tokens_used=len(response.split()),
+                        tokens_used=len(str(response_text).split()),
                         response_time_ms=int(response_time),
                         success=True,
                     )
 
-                return response
+                return response_text
             else:
                 # Respuesta de fallback usando configuración
                 greeting = business_info.get("greeting", "¡Hola!")
                 return f"{greeting} Gracias por contactarnos. Te ayudo enseguida."
 
         except Exception as e:
-            logger.error(f"Error generando respuesta: {e}")
+            logger.error("Error generando respuesta: %s", e)
 
             # Registrar error en analytics
             if self.analytics:
@@ -458,7 +487,7 @@ class WhatsAppManager:
             return True
 
         except Exception as e:
-            logger.error(f"Error enviando mensaje: {e}")
+            logger.error("Error enviando mensaje: %s", e)
             return False
 
     def _extract_phone_from_chat(self, contact_name: str) -> Optional[str]:

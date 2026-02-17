@@ -8,8 +8,10 @@ import hashlib
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Optional
+
+from cachetools import TTLCache
 
 try:
     import redis.asyncio as redis
@@ -27,13 +29,16 @@ class CacheManager:
 
     def __init__(self):
         self.redis_client = None
-        self.memory_cache = {}  # Fallback cache
+        self.memory_cache = None  # type: ignore[assignment]
         self.cache_enabled = False
+        self._key_locks: dict[str, asyncio.Lock] = {}
+        self._locks_guard = asyncio.Lock()
 
         # Configuración desde variables de entorno
         self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         self.cache_prefix = os.getenv("CACHE_PREFIX", "chatbot:")
         self.default_ttl = int(os.getenv("CACHE_DEFAULT_TTL", "3600"))  # 1 hora
+        self.memory_cache = TTLCache(maxsize=10000, ttl=max(1, self.default_ttl))
 
         # Intentar conectar a Redis
         if REDIS_AVAILABLE:
@@ -102,16 +107,8 @@ class CacheManager:
                     return json.loads(value)
                 return None
             else:
-                # Obtener de memoria
-                cached_item = self.memory_cache.get(cache_key)
-                if cached_item:
-                    # Verificar expiración
-                    if cached_item["expires_at"] > datetime.now(timezone.utc):
-                        return cached_item["value"]
-                    else:
-                        # Limpiar elemento expirado
-                        del self.memory_cache[cache_key]
-                return None
+                # Obtener de memoria (TTLCache expira automáticamente)
+                return self.memory_cache.get(cache_key)
 
         except Exception as e:
             logger.error(f"Error obteniendo caché {key}: {e}")
@@ -130,20 +127,8 @@ class CacheManager:
                 await self.redis_client.setex(cache_key, ttl, serialized_value)
                 return True
             else:
-                # Guardar en memoria (con límite de tamaño)
-                MAX_MEMORY_CACHE_SIZE = 10000
-                if len(self.memory_cache) >= MAX_MEMORY_CACHE_SIZE:
-                    self._cleanup_memory_cache()
-                    # If still over limit after cleanup, remove oldest entries
-                    if len(self.memory_cache) >= MAX_MEMORY_CACHE_SIZE:
-                        oldest_keys = sorted(self.memory_cache.keys(), key=lambda k: self.memory_cache[k]["expires_at"])[
-                            : MAX_MEMORY_CACHE_SIZE // 4
-                        ]
-                        for k in oldest_keys:
-                            del self.memory_cache[k]
-
-                expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
-                self.memory_cache[cache_key] = {"value": value, "expires_at": expires_at}
+                # Guardar en memoria (evicción automática LRU+TTL)
+                self.memory_cache[cache_key] = value
                 return True
 
         except Exception as e:
@@ -197,15 +182,27 @@ class CacheManager:
         if value is not None:
             return value
 
-        # Calcular valor
-        if asyncio.iscoroutinefunction(factory_func):
-            calculated_value = await factory_func()
-        else:
-            calculated_value = factory_func()
+        async with self._locks_guard:
+            lock = self._key_locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._key_locks[key] = lock
 
-        # Guardar en caché
-        await self.set(key, calculated_value, ttl)
-        return calculated_value
+        async with lock:
+            # Double-check después de adquirir el lock para evitar stampede
+            value = await self.get(key)
+            if value is not None:
+                return value
+
+            # Calcular valor
+            if asyncio.iscoroutinefunction(factory_func):
+                calculated_value = await factory_func()
+            else:
+                calculated_value = factory_func()
+
+            # Guardar en caché
+            await self.set(key, calculated_value, ttl)
+            return calculated_value
 
     async def get_stats(self) -> dict[str, Any]:
         """Obtener estadísticas del caché"""
@@ -240,6 +237,7 @@ class CacheManager:
                     {
                         "memory_keys": len(self.memory_cache),
                         "memory_size_bytes": sum(len(str(v)) for v in self.memory_cache.values()),
+                        "memory_cache_maxsize": getattr(self.memory_cache, "maxsize", 10000),
                     }
                 )
 
@@ -262,15 +260,8 @@ class CacheManager:
             return False
 
     def _cleanup_memory_cache(self):
-        """Limpiar elementos expirados del caché en memoria"""
-        now = datetime.now(timezone.utc)
-        expired_keys = [key for key, item in self.memory_cache.items() if item["expires_at"] <= now]
-
-        for key in expired_keys:
-            del self.memory_cache[key]
-
-        if expired_keys:
-            logger.debug(f"Limpiados {len(expired_keys)} elementos expirados del caché en memoria")
+        """Compatibility no-op: TTLCache handles expiration/eviction automatically."""
+        return
 
 
 # Instancia global del caché

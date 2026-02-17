@@ -50,6 +50,9 @@ logs/
 # Data (comentar si quieres incluir)
 data/
 !data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
 
 # Test outputs
 _pytest_auth_out*.txt
