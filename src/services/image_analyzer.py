@@ -1,6 +1,6 @@
 """
 🖼️ Sistema de Análisis de Imágenes
-Analiza imágenes usando Gemini Vision (gratis) con fallback a GPT-4o-mini
+Analiza imágenes usando Gemini Vision (gratis) con fallback a GPT-5.4-mini
 """
 
 import base64
@@ -37,7 +37,7 @@ class ImageAnalyzer:
             if self.gemini_key:
                 logger.info("  ✅ Gemini Vision disponible (GRATIS)")
             if self.openai_key:
-                logger.info("  ✅ GPT-4o-mini Vision disponible (fallback)")
+                logger.info("  ✅ GPT-5.4-mini Vision disponible (fallback)")
 
     async def analyze_image(
         self,
@@ -100,9 +100,9 @@ class ImageAnalyzer:
                 if result["success"]:
                     self._save_to_cache(cache_key, result)
                     return result
-                logger.warning("⚠️ Gemini Vision falló, intentando con GPT-4o-mini")
+                logger.warning("⚠️ Gemini Vision falló, intentando con GPT-5.4-mini")
 
-            # Fallback a GPT-4o-mini
+            # Fallback a GPT-5.4-mini
             if self.openai_key:
                 result = await self._analyze_with_openai(image_bytes, prompt)
                 if result["success"]:
@@ -153,7 +153,8 @@ REGLAS:
             # Codificar imagen en base64
             image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
-            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+            model = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
             headers = {
                 "Content-Type": "application/json",
@@ -205,7 +206,7 @@ REGLAS:
             return {"success": False, "error": str(e)}
 
     async def _analyze_with_openai(self, image_bytes: bytes, prompt: str) -> dict[str, Any]:
-        """Analiza imagen con GPT-4o-mini Vision"""
+        """Analiza imagen con GPT-5.4-mini Vision"""
         try:
             # Codificar imagen en base64
             image_b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -215,7 +216,7 @@ REGLAS:
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.openai_key}"}
 
             payload = {
-                "model": "gpt-4o-mini",
+                "model": os.getenv("OPENAI_VISION_MODEL", "gpt-5.4-mini"),
                 "messages": [
                     {
                         "role": "user",
@@ -235,7 +236,7 @@ REGLAS:
                         data = await response.json()
                         text = data["choices"][0]["message"]["content"]
 
-                        logger.info(f"✅ GPT-4o-mini Vision: {text[:100]}...")
+                        logger.info(f"✅ GPT-5.4-mini Vision: {text[:100]}...")
 
                         return {
                             "success": True,
@@ -245,11 +246,11 @@ REGLAS:
                         }
 
                     error_text = await response.text()
-                    logger.error(f"❌ GPT-4o-mini Vision error: {error_text}")
+                    logger.error(f"❌ GPT-5.4-mini Vision error: {error_text}")
                     return {"success": False, "error": error_text}
 
         except Exception as e:
-            logger.error(f"❌ Error con GPT-4o-mini Vision: {e}")
+            logger.error(f"❌ Error con GPT-5.4-mini Vision: {e}")
             return {"success": False, "error": str(e)}
 
     def _get_cache_key(self, image_bytes: bytes) -> str:

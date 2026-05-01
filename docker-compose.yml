@@ -38,6 +38,9 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-chatbot}:${POSTGRES_PASSWORD?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-chatbot}
+      # Swagger/ReDoc desactivados en producción por defecto. Override con DISABLE_DOCS=false en .env para desarrollo.
+      DISABLE_DOCS: ${DISABLE_DOCS:-true}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
     ports:
       - "8003:8003"
     volumes:

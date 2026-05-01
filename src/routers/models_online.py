@@ -57,38 +57,32 @@ def api_available_online_models(current_user: dict[str, Any] = Depends(get_curre
         "google": {
             "provider": "google",
             "models": [
-                {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "description": "Google's most capable model"},
-                {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "description": "Fast and efficient model"},
-                {"id": "gemini-pro", "name": "Gemini Pro", "description": "Google's general purpose model"},
+                {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite", "description": "Recomendado: rápido, gratis"},
+                {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "description": "Mejor calidad, tier gratuito disponible"},
+                {"id": "gemini-3.1-flash-lite-preview", "name": "Gemini 3.1 Flash Lite (preview)", "description": "Más nuevo, gratis (preview)"},
             ],
         },
         "openai": {
             "provider": "openai",
             "models": [
-                {"id": "gpt-4o", "name": "GPT-4o", "description": "OpenAI's most advanced model"},
-                {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "description": "Faster, cost-effective model"},
-                {"id": "gpt-4-turbo", "name": "GPT-4 Turbo", "description": "Latest GPT-4 with improved capabilities"},
-                {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "description": "Fast and cost-effective model"},
+                {"id": "gpt-5.4", "name": "GPT-5.4", "description": "Máxima calidad de OpenAI"},
+                {"id": "gpt-5.4-mini", "name": "GPT-5.4 Mini", "description": "Equilibrio calidad/precio (recomendado)"},
+                {"id": "gpt-5.4-nano", "name": "GPT-5.4 Nano", "description": "El más barato de OpenAI"},
             ],
         },
         "anthropic": {
             "provider": "anthropic",
             "models": [
-                {
-                    "id": "claude-3-5-sonnet-20241022",
-                    "name": "Claude 3.5 Sonnet",
-                    "description": "Anthropic's most capable model",
-                },
-                {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "description": "Most powerful Claude model"},
-                {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "description": "Balanced performance and speed"},
-                {"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku", "description": "Fast and cost-effective"},
+                {"id": "claude-opus-4-7", "name": "Claude Opus 4.7", "description": "Máxima capacidad"},
+                {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6", "description": "Mejor calidad/precio"},
+                {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "description": "Rápido y barato (recomendado)"},
             ],
         },
         "x-ai": {
             "provider": "x-ai",
             "models": [
-                {"id": "grok-beta", "name": "Grok Beta", "description": "X's conversational AI model"},
-                {"id": "grok-vision-beta", "name": "Grok Vision Beta", "description": "Grok with image understanding"},
+                {"id": "grok-4-1-fast", "name": "Grok 4.1 Fast", "description": "Rápido y económico, 2M contexto (recomendado)"},
+                {"id": "grok-4", "name": "Grok 4", "description": "Flagship completo, más caro"},
             ],
         },
     }

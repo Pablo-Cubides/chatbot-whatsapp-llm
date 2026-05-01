@@ -67,6 +67,7 @@ class LLMProvider(Enum):
     LM_STUDIO = "lmstudio"
     XAI = "xai"
     GROK = "grok"  # Alias para xAI
+    OPENROUTER = "openrouter"  # Gateway a 300+ modelos con tier gratuito
 
 
 @dataclass
@@ -102,7 +103,7 @@ class MultiProviderLLM:
                 name="Google Gemini",
                 api_key=os.getenv("GEMINI_API_KEY"),
                 base_url="https://generativelanguage.googleapis.com/v1beta",
-                model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+                model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite"),
                 is_reasoning=False,
                 is_free=True,  # 15 RPM gratuitas
             )
@@ -113,7 +114,7 @@ class MultiProviderLLM:
                 name="xAI Grok",
                 api_key=os.getenv("XAI_API_KEY"),
                 base_url=os.getenv("XAI_BASE_URL", "https://api.x.ai/v1"),
-                model=os.getenv("XAI_MODEL", "grok-beta"),
+                model=os.getenv("XAI_MODEL", "grok-4-1-fast"),
                 is_reasoning=True,  # Excelente para razonamiento
                 is_free=True,  # Límites generosos en beta
             )
@@ -124,7 +125,7 @@ class MultiProviderLLM:
                 name="OpenAI",
                 api_key=os.getenv("OPENAI_API_KEY"),
                 base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
                 is_reasoning=True,  # GPT-4 es bueno para razonamiento
                 is_free=False,  # Pago después del crédito inicial
             )
@@ -135,9 +136,20 @@ class MultiProviderLLM:
                 name="Anthropic Claude",
                 api_key=os.getenv("CLAUDE_API_KEY"),
                 base_url="https://api.anthropic.com",
-                model=os.getenv("CLAUDE_MODEL", "claude-3-haiku-20240307"),
+                model=os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
                 is_reasoning=True,
                 is_free=False,
+            )
+
+        # OpenRouter (gateway a 300+ modelos, 29 modelos gratuitos con rate limit 200 req/día)
+        if os.getenv("OPENROUTER_API_KEY"):
+            self.providers[LLMProvider.OPENROUTER] = APIConfig(
+                name="OpenRouter",
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+                base_url="https://openrouter.ai/api/v1",
+                model=os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash-lite:free"),
+                is_reasoning=False,
+                is_free=True,  # Tier gratuito disponible (límite 200 req/día)
             )
 
         # Proveedores locales: se registran sin hacer I/O durante import/init.
@@ -597,6 +609,8 @@ class MultiProviderLLM:
                 return await self._call_lmstudio(config, messages, max_retries=max_retries)
             elif provider == LLMProvider.XAI:
                 return await self._call_xai(config, messages, max_retries=max_retries)
+            elif provider == LLMProvider.OPENROUTER:
+                return await self._call_openrouter(config, messages, max_retries=max_retries)
             return {"success": False, "error": "Proveedor no soportado"}
 
         if not CIRCUIT_BREAKER_AVAILABLE:
@@ -819,6 +833,63 @@ class MultiProviderLLM:
             max_retries=max_retries,
             include_auth_header=True,
         )
+
+    async def _call_openrouter(self, config: APIConfig, messages: list[dict], max_retries: int = 3) -> dict:
+        """Llama a OpenRouter — gateway a 300+ modelos con tier gratuito.
+
+        OpenRouter requiere dos headers adicionales para identificar la app
+        (HTTP-Referer y X-Title) que mejoran el rate limit y el soporte.
+        Modelos gratuitos usan el sufijo :free en el model ID, ej:
+          google/gemini-2.5-flash-lite:free
+          meta-llama/llama-3.3-70b-instruct:free
+          deepseek/deepseek-r1:free
+        """
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {config.api_key}",
+            "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", "http://localhost:8003"),
+            "X-Title": os.getenv("OPENROUTER_APP_NAME", "WhatsApp Chatbot"),
+        }
+        payload = {
+            "model": config.model,
+            "messages": messages,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+        }
+        timeout = aiohttp.ClientTimeout(total=self.provider_timeout_seconds)
+        transient_statuses = {408, 429, 500, 502, 503, 504}
+
+        for attempt in range(max_retries):
+            try:
+                async with self._session_scope() as session:
+                    async with session.post(
+                        f"{config.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=timeout,
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            return {
+                                "success": True,
+                                "response": data["choices"][0]["message"]["content"],
+                                "tokens_used": data.get("usage", {}).get("total_tokens", 0),
+                            }
+
+                        error_text = await response.text()
+                        if response.status in transient_statuses and attempt < (max_retries - 1):
+                            await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                            continue
+                        return {"success": False, "error": f"OpenRouter Error ({response.status}): {error_text}"}
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < (max_retries - 1):
+                    await asyncio.sleep(self.retry_base_delay_seconds * (2**attempt))
+                    continue
+                return {"success": False, "error": f"OpenRouter Exception: {str(e)}"}
+            except Exception as e:
+                return {"success": False, "error": f"OpenRouter Exception: {str(e)}"}
+
+        return {"success": False, "error": "OpenRouter retries exhausted"}
 
     async def _call_openai_compatible(
         self,

@@ -62,7 +62,7 @@ async function showApiManagement() {
                         <option value="xai">xAI Grok</option>
                     </select>
                     <input type="password" id="providerApiKey" placeholder="API Key" required class="ui-input">
-                    <input type="text" id="providerModel" placeholder="Modelo (ej: gpt-4o-mini)" required class="ui-input">
+                    <input type="text" id="providerModel" placeholder="Modelo (ej: gpt-5.4-mini)" required class="ui-input">
                     <button type="submit" class="ui-btn ui-btn-success">
                         ➕ Agregar Proveedor
                     </button>
