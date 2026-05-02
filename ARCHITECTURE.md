@@ -1,250 +1,325 @@
-# 🏗️ Arquitectura del Sistema
+# Arquitectura del Sistema
 
-Este documento describe la arquitectura actual del **Enterprise WhatsApp AI Chatbot Platform**.
+**Última actualización:** Abril 2026
 
-## ✅ Estado Actual (Feb 2026)
+---
 
-- **App canónica HTTP**: `admin_panel:app`
-- **Routers modulares activos**: `src/routers/*` (auth, business_config, campaigns, monitoring, webhooks, analysis_adaptive, chat_core, analytics, ai_models_admin, calendar_admin, contexts_data, contacts, chat_files_admin, models_online, model_switch_admin, manual_messaging_admin, legacy_compat, legacy_admin_data, system_admin, whatsapp_provider, whatsapp_runtime_admin, lmstudio_admin)
-- **Worker separado**: `whatsapp_automator.py`
-- **Seguridad activa**: middleware global de auth para `/api/*`, verificación de firma webhook, compare_digest para token legacy, CSP/headers de hardening
-- **Documentación operativa**: API en `docs/API.md`, runbook en `docs/SECURITY_RUNBOOK.md`, ADR inicial en `docs/adr/0001-security-hardening.md`
-- **Rate limiting HTTP**: middleware global con buckets por endpoint (`/api/*`, `/api/auth/login`, `/api/system/*`), backend Redis con fallback en memoria
-- **Rotación Fernet**: verificación periódica de antigüedad de clave en scheduler (`FERNET_KEY_ROTATION_DAYS`)
+## Estado actual
 
-## 📊 Diagrama de Alto Nivel
+- **App canónica HTTP**: `admin_panel:app` (FastAPI, puerto 8003)
+- **Routers modulares**: `src/routers/` — 22 routers cargados al startup
+- **Worker separado**: `whatsapp_automator.py` (Playwright, contenedor `worker-web`)
+- **Scheduler**: `src/workers/scheduler_worker.py` (contenedor `scheduler`)
+- **Docs API**: deshabilitados por defecto en producción (`DISABLE_DOCS=true`). Activar con `DISABLE_DOCS=false` para desarrollo.
+
+---
+
+## Diagrama de alto nivel
 
 ```mermaid
 graph TB
-    subgraph "Frontend Layer"
-        UI[Web UI Dashboard]
-        WA[WhatsApp Interface]
+    subgraph "Clientes"
+        WA[WhatsApp\nUsuarios]
+        ADMIN[Panel Admin\nWeb Browser]
     end
-    
-    subgraph "API Layer"
-        FW[FastAPI Server<br/>:8003]
-        WS[WebSocket Handler]
+
+    subgraph "API Layer — :8003"
+        FW[FastAPI\nadmin_panel.py]
+        WS[WebSocket\n/ws/metrics]
+        MW[Middlewares\nAuth · RateLimit · Security Headers]
     end
-    
-    subgraph "Business Logic"
-        AUTH[Auth System<br/>JWT + bcrypt]
-        LLM[Multi-Provider LLM<br/>Gemini/OpenAI/Claude/xAI]
-        QUEUE[Message Queue<br/>Scheduler]
+
+    subgraph "Proveedores de IA"
+        GEM[Gemini\ngemini-2.5-flash-lite]
+        OR[OpenRouter\n300+ modelos · tier gratuito]
+        XAI[xAI Grok\ngrok-4-1-fast]
+        OAI[OpenAI\ngpt-5.4-mini]
+        CLA[Claude\nclaude-haiku-4-5]
+        OLL[Ollama\nqwen3:4b — Local]
+        LMS[LM Studio\nLocal]
+    end
+
+    subgraph "WhatsApp"
+        WEB[Playwright\nWhatsApp Web]
+        CLOUD[Meta Cloud API]
+    end
+
+    subgraph "Servicios internos"
+        AUTH[Auth System\nJWT + bcrypt]
+        LLM[Multi-Provider LLM\nFallback automático]
+        QUEUE[Queue System\nAPScheduler]
+        CACHE[Cache System\nRedis + Memory]
+        AUDIT[Audit System]
         ALERT[Alert System]
-        CACHE[Cache System<br/>Redis/Memory]
+        CAL[Calendar\nGoogle + Outlook]
     end
-    
-    subgraph "Integration Layer"
-        WEB[WhatsApp Web<br/>Playwright]
-        CLOUD[WhatsApp Cloud<br/>Meta API]
-        CAL[Calendar Integration<br/>Google/Outlook]
+
+    subgraph "Persistencia"
+        PG[(PostgreSQL 15)]
+        REDIS[(Redis 7)]
     end
-    
-    subgraph "Data Layer"
-        PG[(PostgreSQL)]
-        SQLITE[(SQLite)]
-        REDIS[(Redis)]
-    end
-    
-    UI --> FW
-    WA --> WEB
-    WA --> CLOUD
-    
-    FW --> AUTH
-    FW --> LLM
-    FW --> QUEUE
-    FW --> ALERT
-    
-    AUTH --> CACHE
+
+    WA --> WEB & CLOUD
+    ADMIN --> FW
+    WEB & CLOUD --> FW
+    FW --> MW --> AUTH & LLM & QUEUE & ALERT & CAL
+    FW --> WS
+
+    LLM --> GEM & OR & XAI & OAI & CLA & OLL & LMS
+    AUTH & QUEUE & AUDIT & ALERT --> PG
+    CACHE & AUTH --> REDIS
     LLM --> CACHE
-    
-    WEB --> FW
-    CLOUD --> FW
-    
-    FW --> CAL
-    
-    AUTH --> PG
-    QUEUE --> PG
-    ALERT --> PG
-    
-    CACHE --> REDIS
 ```
 
-## 📁 Estructura de Directorios
+---
+
+## Estructura de directorios
 
 ```
 chatbot-whatsapp-llm/
-├── 📁 src/                     # Código fuente principal
-│   ├── 📁 models/              # Modelos SQLAlchemy
-│   ├── 📁 routers/             # Routers FastAPI modulares (fuente de verdad)
-│   │   ├── auth.py             # Autenticación
-│   │   ├── monitoring.py       # Monitoreo y métricas
-│   │   ├── campaigns.py        # Campañas y cola
-│   │   ├── business_config.py  # Configuración de negocio
-│   │   ├── ai_models_admin.py  # Configuración avanzada de proveedores IA
-│   │   ├── calendar_admin.py   # Configuración e integración calendario
-│   │   ├── chat_files_admin.py # Gestión de archivos/chat contextos
-│   │   ├── model_switch_admin.py # Cambio de modelos activos (reasoner/current)
-│   │   ├── manual_messaging_admin.py # Composición/envío manual, bulk y uploads
-│   │   ├── legacy_compat.py   # Endpoints legacy de compatibilidad
-│   │   ├── legacy_admin_data.py # Endpoints legacy (/models, /rules, /contacts)
-│   │   ├── system_admin.py     # Control de procesos/sistema
-│   │   ├── whatsapp_runtime_admin.py # Control runtime de WhatsApp (start/stop/status)
-│   │   ├── lmstudio_admin.py   # Gestión LM Studio (modelos/arranque/carga)
-│   │   ├── webhooks.py         # Webhooks WhatsApp
-│   │   └── deps.py             # Dependencias compartidas
-│   └── 📁 services/            # 30+ servicios de negocio
-│       ├── auth_system.py      # Autenticación JWT + bcrypt
-│       ├── multi_provider_llm.py # Multi-proveedor LLM
-│       ├── queue_system.py     # Cola de mensajes
-│       ├── alert_system.py     # Sistema de alertas
-│       ├── cache_system.py     # Cache Redis
-│       ├── protection_system.py # Rate limiting + Circuit Breaker
-│       ├── metrics.py          # Métricas Prometheus
-│       └── ...
-│
-├── 📁 tests/                   # Suite de tests
-│   ├── api/                    # Tests API por dominio
-│   ├── unit/                   # Tests unitarios por dominio
-│   ├── test_auth_system.py
-│   ├── test_api_endpoints.py
-│   ├── test_crypto.py
-│   ├── test_protection_system.py
-│   ├── test_cache_system.py
-│   └── ...
-│
-├── 📁 config/                  # Archivos de configuración
-├── 📁 data/                    # Datos persistentes
-├── 📁 ui/                      # UI web estática
-├── 📁 alembic/                 # Migraciones de base de datos
-│
-├── admin_panel.py              # Entry point canónico (FastAPI)
-├── whatsapp_automator.py       # Entry point: Worker WhatsApp
+├── admin_panel.py              # Entry point FastAPI (canónico)
+├── whatsapp_automator.py       # Worker WhatsApp Web (Playwright)
 ├── crypto.py                   # Encriptación Fernet
 ├── chat_sessions.py            # Gestión de sesiones de chat
-├── reasoner.py                 # Motor de razonamiento LLM
-├── docker-compose.yml          # Orquestación Docker
-├── Dockerfile                  # Container principal
-├── requirements.txt            # Dependencias
-└── pytest.ini                  # Configuración tests
+│
+├── src/
+│   ├── models/                 # Modelos SQLAlchemy
+│   │   └── admin_db.py         # Engine, sesión, inicialización
+│   ├── routers/                # 22 routers FastAPI modulares
+│   │   ├── auth.py             # Login, logout, refresh, JWT WS token
+│   │   ├── chat_core.py        # Chat principal, prompts, settings
+│   │   ├── contacts.py         # Gestión de contactos
+│   │   ├── campaigns.py        # Campañas y mensajería masiva
+│   │   ├── manual_messaging_admin.py  # Envío manual
+│   │   ├── business_config.py  # Configuración del negocio
+│   │   ├── ai_models_admin.py  # Admin de proveedores IA
+│   │   ├── calendar_admin.py   # Calendario (Google/Outlook)
+│   │   ├── analytics.py        # Métricas y dashboards
+│   │   ├── monitoring.py       # Health, estado del sistema
+│   │   ├── webhooks.py         # Webhooks WhatsApp Cloud
+│   │   ├── whatsapp_provider.py          # Control WhatsApp
+│   │   ├── whatsapp_runtime_admin.py     # Start/stop runtime
+│   │   ├── system_admin.py     # Control de procesos
+│   │   ├── model_switch_admin.py         # Cambio de modelos activos
+│   │   ├── models_online.py    # Modelos cloud disponibles
+│   │   ├── lmstudio_admin.py   # Control LM Studio local
+│   │   ├── contexts_data.py    # Contextos y archivos de chat
+│   │   ├── chat_files_admin.py # Gestión de archivos
+│   │   ├── analysis_adaptive.py          # Análisis adaptativo
+│   │   ├── legacy_compat.py    # Endpoints legacy
+│   │   ├── legacy_admin_data.py          # Datos legacy
+│   │   └── deps.py             # Dependencias compartidas
+│   │
+│   └── services/               # 30+ servicios de negocio
+│       ├── auth_system.py      # JWT, bcrypt, tokens
+│       ├── multi_provider_llm.py         # LLM multi-proveedor + fallback
+│       ├── cache_system.py     # Redis con fallback en memoria
+│       ├── queue_system.py     # Cola de mensajes
+│       ├── alert_system.py     # Reglas y notificaciones
+│       ├── audit_system.py     # Log de eventos de seguridad
+│       ├── http_rate_limit.py  # Rate limiting global
+│       ├── protection_system.py          # Circuit breaker
+│       ├── metrics.py          # Prometheus metrics
+│       ├── audio_transcriber.py          # Whisper (faster-whisper)
+│       ├── calendar_service.py           # Integración calendarios
+│       ├── whatsapp_system.py  # Lógica WhatsApp
+│       ├── context_loader.py   # Carga de contextos por chat
+│       ├── humanized_responses.py        # Humanización de respuestas
+│       └── ...
+│
+├── alembic/                    # Migraciones de base de datos
+│   └── versions/               # 6 migraciones (inicial → actual)
+├── tests/                      # Suite de tests (pytest)
+├── ui/                         # Frontend estático HTML/CSS/JS
+├── templates/                  # Templates Jinja2
+├── data/                       # Datos persistentes (no en git)
+├── logs/                       # Logs de aplicación (no en git)
+├── config/                     # Configuración runtime
+│
+├── Dockerfile                  # Imagen app (multi-stage)
+├── Dockerfile.worker-web       # Imagen worker Playwright
+├── Dockerfile.scheduler        # Imagen scheduler
+├── docker-compose.yml          # Orquestación (5 servicios)
+├── docker-compose.proxy.yml    # Nginx reverse proxy (opcional)
+├── docker-compose.backup.yml   # Backup PostgreSQL (opcional)
+├── requirements.txt            # Dependencias producción
+├── requirements-worker.txt     # Dependencias worker (+ playwright)
+└── requirements-dev.txt        # Dependencias desarrollo (+ pytest)
 ```
 
-## 🔧 Componentes Principales
+---
+
+## Componentes principales
 
 ### 1. API Layer (FastAPI)
 
-**Nota:** El tráfico productivo debe entrar por `admin_panel:app`.
+Todos los endpoints `/api/*` requieren `Authorization: Bearer <jwt>` excepto:
+- `POST /api/auth/login`
+- `GET /api/auth/refresh`
+- OAuth callbacks de calendario
 
-| Endpoint Group | Prefijo | Descripción |
-|---------------|---------|-------------|
-| Auth | `/api/auth` | Login, logout, tokens JWT |
-| Business | `/api/business` | Configuración del negocio |
-| Queue/Campaigns | `/api/campaigns` | Cola de mensajes y campañas |
-| Campaigns | `/api/campaigns` | Campañas masivas |
-| Alerts | `/api/alerts` | Sistema de alertas |
-| Analytics | `/api/analytics` | Métricas y estadísticas |
-| WhatsApp | `/api/whatsapp` | Estado y control de WhatsApp |
-| LM Studio | `/api/lmstudio` | Control de modelos locales |
+| Grupo | Prefijo | Descripción |
+|-------|---------|-------------|
+| Auth | `/api/auth` | Login, refresh, me, logout, ws-token |
+| Chat | `/api/chat` | Conversación, prompts, settings |
+| Contacts | `/api/contacts` | CRM de contactos |
+| Campaigns | `/api/campaigns` | Cola y campañas masivas |
+| Business | `/api/business` | Config del negocio, contexto |
+| AI Models | `/api/ai-models` | Proveedores, test de conexión |
+| Calendar | `/api/calendar` | Config y OAuth (Google/Outlook) |
+| Analytics | `/api/analytics` | Métricas, dashboards |
+| Monitoring | `/api/monitoring` | Health detallado, estado |
+| WhatsApp | `/api/whatsapp` | Estado, start/stop runtime |
+| System | `/api/system` | Control de procesos (solo admin) |
+| Webhooks | `/api/webhook` | Entrada de mensajes WhatsApp Cloud |
+| Health | `/healthz` | Health check (sin auth) |
+| Metrics | `/metrics` | Prometheus metrics (sin auth) |
 
-### 2. Multi-Provider LLM
+### 2. Multi-Provider LLM con fallback
 
-Proveedores soportados con fallback automático:
+Fallback order configurable en `.env` con `AI_FALLBACK_ORDER`:
 
-1. **Google Gemini** - Gratuito (15 RPM)
-2. **OpenAI** (GPT-4o-mini)
-3. **Anthropic Claude**
-4. **xAI Grok**
-5. **Ollama** (local)
-6. **LM Studio** (local)
+```
+gemini → openrouter → xai → openai → claude → ollama → lmstudio
+```
 
-### 3. Sistema de Seguridad
+Modelos activos (Abril 2026):
+
+| Proveedor | Variable | Modelo default |
+|-----------|----------|---------------|
+| Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash-lite` |
+| OpenRouter | `OPENROUTER_API_KEY` | `google/gemini-2.5-flash-lite:free` |
+| xAI | `XAI_API_KEY` | `grok-4-1-fast` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-5.4-mini` |
+| Claude | `CLAUDE_API_KEY` | `claude-haiku-4-5-20251001` |
+| Ollama | — (local) | `qwen3:4b` |
+| LM Studio | — (local) | `qwen3.5-4b-q4_k_m` |
+
+### 3. Sistema de seguridad
 
 ```mermaid
 graph LR
-    REQ[Request] --> RL[Rate Limiter]
-    RL --> CB[Circuit Breaker]
-    CB --> AUTH[JWT Validation]
+    REQ[Request] --> RID[Request ID]
+    RID --> RL[Rate Limiter]
+    RL --> SH[Security Headers]
+    SH --> AUTH[JWT Validation]
     AUTH --> RBAC[Role Check]
     RBAC --> EP[Endpoint]
 ```
 
-- **Rate Limiting**: Sliding window algorithm
-- **Circuit Breaker**: Protección contra APIs caídas
-- **JWT Authentication**: Tokens con expiración
-- **bcrypt**: Hash seguro de passwords
-- **Fernet**: Encriptación de tokens OAuth
-- **HTTP Rate Limiter**: middleware global con headers `X-RateLimit-*` y respuesta `429`
-- **Fernet Key Hardening**: permisos restrictivos POSIX + ACL endurecida en Windows
+Controles activos:
+- **Rate limiting**: sliding window por endpoint, backend Redis con fallback en memoria
+- **Circuit breaker**: protección automática ante fallos de APIs externas
+- **JWT**: tokens con expiración, refresh tokens, ws-tokens con scope específico
+- **bcrypt**: hash de contraseñas
+- **Fernet**: encriptación de tokens OAuth y datos sensibles
+- **Headers**: CSP, X-Frame-Options, HSTS, CORP, COOP, Referrer-Policy
+- **Audit log**: registro estructurado de eventos de seguridad
+- **CORS**: validación estricta, nunca permite `*` con credentials
 
-### 4. Sistema de Cola
+### 4. Sistema de cola
 
-Estados de mensajes:
-- `pending` → `processing` → `sent`
-- `pending` → `processing` → `failed` → `retry`
-- `cancelled`
-
-### 5. Sistema de Alertas
-
-Tipos de reglas:
-- **keyword**: Palabras clave
-- **regex**: Patrones regex
-- **sentiment**: Análisis de sentimiento
-
-Severidades: `low`, `medium`, `high`
-
-## 🐳 Deployment (Docker)
-
-```yaml
-services:
-  app:        # API + Admin Panel (puerto 8003)
-  worker-web: # WhatsApp Web automation
-  scheduler:  # Background jobs
-  postgres:   # Base de datos
-  redis:      # Cache
+```
+pending → processing → sent
+pending → processing → failed → retry (hasta N intentos)
+cancelled
 ```
 
-## 📡 Flujo de Datos
+El scheduler ejecuta trabajos periódicos: procesamiento de cola, rotación de keys Fernet, limpieza de sesiones.
+
+### 5. Audio (faster-whisper)
+
+Transcripción local de notas de voz. Requiere `faster-whisper` instalado (incluido en `requirements.txt`) y `ffmpeg` en el sistema (incluido en el Dockerfile).
+
+Configuración:
+```env
+AUDIO_TRANSCRIPTION_ENABLED=true
+WHISPER_MODEL_SIZE=base        # tiny, base, small, medium, large
+WHISPER_DEVICE=cpu             # cpu o cuda
+```
+
+---
+
+## Flujo de mensaje entrante
 
 ```mermaid
 sequenceDiagram
     participant WA as WhatsApp
+    participant WK as worker-web / webhook
     participant API as FastAPI
+    participant CACHE as Redis
     participant LLM as Multi-LLM
     participant DB as PostgreSQL
-    participant Cache as Redis
-    
-    WA->>API: Mensaje entrante
-    API->>Cache: Verificar cache
+
+    WA->>WK: Mensaje entrante
+    WK->>API: POST /api/chat/message
+    API->>CACHE: Verificar respuesta cacheada
     alt Cache hit
-        Cache-->>API: Respuesta cacheada
+        CACHE-->>API: Respuesta
     else Cache miss
-        API->>LLM: Generar respuesta
+        API->>LLM: Generar respuesta (fallback automático)
         LLM-->>API: Respuesta
-        API->>Cache: Guardar en cache
+        API->>CACHE: Guardar (TTL configurable)
     end
-    API->>DB: Log conversación
-    API->>WA: Enviar respuesta
+    API->>DB: Log conversación + auditoría
+    API->>WK: Respuesta
+    WK->>WA: Enviar mensaje
 ```
 
-## 🔐 Variables de Entorno Críticas
+---
+
+## Variables de entorno críticas
 
 | Variable | Requerida | Descripción |
 |----------|-----------|-------------|
-| `JWT_SECRET` | ✅ | Clave secreta (min 32 chars) |
-| `ADMIN_PASSWORD` | ✅ | Password administrador |
-| `DATABASE_URL` | ❌ | PostgreSQL (default: SQLite) |
-| `REDIS_URL` | ❌ | Cache Redis (default: memoria) |
-| `CORS_ORIGINS` | ❌ | Orígenes permitidos |
-| `WHATSAPP_APP_SECRET` | ✅ (Cloud) | Necesario para validar `X-Hub-Signature-256` |
-| `RATE_LIMIT_ENABLED` | ❌ | Habilita rate limiting HTTP global |
-| `RATE_LIMIT_REDIS_ENABLED` | ❌ | Usa Redis para contadores de límite |
-| `FERNET_KEY_ROTATION_DAYS` | ❌ | Umbral de rotación de clave Fernet |
+| `JWT_SECRET` | Sí | Clave JWT (mín. 32 chars, generada automáticamente) |
+| `ADMIN_PASSWORD` | Sí | Password admin inicial (mín. 8 chars) |
+| `OPERATOR_PASSWORD` | No | Password operador inicial |
+| `POSTGRES_PASSWORD` | Sí (Docker) | Password PostgreSQL |
+| `REDIS_PASSWORD` | Sí (Docker) | Password Redis |
+| `REDIS_URL` | No | URL Redis (default: solo memoria) |
+| `DATABASE_URL` | No | URL PostgreSQL (default: SQLite) |
+| `LEGACY_TOKEN_ENABLED` | No | `false` en producción/beta |
+| `DISABLE_DOCS` | No | `true` en producción, `false` en desarrollo |
+| `AUTO_MIGRATE` | No | `true` ejecuta migraciones al iniciar |
+| `WHATSAPP_MODE` | No | `web`, `cloud`, o `both` |
+| `WHATSAPP_APP_SECRET` | Sí (Cloud) | Firma de webhooks Meta |
+| `GEMINI_API_KEY` | Mín. 1 IA | API key Google AI Studio |
+| `OPENROUTER_API_KEY` | Mín. 1 IA | API key OpenRouter (gratuito) |
+| `OPENAI_API_KEY` | No | API key OpenAI |
+| `CLAUDE_API_KEY` | No | API key Anthropic |
+| `XAI_API_KEY` | No | API key xAI |
+| `GEMINI_MODEL` | No | Default: `gemini-2.5-flash-lite` |
+| `OPENROUTER_MODEL` | No | Default: `google/gemini-2.5-flash-lite:free` |
+| `OPENAI_MODEL` | No | Default: `gpt-5.4-mini` |
+| `CLAUDE_MODEL` | No | Default: `claude-haiku-4-5-20251001` |
+| `XAI_MODEL` | No | Default: `grok-4-1-fast` |
+| `AI_FALLBACK_ORDER` | No | Default: `gemini,openrouter,xai,openai,claude,ollama,lmstudio` |
+| `CORS_ORIGINS` | No | Orígenes CORS permitidos |
+| `LOG_LEVEL` | No | `INFO` (default), `DEBUG`, `WARNING` |
+| `LOG_FORMAT` | No | `plain` (desarrollo), `json` (producción) |
 
-## 📈 Métricas de Performance
+---
 
-| Métrica | Target |
-|---------|--------|
-| Response Time | < 1s |
-| Concurrent Users | 100+ |
-| Uptime | 99.5% |
-| Test Coverage | 50%+ |
+## Migraciones de base de datos (Alembic)
+
+6 migraciones en orden:
+
+1. `20260213_01` — Tablas core (usuarios, mensajes, sesiones)
+2. `20260215_02` — Tablas de dominio (contactos, campañas)
+3. `20260215_03` — Calendario y citas
+4. `20260215_04` — Índices compuestos de auditoría
+5. `20260215_05` — Escalabilidad y persistencia (fase 3)
+6. `20260217_06` — Tablas de analítica
+
+---
+
+## Docker — servicios y recursos
+
+| Servicio | Imagen | Puerto | CPU | RAM |
+|----------|--------|--------|-----|-----|
+| `app` | `Dockerfile` | 8003 | 1.00 | 1GB |
+| `worker-web` | `Dockerfile.worker-web` | — | 1.00 | 1GB |
+| `scheduler` | `Dockerfile.scheduler` | — | 0.75 | 512MB |
+| `postgres` | `postgres:15-alpine` | 5432 (localhost) | 0.75 | 768MB |
+| `redis` | `redis:7-alpine` | 6379 (localhost) | 0.50 | 384MB |

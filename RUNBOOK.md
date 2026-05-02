@@ -19,9 +19,9 @@ Este documento define la operación de producción del sistema Chatbot WhatsApp.
 ## 3) URLs operativas
 
 - Health principal: http://localhost:8003/healthz
-- API docs: http://localhost:8003/docs
 - UI principal: http://localhost:8003/ui/index.html
 - Dashboard realtime: http://localhost:8003/ui/realtime_dashboard.html
+- API docs (solo desarrollo): http://localhost:8003/docs — requiere `DISABLE_DOCS=false` en `.env`
 
 ## 4) Matriz de severidad
 
@@ -211,10 +211,17 @@ docker compose exec redis redis-cli -a "$REDIS_PASSWORD" ping
 
 ## 16) Procedimientos de mantenimiento
 
-- Rotar secretos trimestralmente.
-- Revisar dependencias semanalmente.
+- Rotar `JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD` trimestralmente.
+- Revisar modelos de IA configurados cada trimestre (los proveedores deprecan modelos).
+- Revisar dependencias semanalmente (`pip-audit -r requirements.txt`).
 - Revisar tamaño de logs y retención semanal.
 - Prueba de restore mensual.
+
+Modelos activos a verificar (Abril 2026):
+- Gemini: `gemini-2.5-flash-lite` (Gemini 2.0 Flash se apaga Jun 1, 2026)
+- OpenAI: `gpt-5.4-mini` (gpt-4o-mini fue retirado Feb 13, 2026)
+- Claude: `claude-haiku-4-5-20251001`
+- xAI: `grok-4-1-fast`
 
 ## 17) Gestión de capacidad
 

@@ -20,13 +20,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 try:
     from pythonjsonlogger import jsonlogger
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     jsonlogger = None
 
 redis: Any
 try:
     import redis
-except Exception:
+except ImportError:
     redis = None
 
 psutil: Any
@@ -34,7 +34,7 @@ try:
     import psutil as _psutil
 
     psutil = _psutil
-except Exception:
+except ImportError:
     psutil = None
 
 # Setup logger
@@ -202,6 +202,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Error cleaning DB connections on shutdown: %s", e)
 
 
+_docs_enabled = os.getenv("DISABLE_DOCS", "false").strip().lower() != "true"
+
 app = FastAPI(
     title="Chatbot Admin Panel",
     description=(
@@ -209,6 +211,9 @@ app = FastAPI(
         "operación de mensajería, monitoreo, analítica y automatización de procesos."
     ),
     version=os.getenv("APP_VERSION", "1.0.0"),
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
     openapi_tags=[
         {"name": "auth", "description": "Autenticación y gestión de sesión"},
         {"name": "chat-core", "description": "Chat principal, prompts y settings"},

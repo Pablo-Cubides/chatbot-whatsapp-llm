@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     libpq-dev \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -37,6 +38,8 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y \
     libpq5 \
     curl \
+    ffmpeg \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -r -s /bin/bash appuser

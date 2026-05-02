@@ -1,13 +1,10 @@
-# TROUBLESHOOTING OPERACIONAL
+# Troubleshooting Operacional
 
 Guía de resolución rápida para incidentes frecuentes.
 
-## 0) Checklist universal antes de empezar
+---
 
-1. Registrar timestamp de inicio.
-2. Verificar alcance (1 usuario, todos, región, endpoint).
-3. Capturar estado de servicios.
-4. Capturar logs de los últimos 15 minutos.
+## 0) Checklist universal antes de empezar
 
 ```bash
 docker compose ps
@@ -19,294 +16,344 @@ curl -i http://localhost:8003/healthz
 
 ---
 
-## 1) 401 en endpoints protegidos
+## 1) `401` en endpoints protegidos
 
-### Árbol de decisión
-
-- ¿Falla solo un usuario?
-	- Sí → revisar credenciales y expiración de token.
-	- No → revisar `JWT_SECRET` y reloj del servidor.
-
-### Comandos
+**Árbol de decisión:**
+- ¿Falla solo un usuario? → revisar credenciales y expiración de token
+- ¿Falla para todos? → revisar que `JWT_SECRET` no cambió entre reinicios
 
 ```bash
 curl -i http://localhost:8003/api/auth/me -H "Authorization: Bearer <token>"
 ```
 
-### Esperado
-
-- 200 con payload de usuario.
-
-### Si falla
-
-- 401: token inválido/expirado o firma no válida.
-- Confirmar que todos los servicios usan el mismo `JWT_SECRET`.
+**Si el token expiró:** hacer login nuevamente con `POST /api/auth/login` y usar el nuevo `access_token`.
 
 ---
 
 ## 2) Login bloqueado o rate limit excesivo
 
-### Diagnóstico
-
-- Revisar intentos fallidos y lockout.
-- Confirmar configuración de límites por endpoint.
-
 ```bash
 docker compose logs --since=30m app | grep -i "SECURITY_LOGIN_FAILED\|lockout\|rate limit"
 ```
 
-### Esperado
-
-- Eventos auditables con motivos claros.
-
-### Acción
-
-- Identificar IP/origen abusivo.
-- Ajustar temporalmente límites solo con change control.
+**Acción:** identificar IP abusiva. Ajustar límites solo con change control.
 
 ---
 
 ## 3) WebSocket de métricas no conecta
 
-### Diagnóstico
-
-- Confirmar token WS emitido.
-- Confirmar que cliente envía auth como primer mensaje.
-
 ```bash
-curl -i -X POST http://localhost:8003/api/auth/ws-token -H "Authorization: Bearer <access_token>"
+curl -i -X POST http://localhost:8003/api/auth/ws-token \
+  -H "Authorization: Bearer <access_token>"
 ```
 
-### Esperado
+**Causas típicas:**
+- Token enviado en query string en vez de en el primer mensaje JSON (rechazado con código 1008)
+- Scope inválido en el token WS
+- Token WS expirado — obtener uno nuevo
 
-- 200 con `ws_token`.
-
-### Causas típicas
-
-- Token enviado en query string (rechazado).
-- Scope inválido en token WS.
-- Token expirado.
+**Flujo correcto:**
+1. Conectar al WS
+2. Enviar como primer mensaje: `{"type": "auth", "token": "<ws_token>"}`
 
 ---
 
-## 4) `/healthz` responde 503
-
-### Diagnóstico
-
-- Revisar conexión DB.
+## 4) `/healthz` responde `503`
 
 ```bash
 docker compose logs --tail=200 app
 docker compose exec postgres pg_isready -U ${POSTGRES_USER:-chatbot}
 ```
 
-### Acción
-
-- Reiniciar postgres si está unhealthy.
-- Validar `DATABASE_URL`.
+**Acción:** si PostgreSQL está unhealthy, reiniciarlo y validar `DATABASE_URL`.
 
 ---
 
 ## 5) Error de conexión a PostgreSQL
 
-### Diagnóstico
-
 ```bash
-docker compose exec postgres psql -U ${POSTGRES_USER:-chatbot} -d ${POSTGRES_DB:-chatbot} -c "SELECT 1"
+docker compose exec postgres psql \
+  -U ${POSTGRES_USER:-chatbot} \
+  -d ${POSTGRES_DB:-chatbot} \
+  -c "SELECT 1"
 ```
 
-### Esperado
-
-- Resultado `1`.
-
-### Acción
-
-- Si falla autenticación: revisar usuario/password.
-- Si timeout: revisar red y puertos.
+**Causas:**
+- `POSTGRES_PASSWORD` incorrecto o no configurado en `.env`
+- El contenedor de postgres aún no terminó de iniciar — esperar el health check
+- `DATABASE_URL` apunta a host incorrecto (usar `postgres` como hostname dentro de Docker)
 
 ---
 
 ## 6) Redis no responde
 
-### Diagnóstico
-
 ```bash
 docker compose exec redis redis-cli -a "$REDIS_PASSWORD" ping
 ```
 
-### Esperado
+**Esperado:** `PONG`
 
-- `PONG`.
+**Causas:**
+- `REDIS_PASSWORD` en `.env` no coincide con el configurado en `docker-compose.yml`
+- Contenedor redis no está running: `docker compose up -d redis`
 
-### Acción
-
-- Validar contraseña y estado del contenedor.
-- Reiniciar redis y verificar salud.
+**Nota:** si Redis no responde, la app continúa funcionando pero sin caché (fallback en memoria). El rate limiting también cae a modo en memoria.
 
 ---
 
 ## 7) Respuestas LLM lentas o fallidas
 
-### Diagnóstico
-
-- Revisar proveedor primario.
-- Verificar fallback activo.
-- Revisar timeouts.
-
 ```bash
-docker compose logs --since=20m app | grep -i "provider\|fallback\|timeout\|circuit"
+docker compose logs --since=20m app | grep -i "provider\|fallback\|timeout\|circuit\|openrouter\|gemini"
 ```
 
-### Acción
+**Diagnóstico por proveedor:**
 
-- Confirmar claves API.
-- Forzar proveedor alterno temporal si aplica.
+| Síntoma | Causa probable | Acción |
+|---------|---------------|--------|
+| `Gemini API Error (429)` | Rate limit gratuito alcanzado | Activar fallback o agregar OpenRouter |
+| `OpenRouter Error (429)` | 200 req/día agotados | Esperar reset diario o usar modelo de pago |
+| `OpenRouter Error (402)` | Créditos insuficientes para modelo de pago | Usar modelo `:free` o recargar créditos |
+| `Circuit breaker abierto` | Proveedor falló múltiples veces | Esperar recovery (60s) o reiniciar app |
+| Respuesta muy lenta (>10s) | Modelo local (Ollama/LM Studio) lento | Normal para modelos locales; usar modelo cloud |
+
+**Verificar fallback order:**
+```bash
+grep AI_FALLBACK_ORDER .env
+# Debe incluir al menos un proveedor con API key configurada
+```
+
+**Verificar API keys:**
+```bash
+# Probar proveedor específico
+curl -X POST http://localhost:8003/api/ai-models/test-connection \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"gemini","message":"test"}'
+```
 
 ---
 
-## 8) Cola de mensajes crece y no drena
+## 8) OpenRouter no funciona
 
-### Diagnóstico
+**Verificar configuración:**
+```bash
+grep OPENROUTER .env
+# Debe tener OPENROUTER_API_KEY, OPENROUTER_MODEL
+```
 
-- Revisar worker-web y scheduler.
+**Causas frecuentes:**
+- El modelo tiene sufijo `:free` pero agotó los 200 req/día — el reset es a medianoche UTC
+- El modelo sin `:free` requiere créditos en la cuenta de OpenRouter
+- `OPENROUTER_API_KEY` inválida — verificar en `openrouter.ai/keys`
+- `OPENROUTER_MODEL` incorrecto — usar formato `proveedor/modelo:free` ej: `google/gemini-2.5-flash-lite:free`
+
+**Listar modelos gratuitos disponibles en OpenRouter:**
+```bash
+curl -fsS https://openrouter.ai/api/v1/models \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  | python3 -c "import json,sys; [print(m['id']) for m in json.load(sys.stdin)['data'] if ':free' in m['id']]"
+```
+
+---
+
+## 9) Ollama local no responde
+
+**Verificar que Ollama está corriendo:**
+```bash
+curl http://localhost:11434/api/version
+```
+
+**Verificar que el modelo está descargado:**
+```bash
+ollama list
+# Si qwen3:4b no aparece:
+ollama pull qwen3:4b
+```
+
+**Verificar GPU utilizada:**
+```bash
+ollama ps  # muestra modelos cargados y si usan GPU o CPU
+```
+
+**Si la respuesta es muy lenta (>30s):** el modelo está en CPU o se está cargando desde disco. En RTX 3050 4GB, usar `qwen3:4b` (cabe completo en VRAM) para mejor velocidad.
+
+**Nota:** Ollama y LM Studio son proveedores de último recurso en el fallback. Si hay API keys de cloud configuradas, se usarán primero.
+
+---
+
+## 10) LM Studio local no responde
+
+**Verificar que LM Studio está corriendo con el servidor activo:**
+- Abrir LM Studio → Local Server → Start Server (puerto 1234)
+- Verificar que hay un modelo cargado
+
+```bash
+curl http://localhost:1234/v1/models
+```
+
+**Modelo recomendado para RTX 3050 4GB:** `qwen3.5-4b-q4_k_m` (2.7GB VRAM).
+
+---
+
+## 11) Cola de mensajes crece y no drena
 
 ```bash
 docker compose logs --since=20m worker-web
 docker compose logs --since=20m scheduler
 ```
 
-### Acción
-
-- Reiniciar worker-web si hay sesión rota.
-- Confirmar estado de WhatsApp Web.
+**Causas:**
+- Sesión de WhatsApp Web expirada (QR vencido) → reconectar desde el panel admin
+- `worker-web` no está running → `docker compose restart worker-web`
+- Proveedor LLM fallando → ver sección 7
 
 ---
 
-## 9) Mensajes no enviados desde dashboard manual
-
-### Diagnóstico
-
-- Validar endpoint `/api/whatsapp/send`.
-- Validar runtime de WhatsApp activo.
+## 12) Mensajes no se envían desde el dashboard
 
 ```bash
-curl -i http://localhost:8003/api/whatsapp/status -H "Authorization: Bearer <token>"
+curl -i http://localhost:8003/api/whatsapp/status \
+  -H "Authorization: Bearer <token>"
 ```
 
-### Acción
-
-- Si runtime parado: iniciar runtime vía endpoint admin.
-- Verificar errores en `worker-web`.
-
----
-
-## 10) UI carga pero acciones fallan
-
-### Diagnóstico
-
-- Revisar consola del navegador.
-- Revisar códigos HTTP en Network tab.
-
-### Causas comunes
-
-- Sesión expirada.
-- CORS inconsistente.
-- CSP bloqueando recursos.
-
-### Acción
-
-- Reautenticar.
-- Confirmar `CORS_ORIGINS`.
-- Verificar headers de seguridad en response.
-
----
-
-## 11) Migraciones Alembic fallan
-
-### Diagnóstico
-
+**Si `connected: false`:** iniciar el runtime desde el panel admin o vía API:
 ```bash
-alembic current
-alembic heads
-alembic history --verbose
+curl -X POST http://localhost:8003/api/whatsapp/start \
+  -H "Authorization: Bearer <token>"
 ```
 
-### Acción
+---
 
-- Resolver múltiples heads.
-- Aplicar `alembic upgrade head` tras backup.
+## 13) UI carga pero acciones fallan
+
+**Diagnóstico:**
+- Abrir DevTools → Network — ver el código HTTP de las peticiones fallidas
+- Abrir DevTools → Console — buscar errores JS o CORS
+
+**Causas comunes:**
+- Sesión expirada → reautenticar (F5 + login)
+- CORS: `CORS_ORIGINS` no incluye el origen del navegador
+- CSP: algún script externo bloqueado por Content-Security-Policy
 
 ---
 
-## 12) Build Docker falla en CI
+## 14) `/docs` no carga (404)
 
-### Diagnóstico
+Normal en producción — `DISABLE_DOCS=true` está activo.
 
-- Revisar step de lint/type/test/security.
-- Revisar permisos de registry.
-
-### Acción
-
-- Corregir errores previos al build.
-- Validar tokens de publish.
-
----
-
-## 13) Dependencias vulnerables detectadas
-
-### Diagnóstico
-
-- Revisar reporte Bandit/Trivy/pip-audit.
-
-### Acción
-
-- Priorizar HIGH/CRITICAL.
-- Actualizar dependencia y correr regresión.
+Para acceder a la documentación interactiva en desarrollo:
+```bash
+# En .env
+DISABLE_DOCS=false
+# Reiniciar app
+python -m uvicorn admin_panel:app --reload
+# Acceder a http://localhost:8003/docs
+```
 
 ---
 
-## 14) Archivo de configuración inválido
-
-### Diagnóstico
-
-- Validación de entorno en startup falla.
-
-### Acción
-
-- Completar variables obligatorias (`JWT_SECRET`, `ADMIN_PASSWORD`, etc.).
-- Si `WHATSAPP_MODE=cloud|both`, definir `WHATSAPP_APP_SECRET`.
-
----
-
-## 15) Recuperación rápida (playbook corto)
-
-1. Confirmar incidente y severidad.
-2. Hacer captura de evidencia.
-3. Reiniciar servicio afectado.
-4. Validar `/healthz` y flujo mínimo.
-5. Comunicar estado.
+## 15) Migraciones Alembic fallan
 
 ```bash
+docker compose run --rm app alembic current
+docker compose run --rm app alembic heads
+docker compose run --rm app alembic history --verbose
+```
+
+**Acción:**
+- Hacer backup primero
+- Resolver múltiples heads si aparecen
+- Aplicar: `docker compose run --rm app alembic upgrade head`
+
+---
+
+## 16) Build Docker falla
+
+**Causas frecuentes:**
+- `requirements.txt` tiene un paquete que no existe o versión incorrecta
+- `ffmpeg` no disponible en la imagen base (ya incluido en Dockerfile)
+- Sin espacio en disco
+
+```bash
+docker compose build --no-cache app 2>&1 | tail -50
+df -h  # verificar espacio
+```
+
+---
+
+## 17) Dependencias vulnerables
+
+```bash
+pip-audit -r requirements.txt
+bandit -r src/
+```
+
+**Acción:** actualizar el paquete afectado, correr tests de regresión, rebuildar imagen.
+
+---
+
+## 18) Migraciones fallan al iniciar el contenedor
+
+Puede ser race condition si PostgreSQL no terminó de iniciar.
+
+```bash
+# Verificar que postgres está healthy antes de iniciar app
+docker compose up -d postgres redis
+docker compose ps  # esperar que postgres sea "healthy"
+docker compose up -d app scheduler
+```
+
+O simplemente reiniciar la app — Alembic reintentará con timeout=120s.
+
+---
+
+## 19) Variables de entorno no se cargan
+
+```bash
+# Verificar que .env está en el directorio correcto
+ls -la chatbot-whatsapp-llm/.env
+
+# Verificar que el archivo no tiene BOM ni encoding incorrecto
+file .env
+
+# Ver las variables que lee el contenedor
+docker compose run --rm app env | grep -E "JWT|ADMIN|GEMINI|REDIS"
+```
+
+---
+
+## 20) Recuperación rápida (playbook corto)
+
+```bash
+# 1. Capturar estado
+docker compose ps
+curl -i http://localhost:8003/healthz
+
+# 2. Reiniciar servicio afectado
 docker compose restart app
-sleep 5
+# o
+docker compose restart worker-web
+
+# 3. Validar
+sleep 10
 curl -fsS http://localhost:8003/healthz
+
+# 4. Verificar logs post-reinicio
+docker compose logs --since=2m app
 ```
 
 ---
 
-## 16) Referencias de código útiles
+## 21) Referencias de código
 
-- Auth router: `src/routers/auth.py`
-- Core app/middlewares/ws: `admin_panel.py`
-- Auditoría: `src/services/audit_system.py`
-- Control de procesos: `src/services/process_control.py`
-- Crypto/Fernet: `crypto.py`
-
----
-
-## 17) Cierre de incidente
-
-- Confirmar servicio estable 30 minutos.
-- Documentar causa raíz.
-- Registrar acciones preventivas.
-- Crear tareas de seguimiento.
+| Componente | Archivo |
+|-----------|---------|
+| Middlewares y auth global | `admin_panel.py` |
+| Router de autenticación | `src/routers/auth.py` |
+| LLM multi-proveedor | `src/services/multi_provider_llm.py` |
+| Sistema de auditoría | `src/services/audit_system.py` |
+| Control de procesos | `src/services/process_control.py` |
+| Encriptación Fernet | `crypto.py` |
+| Rate limiting | `src/services/http_rate_limit.py` |
+| Circuit breaker | `src/services/protection_system.py` |

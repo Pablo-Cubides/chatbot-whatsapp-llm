@@ -16,9 +16,9 @@ Si descubres una vulnerabilidad de seguridad, **NO** la reportes a través de is
 
 ### 🔐 Proceso de Reporte Confidencial
 
-1. **Email Seguro**: Envía un email a `security@chatbot-empresarial.com`
+1. **Contacto directo**: Reportar al maintainer del repositorio de forma privada
 2. **Asunto**: "SECURITY: [Breve descripción]"
-3. **Encriptación**: Usa nuestra clave PGP pública si es posible
+3. **No publicar** el detalle en issues públicos hasta que sea mitigado
 4. **Información Requerida**:
    - Descripción detallada de la vulnerabilidad
    - Pasos para reproducir el problema
@@ -291,15 +291,14 @@ Runbook operativo: ver [docs/SECURITY_RUNBOOK.md](docs/SECURITY_RUNBOOK.md).
 
 ### Equipo de Seguridad
 
-- **Primary**: security@chatbot-empresarial.com
-- **Emergency**: +1-555-SECURITY (solo para incidentes críticos)
-- **PGP Key**: [Enlace a clave pública]
+- **Reporte de vulnerabilidades**: abrir un issue privado en el repositorio o contactar directamente al maintainer
+- **Incidentes en producción**: seguir el runbook en [RUNBOOK.md](RUNBOOK.md)
 
 ### Escalación
 
-1. **Nivel 1**: Desarrollador de guardia
-2. **Nivel 2**: Lead técnico
-3. **Nivel 3**: CTO/Founder
+1. **Nivel 1**: Desarrollador on-call — diagnóstico inicial y mitigación
+2. **Nivel 2**: Dueño del backend — cambios de configuración o rollback
+3. **Nivel 3**: Infra/DB owner — incidentes de red, storage o DB crítica
 
 ## 🔄 Actualizaciones de Seguridad
 
@@ -334,10 +333,10 @@ Runbook operativo: ver [docs/SECURITY_RUNBOOK.md](docs/SECURITY_RUNBOOK.md).
 
 ## 🔖 Versión de esta Política
 
-- **Versión**: 1.0
-- **Última actualización**: Febrero 2026
-- **Próxima revisión**: Mayo 2026
-- **Responsable**: Equipo de Seguridad
+- **Versión**: 1.1
+- **Última actualización**: Abril 2026
+- **Próxima revisión**: Julio 2026
+- **Responsable**: Pablo Cubides
 
 ---
 
@@ -352,6 +351,6 @@ Este proyecto busca cumplir con:
 
 ---
 
-*Para reportar vulnerabilidades: security@chatbot-empresarial.com*
+*Para reportar vulnerabilidades: contactar al maintainer directamente a través del repositorio.*
 
 *Esta política se revisa y actualiza regularmente.*
