@@ -1,5 +1,7 @@
 import pytest
 
+pytest.importorskip("playwright", reason="playwright not installed in base CI — skip WhatsApp unit tests")
+
 from src.services.whatsapp_system import WhatsAppManager
 
 pytestmark = pytest.mark.unit

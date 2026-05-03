@@ -2,6 +2,8 @@ from datetime import datetime
 
 import pytest
 
+pytest.importorskip("playwright", reason="playwright not installed in base CI — skip smoke tests that import WhatsAppManager")
+
 from src.services.calendar_service import CalendarConfig, CalendarProvider, TimeSlot
 from src.services.chat_system import ChatConnectionManager
 from src.services.google_calendar_provider import GoogleCalendarProvider
