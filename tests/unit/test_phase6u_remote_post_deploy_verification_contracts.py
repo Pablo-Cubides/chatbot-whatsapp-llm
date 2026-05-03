@@ -23,8 +23,8 @@ def test_post_deploy_verification_workflow_exists_and_is_manual() -> None:
 
     assert "name: Post Deploy Verification" in text
     assert "workflow_dispatch:" in text
-    assert "uses: appleboy/ssh-action@v1.0.3" in text
-    assert "if: secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_SSH_KEY != ''" in text
+    assert "uses: appleboy/ssh-action@v1.2.5" in text
+    assert "if: vars.DEPLOY_HOST != ''" in text
 
 
 def test_post_deploy_verification_workflow_checks_health_metrics_auth_and_services() -> None:

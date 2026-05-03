@@ -21,7 +21,7 @@ def _read(rel_path: str) -> str:
 def test_ci_workflow_has_coverage_gate_and_strict_mypy() -> None:
     text = _read(".github/workflows/ci.yml")
 
-    assert 'PYTHON_VERSION: "3.11.8"' in text
+    assert 'PYTHON_VERSION: "3.13"' in text
     assert "--cov-fail-under=70" in text
     assert "mypy --config-file mypy.ini --strict" in text
 
@@ -45,8 +45,8 @@ def test_dockerfiles_pin_python_patch_version() -> None:
     dockerfile = _read("Dockerfile")
     scheduler = _read("Dockerfile.scheduler")
 
-    assert "FROM python:3.11.8-slim AS builder" in dockerfile
-    assert "FROM python:3.11.8-slim AS runtime" in dockerfile
+    assert "FROM python:3.13.3-slim AS builder" in dockerfile
+    assert "FROM python:3.13.3-slim AS runtime" in dockerfile
 
-    assert "FROM python:3.11.8-slim AS builder" in scheduler
-    assert "FROM python:3.11.8-slim AS runtime" in scheduler
+    assert "FROM python:3.13.3-slim AS builder" in scheduler
+    assert "FROM python:3.13.3-slim AS runtime" in scheduler

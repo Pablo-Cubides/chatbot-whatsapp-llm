@@ -104,7 +104,6 @@ docs.pkl
 *.bin
 
 # Sensitive docs/config
-Docs/
 backup_docs/
 Docs_original/
 config/secrets.json

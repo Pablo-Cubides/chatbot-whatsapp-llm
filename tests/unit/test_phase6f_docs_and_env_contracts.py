@@ -25,7 +25,7 @@ def test_contributing_includes_precommit_install_steps() -> None:
 
 def test_readme_documents_pinned_python_patch_policy() -> None:
     text = _read("README.md")
-    assert "python:3.11.8-slim" in text
+    assert "python:3.13.3-slim" in text
 
 
 def test_env_example_has_required_optional_debug_sections_and_redis_password() -> None:

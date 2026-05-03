@@ -40,7 +40,7 @@
 | WhatsApp Cloud | Meta Business Cloud API |
 | Calendario | Google Calendar API + Microsoft Outlook |
 | Docker | 4 servicios: app, worker-web, scheduler, redis + postgres |
-| Python | 3.11.8-slim (pinned en Dockerfile) |
+| Python | `python:3.13.3-slim` (pinned en Dockerfile) |
 
 ---
 
