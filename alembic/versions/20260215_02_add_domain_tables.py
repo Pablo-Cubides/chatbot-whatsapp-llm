@@ -28,7 +28,7 @@ def upgrade() -> None:
             "contacts",
             sa.Column("chat_id", sa.String(), primary_key=True),
             sa.Column("name", sa.String(), nullable=True),
-            sa.Column("auto_enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+            sa.Column("auto_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
             sa.Column("created_at", sa.DateTime(), nullable=True),
             sa.Column("updated_at", sa.DateTime(), nullable=True),
         )
@@ -40,7 +40,7 @@ def upgrade() -> None:
             sa.Column("initial_context", sa.Text(), nullable=True),
             sa.Column("objective", sa.Text(), nullable=True),
             sa.Column("instructions", sa.Text(), nullable=True),
-            sa.Column("is_ready", sa.Boolean(), nullable=True, server_default=sa.text("0")),
+            sa.Column("is_ready", sa.Boolean(), nullable=True, server_default=sa.false()),
             sa.Column("updated_at", sa.DateTime(), nullable=True),
         )
 
@@ -62,7 +62,7 @@ def upgrade() -> None:
             sa.Column("strategy_text", sa.Text(), nullable=False),
             sa.Column("source_snapshot", sa.Text(), nullable=True),
             sa.Column("created_at", sa.DateTime(), nullable=True),
-            sa.Column("is_active", sa.Boolean(), nullable=True, server_default=sa.text("1")),
+            sa.Column("is_active", sa.Boolean(), nullable=True, server_default=sa.true()),
         )
         op.create_index("ix_chat_strategies_chat_id", "chat_strategies", ["chat_id"])
 
@@ -83,7 +83,7 @@ def upgrade() -> None:
             sa.Column("assigned_to", sa.String(length=100), nullable=True),
             sa.Column("metadata", sa.JSON(), nullable=True),
             sa.Column("notes", sa.Text(), nullable=True),
-            sa.Column("client_notified", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+            sa.Column("client_notified", sa.Boolean(), nullable=False, server_default=sa.false()),
         )
         op.create_unique_constraint("uq_silent_transfers_transfer_id", "silent_transfers", ["transfer_id"])
         op.create_index("ix_silent_transfers_transfer_id", "silent_transfers", ["transfer_id"])
@@ -99,7 +99,7 @@ def upgrade() -> None:
             sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
             sa.Column("chat_id", sa.String(length=200), nullable=False),
             sa.Column("session_id", sa.String(length=100), nullable=True),
-            sa.Column("bot_suspicion_detected", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+            sa.Column("bot_suspicion_detected", sa.Boolean(), nullable=False, server_default=sa.false()),
             sa.Column("bot_suspicion_triggers", sa.JSON(), nullable=True),
             sa.Column("bot_suspicion_level", sa.Integer(), nullable=True, server_default=sa.text("0")),
             sa.Column("silent_transfers_count", sa.Integer(), nullable=True, server_default=sa.text("0")),
@@ -122,7 +122,7 @@ def upgrade() -> None:
             sa.Column("global_objective", sa.String(length=100), nullable=True),
             sa.Column("client_objective", sa.Text(), nullable=True),
             sa.Column("objective_achieved", sa.String(length=20), nullable=True),
-            sa.Column("conversion_happened", sa.Boolean(), nullable=True, server_default=sa.text("0")),
+            sa.Column("conversion_happened", sa.Boolean(), nullable=True, server_default=sa.false()),
             sa.Column("initial_emotion", sa.String(length=50), nullable=True),
             sa.Column("final_emotion", sa.String(length=50), nullable=True),
             sa.Column("emotion_trend", sa.String(length=20), nullable=True),

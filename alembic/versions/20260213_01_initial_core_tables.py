@@ -48,7 +48,7 @@ def upgrade() -> None:
             "alert_rules",
             sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
             sa.Column("name", sa.String(length=200), nullable=False),
-            sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+            sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
             sa.Column("rule_type", sa.String(length=50), nullable=False),
             sa.Column("pattern", sa.Text(), nullable=True),
             sa.Column("severity", sa.String(length=20), nullable=False),
