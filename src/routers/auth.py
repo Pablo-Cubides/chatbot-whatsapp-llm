@@ -9,8 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from src.models.validation_models import AuthLoginModel
-from src.services.protection_system import get_client_ip, rate_limit
-
 from src.routers.deps import (
     auth_manager,
     get_current_user,
@@ -18,6 +16,7 @@ from src.routers.deps import (
     log_logout,
     log_security_event,
 )
+from src.services.protection_system import get_client_ip, rate_limit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

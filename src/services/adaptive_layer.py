@@ -3,13 +3,12 @@
 Orquesta análisis profundo periódico y experimentación A/B para mejorar estrategia automáticamente.
 """
 
-import asyncio
 import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from src.services.ab_test_manager import ABExperiment, ExperimentStatus, VariantType, ab_test_manager
 from src.services.deep_analyzer import ObjectiveStatus, deep_analyzer
@@ -20,7 +19,9 @@ logger = logging.getLogger(__name__)
 class AdaptiveLayerManager:
     """Orquestador de la capa adaptativa (análisis + experimentación)."""
 
-    def __init__(self, deep_analyzer_instance=None, ab_manager=None, business_config_manager=None, analytics_manager=None):
+    def __init__(
+        self, deep_analyzer_instance=None, ab_manager=None, business_config_manager=None, analytics_manager=None
+    ) -> None:
         self.deep_analyzer = deep_analyzer_instance or deep_analyzer
         self.ab_manager = ab_manager or ab_test_manager
         self.business_config = business_config_manager
@@ -30,12 +31,12 @@ class AdaptiveLayerManager:
         self.default_batch_limit = int(os.getenv("ADAPTIVE_BATCH_LIMIT", "25"))
         self._analysis_in_progress = False
 
-        self.last_run_at: Optional[datetime] = None
+        self.last_run_at: datetime | None = None
         self.last_run_summary: dict[str, Any] = {}
-        self.last_error: Optional[str] = None
+        self.last_error: str | None = None
         self.total_runs = 0
 
-    def sync_runtime_settings(self):
+    def sync_runtime_settings(self) -> None:
         """Sincroniza runtime con business_config.analysis_settings."""
         if not self.business_config:
             return
@@ -49,13 +50,13 @@ class AdaptiveLayerManager:
         self.deep_analyzer.trigger_every_n_conversations = max(1, trigger_conversations)
         self.deep_analyzer.trigger_every_n_days = max(1, trigger_days)
 
-    def _get_active_experiment(self) -> Optional[ABExperiment]:
+    def _get_active_experiment(self) -> ABExperiment | None:
         running = [e for e in self.ab_manager.experiments.values() if e.status == ExperimentStatus.RUNNING]
         if running:
             return running[0]
         return None
 
-    def ensure_default_experiment(self) -> Optional[ABExperiment]:
+    def ensure_default_experiment(self) -> ABExperiment | None:
         """Crea un experimento base si no hay uno activo."""
         if not self.ab_manager.enabled or not self.auto_create_experiment:
             return None
@@ -88,7 +89,7 @@ class AdaptiveLayerManager:
         logger.info(f"🧪 Experimento adaptativo iniciado: {experiment.id}")
         return experiment
 
-    def register_interaction(self, chat_id: str):
+    def register_interaction(self, chat_id: str) -> None:
         """Registra una interacción y garantiza asignación de variante."""
         self.sync_runtime_settings()
 
@@ -98,7 +99,7 @@ class AdaptiveLayerManager:
 
         self.deep_analyzer.record_conversation_end()
 
-    def _variant_by_id(self, experiment: ABExperiment, variant_id: str) -> Optional[dict[str, Any]]:
+    def _variant_by_id(self, experiment: ABExperiment, variant_id: str) -> dict[str, Any] | None:
         variant = next((v for v in experiment.variants if v.id == variant_id), None)
         if not variant:
             return None
@@ -108,7 +109,7 @@ class AdaptiveLayerManager:
             "config": dict(variant.config or {}),
         }
 
-    def get_runtime_overrides(self, chat_id: Optional[str] = None) -> dict[str, Any]:
+    def get_runtime_overrides(self, chat_id: str | None = None) -> dict[str, Any]:
         """Obtiene configuración efectiva (ganador global o variante por chat)."""
         experiment = self._get_active_experiment()
         if not experiment:
@@ -140,7 +141,7 @@ class AdaptiveLayerManager:
 
         return {}
 
-    def apply_runtime_overrides(self, overrides: dict[str, Any], project_root: str):
+    def apply_runtime_overrides(self, overrides: dict[str, Any], project_root: str) -> None:
         """Aplica overrides a configuración runtime (settings.json + business_config)."""
         if not overrides:
             return
@@ -252,8 +253,7 @@ class AdaptiveLayerManager:
         Se mantiene por compatibilidad, pero evita ejecutar event loops anidados.
         """
         raise RuntimeError(
-            "run_analysis_sync() está deshabilitado para evitar mal uso de asyncio. "
-            "Usa await run_adaptive_cycle(...)."
+            "run_analysis_sync() está deshabilitado para evitar mal uso de asyncio. Usa await run_adaptive_cycle(...)."
         )
 
     def _summarize_results(self, analyses: list[Any]) -> dict[str, Any]:
@@ -280,7 +280,7 @@ class AdaptiveLayerManager:
             "ran_at": datetime.now().isoformat(),
         }
 
-    def _update_ab_metrics(self, analyses: list[Any]):
+    def _update_ab_metrics(self, analyses: list[Any]) -> None:
         experiment = self._get_active_experiment()
         if not experiment:
             return
@@ -306,7 +306,7 @@ class AdaptiveLayerManager:
         if self.ab_manager._should_calculate_significance(experiment):
             self.ab_manager._calculate_statistical_significance(experiment)
 
-    def _promote_winner_if_ready(self):
+    def _promote_winner_if_ready(self) -> None:
         """Si ya hay ganador significativo, lo promueve como configuración global activa."""
         experiment = self._get_active_experiment()
         if not experiment:
@@ -335,7 +335,7 @@ class AdaptiveLayerManager:
             except Exception as exc:
                 logger.warning(f"No se pudo aplicar ganador global: {exc}")
 
-    def _persist_adaptive_snapshot(self, summary: dict[str, Any]):
+    def _persist_adaptive_snapshot(self, summary: dict[str, Any]) -> None:
         """Persiste snapshot ligero para inspección en UI/API."""
         if not self.business_config:
             return

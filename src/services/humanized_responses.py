@@ -44,7 +44,7 @@ class HumanizedResponseManager:
     SIN revelar que es un bot - CONTEXTUALMENTE INTELIGENTE
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.employee_name = os.getenv("BOT_EMPLOYEE_NAME", "Alex")
 
         # Respuestas cuando LLM falla - SOLO para contextos apropiados

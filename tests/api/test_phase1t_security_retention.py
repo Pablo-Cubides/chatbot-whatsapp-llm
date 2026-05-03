@@ -17,7 +17,12 @@ def _create_old_security_event(action: str, username: str) -> None:
     audit_manager.log_action(username=username, action=action, role="admin", details={"seed": True}, success=True)
     session = get_session()
     try:
-        row = session.query(AuditLog).filter(AuditLog.action == action, AuditLog.username == username).order_by(AuditLog.id.desc()).first()
+        row = (
+            session.query(AuditLog)
+            .filter(AuditLog.action == action, AuditLog.username == username)
+            .order_by(AuditLog.id.desc())
+            .first()
+        )
         assert row is not None
         row.timestamp = datetime.now(timezone.utc) - timedelta(days=400)
         session.commit()
@@ -33,7 +38,9 @@ def test_security_retention_policy_requires_admin(client: TestClient, operator_h
     assert forbidden.status_code == 403
 
 
-def test_security_retention_dry_run_reports_candidates_without_deleting(client: TestClient, admin_headers: dict[str, str]) -> None:
+def test_security_retention_dry_run_reports_candidates_without_deleting(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
     _create_old_security_event("SECURITY_LOGIN_FAILED", "old_retention_user")
 
     preview = client.get(

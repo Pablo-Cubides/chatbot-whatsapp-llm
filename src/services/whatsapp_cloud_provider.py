@@ -3,11 +3,11 @@
 Integración con Meta WhatsApp Business Platform (Graph API)
 """
 
+import asyncio
 import logging
 import os
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -29,8 +29,8 @@ def _run_async_blocking(coro):
 async def _request_json_async(
     method: str,
     url: str,
-    headers: Optional[dict[str, str]] = None,
-    payload: Optional[dict[str, Any]] = None,
+    headers: dict[str, str] | None = None,
+    payload: dict[str, Any] | None = None,
     timeout_seconds: float = 30,
 ) -> tuple[int, Any, str]:
     async with httpx.AsyncClient(timeout=timeout_seconds) as client:
@@ -43,7 +43,9 @@ async def _request_json_async(
         return response.status_code, data, text
 
 
-async def _request_bytes_async(url: str, headers: Optional[dict[str, str]] = None, timeout_seconds: float = 60) -> tuple[int, bytes, str]:
+async def _request_bytes_async(
+    url: str, headers: dict[str, str] | None = None, timeout_seconds: float = 60
+) -> tuple[int, bytes, str]:
     async with httpx.AsyncClient(timeout=timeout_seconds) as client:
         response = await client.get(url, headers=headers)
         return response.status_code, response.content, response.text
@@ -52,7 +54,7 @@ async def _request_bytes_async(url: str, headers: Optional[dict[str, str]] = Non
 class CloudProvider(WhatsAppProvider):
     """Proveedor para WhatsApp Cloud API (Meta)"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.token = os.environ.get("WHATSAPP_CLOUD_TOKEN")
         self.phone_id = os.environ.get("WHATSAPP_PHONE_ID")
         self.api_version = os.environ.get("WHATSAPP_API_VERSION", "v18.0")
@@ -63,7 +65,7 @@ class CloudProvider(WhatsAppProvider):
         else:
             logger.info("☁️ CloudProvider inicializado (Meta Graph API)")
 
-    def send_message(self, chat_id: str, text: str, media: Optional[dict[str, Any]] = None) -> SendResult:
+    def send_message(self, chat_id: str, text: str, media: dict[str, Any] | None = None) -> SendResult:
         """
         Enviar mensaje a través de Cloud API
         """
@@ -107,17 +109,16 @@ class CloudProvider(WhatsAppProvider):
                 logger.info("✅ Mensaje enviado via Cloud API: %s", message_id)
 
                 return SendResult(success=True, message_id=message_id, provider="cloud")
-            else:
-                error_msg = (data or {}).get("error", {}).get("message", raw_text)
-                logger.error("❌ Error Cloud API: %s", error_msg)
+            error_msg = (data or {}).get("error", {}).get("message", raw_text)
+            logger.error("❌ Error Cloud API: %s", error_msg)
 
-                return SendResult(success=False, error=error_msg, provider="cloud")
+            return SendResult(success=False, error=error_msg, provider="cloud")
 
         except Exception as e:
             logger.error("❌ Excepción enviando via Cloud API: %s", e)
             return SendResult(success=False, error=str(e), provider="cloud")
 
-    def receive_message(self, raw_event: dict[str, Any]) -> Optional[NormalizedMessage]:
+    def receive_message(self, raw_event: dict[str, Any]) -> NormalizedMessage | None:
         """
         Recibir y normalizar mensaje de Cloud API webhook
         """
@@ -182,7 +183,7 @@ class CloudProvider(WhatsAppProvider):
             logger.error("❌ Error normalizando mensaje Cloud API: %s", e)
             return None
 
-    def download_media(self, media_id: str) -> Optional[bytes]:
+    def download_media(self, media_id: str) -> bytes | None:
         """
         Descargar media de Cloud API
         """
@@ -217,9 +218,8 @@ class CloudProvider(WhatsAppProvider):
             if media_status == 200:
                 logger.info("✅ Media descargado: %s", media_id)
                 return media_content
-            else:
-                logger.error("❌ Error descargando media: %s", media_text)
-                return None
+            logger.error("❌ Error descargando media: %s", media_text)
+            return None
 
         except Exception as e:
             logger.error("❌ Excepción descargando media: %s", e)
@@ -235,7 +235,9 @@ class CloudProvider(WhatsAppProvider):
             url = f"https://graph.facebook.com/{self.api_version}/{self.phone_id}"
             headers = {"Authorization": f"Bearer {self.token}"}
 
-            status_code, _data, _text = _run_async_blocking(_request_json_async("GET", url, headers=headers, timeout_seconds=10))
+            status_code, _data, _text = _run_async_blocking(
+                _request_json_async("GET", url, headers=headers, timeout_seconds=10)
+            )
             return status_code == 200
 
         except Exception as e:
@@ -264,7 +266,7 @@ class CloudProvider(WhatsAppProvider):
         }
 
 
-def verify_webhook(mode: str, token: str, challenge: str) -> Optional[str]:
+def verify_webhook(mode: str, token: str, challenge: str) -> str | None:
     """
     Verificar webhook de Meta
 
@@ -285,9 +287,8 @@ def verify_webhook(mode: str, token: str, challenge: str) -> Optional[str]:
     if mode == "subscribe" and token == verify_token:
         logger.info("✅ Webhook verificado correctamente")
         return challenge
-    else:
-        logger.warning("⚠️ Verificación de webhook fallida")
-        return None
+    logger.warning("⚠️ Verificación de webhook fallida")
+    return None
 
 
 def verify_webhook_signature(payload: bytes, signature: str) -> bool:

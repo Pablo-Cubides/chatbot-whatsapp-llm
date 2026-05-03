@@ -16,8 +16,8 @@ def test_metrics_router_exists_under_routers_namespace() -> None:
     assert metrics_router.exists()
 
     text = metrics_router.read_text(encoding="utf-8")
-    assert "@router.get(\"/metrics\")" in text
-    assert "@router.get(\"/metrics/json\")" in text
+    assert '@router.get("/metrics")' in text
+    assert '@router.get("/metrics/json")' in text
 
 
 def test_admin_panel_wires_metrics_from_routers_module() -> None:

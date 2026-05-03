@@ -8,10 +8,9 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
-from sqlalchemy import Index, or_
-from sqlalchemy import JSON, Column, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, Text, or_
 
 from src.models.admin_db import get_session
 from src.models.models import Base
@@ -76,16 +75,16 @@ class Campaign(Base):
 class QueueManager:
     """Gestor de la cola de mensajes"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         logger.info("📬 Queue Manager inicializado")
 
     def enqueue_message(
         self,
         chat_id: str,
         message: str,
-        when: Optional[datetime] = None,
+        when: datetime | None = None,
         priority: int = 0,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         max_retries: int = 3,
     ) -> str:
         """
@@ -262,9 +261,7 @@ class QueueManager:
             logger.error("❌ Error marcando mensaje como fallido: %s", e)
             return False
 
-    def create_campaign(
-        self, name: str, created_by: str, total_messages: int, metadata: Optional[dict[str, Any]] = None
-    ) -> str:
+    def create_campaign(self, name: str, created_by: str, total_messages: int, metadata: dict[str, Any] | None = None) -> str:
         """Crear una nueva campaña"""
         try:
             session = get_session()
@@ -292,7 +289,7 @@ class QueueManager:
             logger.error("❌ Error creando campaña: %s", e)
             raise
 
-    def get_campaign_status(self, campaign_id: str) -> Optional[dict[str, Any]]:
+    def get_campaign_status(self, campaign_id: str) -> dict[str, Any] | None:
         """Obtener estado de una campaña"""
         try:
             session = get_session()
@@ -324,7 +321,7 @@ class QueueManager:
             logger.error("❌ Error obteniendo estado de campaña: %s", e)
             return None
 
-    def list_campaigns(self, status: Optional[str] = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list_campaigns(self, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         """Listar campañas con filtro opcional por estado."""
         try:
             session = get_session()
@@ -419,7 +416,7 @@ class QueueManager:
             logger.error("❌ Error actualizando estado de campaña: %s", e)
             return False
 
-    def _update_campaign_stats(self, campaign_id: str, sent: bool = False, failed: bool = False):
+    def _update_campaign_stats(self, campaign_id: str, sent: bool = False, failed: bool = False) -> None:
         """Actualizar estadísticas de campaña"""
         try:
             session = get_session()
@@ -451,6 +448,7 @@ class QueueManager:
             "retry_count": msg.retry_count,
             "metadata": msg.extra_data,  # Mantener 'metadata' en API por compatibilidad
         }
+
 
 # Instancia global
 queue_manager = QueueManager()

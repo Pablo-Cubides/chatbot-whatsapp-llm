@@ -7,7 +7,6 @@ import logging
 import os
 import subprocess
 from datetime import datetime, timezone
-from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -143,7 +142,7 @@ def decrypt_text(token: str) -> str:
 # =====================================
 
 
-def encrypt_oauth_token(token: Optional[str]) -> Optional[str]:
+def encrypt_oauth_token(token: str | None) -> str | None:
     """
     Encripta un token OAuth para almacenamiento seguro en base de datos.
 
@@ -164,7 +163,7 @@ def encrypt_oauth_token(token: Optional[str]) -> Optional[str]:
         raise ValueError("No se pudo encriptar el token OAuth") from e
 
 
-def decrypt_oauth_token(encrypted_token: Optional[str]) -> Optional[str]:
+def decrypt_oauth_token(encrypted_token: str | None) -> str | None:
     """
     Desencripta un token OAuth almacenado en base de datos.
 

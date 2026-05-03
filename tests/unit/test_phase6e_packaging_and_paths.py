@@ -21,7 +21,7 @@ def test_pyproject_exists_for_editable_install() -> None:
     text = _read("pyproject.toml")
     assert "[build-system]" in text
     assert "setuptools.build_meta" in text
-    assert "name = \"chatbot-whatsapp-llm\"" in text
+    assert 'name = "chatbot-whatsapp-llm"' in text
 
 
 def test_conftest_has_no_sys_path_insert_hacks() -> None:

@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from src.models.admin_db import get_db_session
 from src.models.models import ConversationProfile
@@ -62,8 +62,8 @@ class ConversationAnalysis:
 
     # Análisis de objetivo
     objective_status: ObjectiveStatus
-    objective_name: Optional[str]
-    objective_achieved_at: Optional[datetime]
+    objective_name: str | None
+    objective_achieved_at: datetime | None
     success_factors: list[str]
     failure_factors: list[str]
 
@@ -81,7 +81,7 @@ class ConversationAnalysis:
 class DeepAnalyzer:
     """Analizador profundo de conversaciones usando LLM"""
 
-    def __init__(self, multi_llm=None, analytics_manager=None):
+    def __init__(self, multi_llm=None, analytics_manager=None) -> None:
         self.multi_llm = multi_llm
         self.analytics = analytics_manager
 
@@ -118,12 +118,12 @@ class DeepAnalyzer:
 
         return False
 
-    def record_conversation_end(self):
+    def record_conversation_end(self) -> None:
         """Registra que una conversación terminó"""
         self.conversations_since_last_analysis += 1
 
     async def analyze_conversation(
-        self, session_id: str, contact: str, messages: list[dict[str, Any]], business_objectives: Optional[list[str]] = None
+        self, session_id: str, contact: str, messages: list[dict[str, Any]], business_objectives: list[str] | None = None
     ) -> ConversationAnalysis:
         """
         Analiza una conversación completa en profundidad
@@ -175,7 +175,7 @@ class DeepAnalyzer:
             return self._create_error_analysis(session_id, contact, str(e))
 
     async def analyze_batch(
-        self, conversations: list[dict[str, Any]], business_objectives: Optional[list[str]] = None
+        self, conversations: list[dict[str, Any]], business_objectives: list[str] | None = None
     ) -> list[ConversationAnalysis]:
         """
         Analiza múltiples conversaciones en batch
@@ -220,7 +220,7 @@ class DeepAnalyzer:
 
         return "\n".join(lines)
 
-    def _build_analysis_prompt(self, conversation: str, business_objectives: Optional[list[str]]) -> str:
+    def _build_analysis_prompt(self, conversation: str, business_objectives: list[str] | None) -> str:
         """Construye prompt para análisis profundo"""
 
         objectives_text = ""
@@ -233,7 +233,7 @@ OBJETIVOS DE NEGOCIO:
         else:
             objectives_section = ""
 
-        prompt = f"""Eres un analista experto en conversaciones de atención al cliente. Analiza la siguiente conversación EN PROFUNDIDAD.
+        return f"""Eres un analista experto en conversaciones de atención al cliente. Analiza la siguiente conversación EN PROFUNDIDAD.
 
 CONVERSACIÓN:
 {conversation}
@@ -274,8 +274,6 @@ IMPORTANTE:
 - Las recomendaciones deben ser ACCIONABLES
 
 Responde SOLO con JSON válido, sin explicaciones adicionales."""
-
-        return prompt
 
     def _parse_llm_analysis(self, llm_response: str) -> dict[str, Any]:
         """Parsea respuesta del LLM a formato estructurado"""
@@ -355,7 +353,7 @@ Responde SOLO con JSON válido, sin explicaciones adicionales."""
             warnings=[f"Error crítico: {error}"],
         )
 
-    def _save_to_analytics(self, analysis: ConversationAnalysis):
+    def _save_to_analytics(self, analysis: ConversationAnalysis) -> None:
         """Guarda análisis en sistema de analytics"""
         try:
             # Aquí se guardaría en base de datos o analytics

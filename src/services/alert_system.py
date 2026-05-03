@@ -3,18 +3,17 @@
 Detección inteligente de situaciones que requieren intervención humana
 """
 
+import asyncio
 import logging
 import os
 import re
-import asyncio
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import httpx
-
 from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text
 
 from src.models.admin_db import get_session
@@ -101,13 +100,13 @@ class Alert(Base):
 class AlertManager:
     """Gestor del sistema de alertas"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = os.environ.get("ALERTS_ENABLED", "true").lower() == "true"
         if self.enabled:
             logger.info("🚨 Sistema de alertas habilitado")
             self._load_default_rules()
 
-    def _load_default_rules(self):
+    def _load_default_rules(self) -> None:
         """Cargar reglas por defecto si no existen"""
         try:
             session = get_session()
@@ -155,7 +154,7 @@ class AlertManager:
         except Exception as e:
             logger.error("❌ Error cargando reglas por defecto: %s", e)
 
-    def check_alert_rules(self, message_text: str, chat_id: str, metadata: Optional[dict] = None) -> list[str]:
+    def check_alert_rules(self, message_text: str, chat_id: str, metadata: dict | None = None) -> list[str]:
         """
         Verificar si un mensaje activa alguna regla de alerta
 
@@ -228,10 +227,10 @@ class AlertManager:
         self,
         chat_id: str,
         severity: str,
-        rule_id: Optional[int] = None,
-        message_text: Optional[str] = None,
-        metadata: Optional[dict] = None,
-    ) -> Optional[str]:
+        rule_id: int | None = None,
+        message_text: str | None = None,
+        metadata: dict | None = None,
+    ) -> str | None:
         """Crear una alerta"""
         try:
             session = get_session()
@@ -260,10 +259,10 @@ class AlertManager:
 
     def get_alerts(
         self,
-        status: Optional[str] = None,
-        severity: Optional[str] = None,
-        chat_id: Optional[str] = None,
-        assigned_to: Optional[str] = None,
+        status: str | None = None,
+        severity: str | None = None,
+        chat_id: str | None = None,
+        assigned_to: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -294,7 +293,7 @@ class AlertManager:
             logger.error("❌ Error obteniendo alertas: %s", e)
             return []
 
-    def get_alert_by_id(self, alert_id: str) -> Optional[dict[str, Any]]:
+    def get_alert_by_id(self, alert_id: str) -> dict[str, Any] | None:
         """Obtener una alerta por su identificador público."""
         try:
             session = get_session()
@@ -311,9 +310,9 @@ class AlertManager:
         self,
         alert_id: str,
         acknowledged_by: str,
-        note: Optional[str] = None,
+        note: str | None = None,
         silence_minutes: int = 0,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Registrar acuse de alerta de seguridad con trazabilidad operativa."""
         try:
             session = get_session()
@@ -371,7 +370,7 @@ class AlertManager:
             logger.error(f"❌ Error asignando alerta: {e}")
             return False
 
-    def resolve_alert(self, alert_id: str, notes: Optional[str] = None) -> bool:
+    def resolve_alert(self, alert_id: str, notes: str | None = None) -> bool:
         """Resolver una alerta"""
         try:
             session = get_session()
@@ -401,9 +400,9 @@ class AlertManager:
         actions: list[str],
         created_by: str,
         enabled: bool = True,
-        schedule: Optional[dict] = None,
-        metadata: Optional[dict] = None,
-    ) -> Optional[int]:
+        schedule: dict | None = None,
+        metadata: dict | None = None,
+    ) -> int | None:
         """Crear una regla de alerta"""
         try:
             session = get_session()
@@ -488,12 +487,12 @@ class AlertManager:
             logger.error(f"❌ Error eliminando regla: {e}")
             return False
 
-    def _mark_conversation_human_needed(self, chat_id: str):
+    def _mark_conversation_human_needed(self, chat_id: str) -> None:
         """Marcar conversación como que necesita atención humana"""
         # Esto se puede integrar con el sistema de chat_sessions
         logger.info(f"🚨 Conversación {chat_id} marcada como needs_human")
 
-    def _notify_webhook(self, alert_id: str, chat_id: str, message_text: str):
+    def _notify_webhook(self, alert_id: str, chat_id: str, message_text: str) -> None:
         """Notificar vía webhook"""
         webhook_url = os.environ.get("ALERT_WEBHOOK_URL")
         if webhook_url:

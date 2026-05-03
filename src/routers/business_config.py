@@ -52,8 +52,7 @@ async def update_business_config(data: dict[str, Any], current_user: dict[str, A
                     "message": "Configuración actualizada exitosamente",
                 }
             )
-        else:
-            raise HTTPException(status_code=500, detail="Error guardando configuración")
+        raise HTTPException(status_code=500, detail="Error guardando configuración")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -76,8 +75,7 @@ async def update_business_field(data: dict[str, Any], current_user: dict[str, An
                     "message": f"Campo {field_path} actualizado",
                 }
             )
-        else:
-            raise HTTPException(status_code=500, detail="Error actualizando campo")
+        raise HTTPException(status_code=500, detail="Error actualizando campo")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -143,8 +141,7 @@ async def import_business_config(
                     "message": "Configuración importada exitosamente",
                 }
             )
-        else:
-            raise HTTPException(status_code=500, detail="Error importando configuración")
+        raise HTTPException(status_code=500, detail="Error importando configuración")
 
     except HTTPException:
         raise
@@ -166,8 +163,7 @@ async def reset_business_config(current_user: dict[str, Any] = Depends(require_a
                     "message": "Configuración reiniciada a valores por defecto",
                 }
             )
-        else:
-            raise HTTPException(status_code=500, detail="Error reiniciando configuración")
+        raise HTTPException(status_code=500, detail="Error reiniciando configuración")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

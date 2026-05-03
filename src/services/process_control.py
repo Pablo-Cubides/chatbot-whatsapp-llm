@@ -1,7 +1,7 @@
 """Process-control helpers shared by admin routers/endpoints."""
 
+from collections.abc import Iterable
 from contextlib import suppress
-from typing import Iterable
 
 from src.services.audit_system import audit_manager
 

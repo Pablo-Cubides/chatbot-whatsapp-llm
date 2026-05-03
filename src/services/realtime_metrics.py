@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class RealtimeMetricsManager:
     """Gestor de métricas en tiempo real con WebSocket"""
 
-    def __init__(self, analytics_manager=None):
+    def __init__(self, analytics_manager=None) -> None:
         self.analytics = analytics_manager
         self.active_connections: set[WebSocket] = set()
         self.is_running = False
@@ -35,7 +35,7 @@ class RealtimeMetricsManager:
 
         logger.info("📊 RealtimeMetricsManager inicializado")
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket) -> None:
         """Conectar un nuevo WebSocket"""
         await websocket.accept()
         self.active_connections.add(websocket)
@@ -44,12 +44,12 @@ class RealtimeMetricsManager:
         # Enviar snapshot inicial
         await self.send_initial_snapshot(websocket)
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket: WebSocket) -> None:
         """Desconectar WebSocket"""
         self.active_connections.discard(websocket)
         logger.info("❌ Cliente WebSocket desconectado (total: %s)", len(self.active_connections))
 
-    async def send_initial_snapshot(self, websocket: WebSocket):
+    async def send_initial_snapshot(self, websocket: WebSocket) -> None:
         """Enviar snapshot inicial de métricas al conectar"""
         try:
             snapshot = self.get_current_metrics()
@@ -57,7 +57,7 @@ class RealtimeMetricsManager:
         except Exception as e:
             logger.error("❌ Error enviando snapshot: %s", e)
 
-    async def broadcast(self, message: dict[str, Any]):
+    async def broadcast(self, message: dict[str, Any]) -> None:
         """Enviar mensaje a todos los clientes conectados"""
         if not self.active_connections:
             return
@@ -75,7 +75,7 @@ class RealtimeMetricsManager:
         for ws in disconnected:
             self.active_connections.discard(ws)
 
-    def start_broadcast_loop(self):
+    def start_broadcast_loop(self) -> None:
         """Iniciar loop de actualización de métricas"""
         if self.is_running:
             logger.warning("⚠️ Loop de métricas ya está corriendo")
@@ -85,7 +85,7 @@ class RealtimeMetricsManager:
         asyncio.create_task(self._broadcast_loop())
         logger.info("🚀 Loop de broadcast iniciado")
 
-    async def _broadcast_loop(self):
+    async def _broadcast_loop(self) -> None:
         """Loop principal de actualización de métricas"""
         while self.is_running:
             try:
@@ -100,12 +100,12 @@ class RealtimeMetricsManager:
                 logger.error("❌ Error en loop de broadcast: %s", e)
                 await asyncio.sleep(self.update_interval)
 
-    def stop_broadcast_loop(self):
+    def stop_broadcast_loop(self) -> None:
         """Detener loop de actualización"""
         self.is_running = False
         logger.info("⏸️ Loop de broadcast detenido")
 
-    def record_conversation_start(self, session_id: str, contact: str):
+    def record_conversation_start(self, session_id: str, contact: str) -> None:
         """Registrar inicio de conversación"""
         hour_key = datetime.now().replace(minute=0, second=0, microsecond=0)
         self.metrics_cache["conversations"][hour_key] += 1
@@ -117,7 +117,7 @@ class RealtimeMetricsManager:
             except Exception as e:
                 logger.error("❌ Error registrando en analytics: %s", e)
 
-    def record_message(self, session_id: str, role: str, message: str):
+    def record_message(self, session_id: str, role: str, message: str) -> None:
         """Registrar mensaje"""
         hour_key = datetime.now().replace(minute=0, second=0, microsecond=0)
         self.metrics_cache["messages"][hour_key] += 1
@@ -128,7 +128,7 @@ class RealtimeMetricsManager:
             except Exception as e:
                 logger.error("❌ Error registrando mensaje: %s", e)
 
-    def record_llm_usage(self, provider: str, tokens: int, response_time: float):
+    def record_llm_usage(self, provider: str, tokens: int, response_time: float) -> None:
         """Registrar uso de LLM"""
         self.metrics_cache["llm_usage"][provider] += 1
         self.metrics_cache["response_times"].append({"provider": provider, "time": response_time, "timestamp": datetime.now()})
@@ -143,12 +143,12 @@ class RealtimeMetricsManager:
             except Exception as e:
                 logger.error("❌ Error registrando LLM: %s", e)
 
-    def record_error(self, error_type: str, details: str):
+    def record_error(self, error_type: str, details: str) -> None:
         """Registrar error"""
         hour_key = datetime.now().replace(minute=0, second=0, microsecond=0)
         self.metrics_cache["errors"][hour_key] += 1
 
-    def record_humanization_event(self, event_type: str):
+    def record_humanization_event(self, event_type: str) -> None:
         """Registrar evento de humanización"""
         hour_key = datetime.now().replace(minute=0, second=0, microsecond=0)
         key = f"{hour_key}_{event_type}"
@@ -252,7 +252,7 @@ class RealtimeMetricsManager:
 
         return distribution
 
-    def cleanup_old_metrics(self):
+    def cleanup_old_metrics(self) -> None:
         """Limpiar métricas antiguas (más de 24 horas)"""
         cutoff = datetime.now() - timedelta(hours=24)
 

@@ -1,12 +1,12 @@
 """Online/local model management routes extracted from admin_panel.py."""
 
-from typing import Any, Optional
+from typing import Any
 
-from crypto import encrypt_text
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from crypto import encrypt_text
 from src.models.admin_db import get_session
 from src.models.models import ModelConfig
 from src.routers.deps import verify_token
@@ -58,8 +58,16 @@ def api_available_online_models(current_user: dict[str, Any] = Depends(get_curre
             "provider": "google",
             "models": [
                 {"id": "gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite", "description": "Recomendado: rápido, gratis"},
-                {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "description": "Mejor calidad, tier gratuito disponible"},
-                {"id": "gemini-3.1-flash-lite-preview", "name": "Gemini 3.1 Flash Lite (preview)", "description": "Más nuevo, gratis (preview)"},
+                {
+                    "id": "gemini-2.5-flash",
+                    "name": "Gemini 2.5 Flash",
+                    "description": "Mejor calidad, tier gratuito disponible",
+                },
+                {
+                    "id": "gemini-3.1-flash-lite-preview",
+                    "name": "Gemini 3.1 Flash Lite (preview)",
+                    "description": "Más nuevo, gratis (preview)",
+                },
             ],
         },
         "openai": {
@@ -75,13 +83,21 @@ def api_available_online_models(current_user: dict[str, Any] = Depends(get_curre
             "models": [
                 {"id": "claude-opus-4-7", "name": "Claude Opus 4.7", "description": "Máxima capacidad"},
                 {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6", "description": "Mejor calidad/precio"},
-                {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "description": "Rápido y barato (recomendado)"},
+                {
+                    "id": "claude-haiku-4-5-20251001",
+                    "name": "Claude Haiku 4.5",
+                    "description": "Rápido y barato (recomendado)",
+                },
             ],
         },
         "x-ai": {
             "provider": "x-ai",
             "models": [
-                {"id": "grok-4-1-fast", "name": "Grok 4.1 Fast", "description": "Rápido y económico, 2M contexto (recomendado)"},
+                {
+                    "id": "grok-4-1-fast",
+                    "name": "Grok 4.1 Fast",
+                    "description": "Rápido y económico, 2M contexto (recomendado)",
+                },
                 {"id": "grok-4", "name": "Grok 4", "description": "Flagship completo, más caro"},
             ],
         },
@@ -93,12 +109,14 @@ class OnlineModelConfig(BaseModel):
     provider: str
     model_id: str
     api_key: str
-    base_url: Optional[str] = None
+    base_url: str | None = None
     active: bool = True
 
 
 @router.post("/api/models/online")
-def api_create_online_model(config: OnlineModelConfig, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def api_create_online_model(
+    config: OnlineModelConfig, current_user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     """Crea un modelo online y almacena API key encriptada."""
     session = get_session()
     try:
@@ -129,7 +147,9 @@ def api_create_online_model(config: OnlineModelConfig, current_user: dict[str, A
 
 
 @router.put("/api/models/online/{model_id}")
-def api_update_online_model(model_id: int, config: OnlineModelConfig, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def api_update_online_model(
+    model_id: int, config: OnlineModelConfig, current_user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     """Actualiza un modelo online existente por ID."""
     session = get_session()
     try:

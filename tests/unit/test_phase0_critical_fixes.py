@@ -7,7 +7,6 @@ from src.models.models import SilentTransfer
 from src.services.adaptive_layer import AdaptiveLayerManager
 from src.services.queue_system import MessageStatus, QueuedMessage, queue_manager
 
-
 pytestmark = pytest.mark.unit
 
 

@@ -11,7 +11,9 @@ pytestmark = [pytest.mark.api, pytest.mark.security]
 
 
 def test_security_anomalies_can_create_operational_alert(client: TestClient, admin_headers: dict[str, str]) -> None:
-    log_security_event("login_failed", username="admin", role="admin", success=False, details={"reason": "invalid_credentials"})
+    log_security_event(
+        "login_failed", username="admin", role="admin", success=False, details={"reason": "invalid_credentials"}
+    )
 
     response = client.get(
         "/api/audit/security-anomalies",
@@ -40,7 +42,9 @@ def test_security_anomalies_can_create_operational_alert(client: TestClient, adm
 
 
 def test_security_anomalies_auto_alert_respects_cooldown(client: TestClient, admin_headers: dict[str, str]) -> None:
-    log_security_event("refresh_failed", username="admin", role="admin", success=False, details={"reason": "missing_refresh_cookie"})
+    log_security_event(
+        "refresh_failed", username="admin", role="admin", success=False, details={"reason": "missing_refresh_cookie"}
+    )
 
     first = client.get(
         "/api/audit/security-anomalies",

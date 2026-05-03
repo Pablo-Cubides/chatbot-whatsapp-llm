@@ -21,13 +21,13 @@ def _read(rel_path: str) -> str:
 def test_whatsapp_web_provider_uses_lazy_error_logging() -> None:
     text = _read("src/services/whatsapp_web_provider.py")
 
-    assert "logger.error(\"❌ Error enviando mensaje via Web: %s\", e)" in text
-    assert "logger.error(\"❌ Error normalizando mensaje Web: %s\", e)" in text
-    assert "logger.error(\"❌ Error verificando disponibilidad Web: %s\", e)" in text
+    assert 'logger.error("❌ Error enviando mensaje via Web: %s", e)' in text
+    assert 'logger.error("❌ Error normalizando mensaje Web: %s", e)' in text
+    assert 'logger.error("❌ Error verificando disponibilidad Web: %s", e)' in text
 
 
 def test_chat_system_uses_lazy_error_logging() -> None:
     text = _read("src/services/chat_system.py")
 
-    assert "logger.error(\"Error procesando mensaje: %s\", e)" in text
-    assert "logger.error(\"Error generando respuesta: %s\", e)" in text
+    assert 'logger.error("Error procesando mensaje: %s", e)' in text
+    assert 'logger.error("Error generando respuesta: %s", e)' in text

@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +84,10 @@ class AppointmentData:
     start_time: datetime
     end_time: datetime
     client_name: str
-    client_email: Optional[str] = None
-    client_phone: Optional[str] = None
-    description: Optional[str] = None
-    location: Optional[str] = None
+    client_email: str | None = None
+    client_phone: str | None = None
+    description: str | None = None
+    location: str | None = None
     timezone: str = "America/Bogota"
     send_notifications: bool = True
     add_video_conferencing: bool = False
@@ -118,12 +118,12 @@ class AppointmentResult:
     """Result of creating/updating an appointment"""
 
     success: bool
-    appointment_id: Optional[str] = None
-    external_id: Optional[str] = None
-    external_link: Optional[str] = None
-    ical_uid: Optional[str] = None
-    error_message: Optional[str] = None
-    provider: Optional[str] = None
+    appointment_id: str | None = None
+    external_id: str | None = None
+    external_link: str | None = None
+    ical_uid: str | None = None
+    error_message: str | None = None
+    provider: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -149,7 +149,7 @@ class CalendarConfig:
     send_notifications: bool = True
     add_video_conferencing: bool = True
 
-    def get_working_hours_for_day(self, day: str) -> Optional[dict[str, str]]:
+    def get_working_hours_for_day(self, day: str) -> dict[str, str] | None:
         """Get working hours for a specific day (monday, tuesday, etc.)"""
         day_config = self.working_hours.get(day.lower(), {})
         if day_config.get("closed", False):
@@ -163,7 +163,7 @@ class BaseCalendarProvider(ABC):
     Implementations: GoogleCalendarProvider, OutlookCalendarProvider
     """
 
-    def __init__(self, config: CalendarConfig):
+    def __init__(self, config: CalendarConfig) -> None:
         self.config = config
         self.is_authenticated = False
         self._credentials = None
@@ -254,7 +254,7 @@ class BaseCalendarProvider(ABC):
         pass
 
     @abstractmethod
-    async def get_appointment(self, external_id: str) -> Optional[dict[str, Any]]:
+    async def get_appointment(self, external_id: str) -> dict[str, Any] | None:
         """
         Get details of a specific appointment.
 
@@ -337,12 +337,12 @@ class CalendarManager:
     Provides a unified interface for calendar operations.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._providers: dict[str, BaseCalendarProvider] = {}
-        self._active_provider: Optional[str] = None
-        self._config: Optional[CalendarConfig] = None
+        self._active_provider: str | None = None
+        self._config: CalendarConfig | None = None
 
-    def register_provider(self, provider: BaseCalendarProvider):
+    def register_provider(self, provider: BaseCalendarProvider) -> None:
         """Register a calendar provider"""
         self._providers[provider.provider_name] = provider
         logger.info(f"📅 Registered calendar provider: {provider.provider_name}")
@@ -356,7 +356,7 @@ class CalendarManager:
         logger.warning(f"⚠️ Provider not found: {provider_name}")
         return False
 
-    def get_active_provider(self) -> Optional[BaseCalendarProvider]:
+    def get_active_provider(self) -> BaseCalendarProvider | None:
         """Get the currently active provider"""
         if self._active_provider:
             return self._providers.get(self._active_provider)

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Response
 
-from src.services.metrics import get_metrics_snapshot
 from src.services.metrics import _prometheus_text as prometheus_text  # intentional shared formatter
+from src.services.metrics import get_metrics_snapshot
 
 router = APIRouter(tags=["monitoring"])
 

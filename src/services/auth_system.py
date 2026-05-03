@@ -8,7 +8,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 import bcrypt
 import jwt
@@ -32,7 +32,7 @@ class LoginResponse(BaseModel):
 
 
 class AuthManager:
-    def __init__(self):
+    def __init__(self) -> None:
         # JWT Configuration
         self.secret_key = self._get_jwt_secret()
         self.algorithm = "HS256"
@@ -122,12 +122,12 @@ class AuthManager:
         logger.info(f"Inicializados {len(users)} usuarios del sistema")
         return users
 
-    def authenticate_user(self, username: str, password: str) -> Optional[dict[str, Any]]:
+    def authenticate_user(self, username: str, password: str) -> dict[str, Any] | None:
         """Autenticar usuario con validación segura"""
         auth_result, _, _ = self.authenticate_user_detailed(username, password)
         return auth_result
 
-    def authenticate_user_detailed(self, username: str, password: str) -> tuple[Optional[dict[str, Any]], Optional[str], Optional[int]]:
+    def authenticate_user_detailed(self, username: str, password: str) -> tuple[dict[str, Any] | None, str | None, int | None]:
         """Autenticación con detalle de errores para lockout y auditoría."""
         self._cleanup_security_state()
 
@@ -151,14 +151,20 @@ class AuthManager:
         self._reset_failed_login(username)
 
         logger.info(f"Login exitoso para usuario: {username}")
-        return {
-            "username": username,
-            "role": user["role"],
-            "permissions": user["permissions"],
-            "login_time": datetime.now(timezone.utc).isoformat(),
-        }, None, None
+        return (
+            {
+                "username": username,
+                "role": user["role"],
+                "permissions": user["permissions"],
+                "login_time": datetime.now(timezone.utc).isoformat(),
+            },
+            None,
+            None,
+        )
 
-    def _create_token(self, user_data: dict[str, Any], token_type: str, expires_delta: timedelta, session_id: str | None = None) -> str:
+    def _create_token(
+        self, user_data: dict[str, Any], token_type: str, expires_delta: timedelta, session_id: str | None = None
+    ) -> str:
         """Crear JWT token con claims de seguridad."""
         to_encode = user_data.copy()
         now = datetime.now(timezone.utc)
@@ -227,7 +233,7 @@ class AuthManager:
             session_id=session_id,
         )
 
-    def verify_token(self, token: str, expected_type: str | None = None) -> Optional[dict[str, Any]]:
+    def verify_token(self, token: str, expected_type: str | None = None) -> dict[str, Any] | None:
         """Verificar y decodificar JWT token"""
         try:
             self._cleanup_security_state()
@@ -353,7 +359,7 @@ class AuthManager:
             else:
                 self._failed_login_attempts.pop(username, None)
 
-    def _is_account_locked(self, username: str) -> tuple[bool, Optional[int]]:
+    def _is_account_locked(self, username: str) -> tuple[bool, int | None]:
         lock_until = self._account_lockout_until.get(username)
         if lock_until is None:
             return False, None
@@ -366,7 +372,7 @@ class AuthManager:
 
         return True, int(lock_until - now)
 
-    def _register_failed_login(self, username: str) -> tuple[bool, Optional[int]]:
+    def _register_failed_login(self, username: str) -> tuple[bool, int | None]:
         attempts = self._failed_login_attempts.get(username, [])
         now = time.time()
         window_start = now - (5 * 60)

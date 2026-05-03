@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -70,9 +70,9 @@ class FileContent(BaseModel):
 
 
 class ChatContextUpdate(BaseModel):
-    perfil: Optional[str] = None
-    contexto: Optional[str] = None
-    objetivo: Optional[str] = None
+    perfil: str | None = None
+    contexto: str | None = None
+    objetivo: str | None = None
 
 
 @router.get("/api/files/{filename}")
@@ -111,7 +111,9 @@ def api_get_file(filename: str, current_user: dict[str, Any] = Depends(get_curre
 
 
 @router.put("/api/files/{filename}")
-def api_update_file(filename: str, file_content: FileContent, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def api_update_file(
+    filename: str, file_content: FileContent, current_user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     """Update content of a file."""
     try:
         allowed_files = {

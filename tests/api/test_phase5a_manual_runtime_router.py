@@ -8,7 +8,6 @@ from src.routers import manual_messaging_admin as manual_router
 from src.routers import whatsapp_runtime_admin as runtime_router
 
 
-
 def test_whatsapp_send_requires_runtime_running(client: TestClient, admin_headers: dict[str, str], monkeypatch) -> None:
     monkeypatch.setattr(manual_router, "get_whatsapp_runtime_status", lambda: {"status": "stopped"})
 
@@ -22,7 +21,6 @@ def test_whatsapp_send_requires_runtime_running(client: TestClient, admin_header
     payload = response.json()
     assert payload.get("success") is False
     assert "automator" in payload.get("error", "").lower()
-
 
 
 def test_whatsapp_send_enqueues_message_and_history(client: TestClient, admin_headers: dict[str, str], monkeypatch) -> None:
@@ -68,7 +66,6 @@ def test_whatsapp_send_enqueues_message_and_history(client: TestClient, admin_he
     assert saved_history["history"][-1]["manual"] is True
 
 
-
 def test_bulk_send_campaign_creates_and_enqueues(client: TestClient, admin_headers: dict[str, str], monkeypatch) -> None:
     captured_bulk: list[dict[str, object]] = []
 
@@ -102,7 +99,6 @@ def test_bulk_send_campaign_creates_and_enqueues(client: TestClient, admin_heade
     assert all(item.get("metadata", {}).get("campaign_id") == "camp_phase5_bulk" for item in captured_bulk)
 
 
-
 def test_whatsapp_start_rejects_when_lmstudio_not_running(
     client: TestClient,
     admin_headers: dict[str, str],
@@ -115,7 +111,6 @@ def test_whatsapp_start_rejects_when_lmstudio_not_running(
     payload = response.json()
     assert payload.get("success") is False
     assert "lm studio" in payload.get("error", "").lower()
-
 
 
 def test_whatsapp_start_rejects_when_no_models_loaded(

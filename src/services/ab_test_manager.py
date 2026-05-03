@@ -9,7 +9,7 @@ import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from src.models.admin_db import get_session
 from src.models.models import ABAssignmentModel, ABExperimentModel, ABResultModel, ABVariantModel
@@ -72,8 +72,8 @@ class ABExperiment:
 
     # Configuración
     created_at: datetime
-    started_at: Optional[datetime]
-    ended_at: Optional[datetime]
+    started_at: datetime | None
+    ended_at: datetime | None
 
     min_sample_size: int  # Mínimo de conversaciones por variante
     confidence_level: float  # Nivel de confianza (ej: 0.95)
@@ -83,14 +83,14 @@ class ABExperiment:
 
     # Estado
     total_participants: int = 0
-    winner_variant_id: Optional[str] = None
+    winner_variant_id: str | None = None
     is_statistically_significant: bool = False
 
 
 class ABTestManager:
     """Gestor de experimentos A/B"""
 
-    def __init__(self, analytics_manager=None, deep_analyzer=None):
+    def __init__(self, analytics_manager=None, deep_analyzer=None) -> None:
         self.analytics = analytics_manager
         self.deep_analyzer = deep_analyzer
 
@@ -262,8 +262,8 @@ class ABTestManager:
         variant_type: VariantType,
         variants: list[dict[str, Any]],
         success_metric: str = "satisfaction",
-        min_sample_size: Optional[int] = None,
-        confidence_level: Optional[float] = None,
+        min_sample_size: int | None = None,
+        confidence_level: float | None = None,
     ) -> ABExperiment:
         """
         Crea un nuevo experimento A/B
@@ -373,7 +373,7 @@ class ABTestManager:
         logger.info(f"✅ Experimento completado: {experiment.name}")
         return True
 
-    def assign_variant(self, contact: str, experiment_id: str) -> Optional[Variant]:
+    def assign_variant(self, contact: str, experiment_id: str) -> Variant | None:
         """
         Asigna una variante a un usuario para un experimento
         Usa asignación consistente (mismo usuario siempre misma variante)
@@ -422,7 +422,7 @@ class ABTestManager:
         satisfaction_score: float,
         bot_suspicion: bool,
         objective_achieved: bool,
-    ):
+    ) -> None:
         """Registra resultado de conversación en experimento"""
         if experiment_id not in self.experiments:
             return
@@ -475,10 +475,9 @@ class ABTestManager:
 
     def _should_calculate_significance(self, experiment: ABExperiment) -> bool:
         """Determina si hay suficientes datos para calcular significancia"""
-        min_reached = all(v.total_conversations >= experiment.min_sample_size for v in experiment.variants)
-        return min_reached
+        return all(v.total_conversations >= experiment.min_sample_size for v in experiment.variants)
 
-    def _calculate_statistical_significance(self, experiment: ABExperiment):
+    def _calculate_statistical_significance(self, experiment: ABExperiment) -> None:
         """
         Calcula significancia estadística (simplified chi-square test)
         Determina si las diferencias son significativas
@@ -516,7 +515,7 @@ class ABTestManager:
         except Exception as e:
             logger.error(f"❌ Error calculando significancia: {e}")
 
-    def _calculate_winner(self, experiment: ABExperiment) -> Optional[Variant]:
+    def _calculate_winner(self, experiment: ABExperiment) -> Variant | None:
         """Calcula la variante ganadora"""
         if not experiment.variants:
             return None
@@ -541,7 +540,7 @@ class ABTestManager:
 
         return sorted_variants[0] if sorted_variants else None
 
-    def get_experiment_report(self, experiment_id: str) -> Optional[dict[str, Any]]:
+    def get_experiment_report(self, experiment_id: str) -> dict[str, Any] | None:
         """Genera reporte detallado de experimento"""
         if experiment_id not in self.experiments:
             return None
@@ -604,7 +603,7 @@ class ABTestManager:
             "recommendation": self._get_recommendation(experiment, current_winner),
         }
 
-    def _get_recommendation(self, experiment: ABExperiment, current_winner: Optional[Variant]) -> str:
+    def _get_recommendation(self, experiment: ABExperiment, current_winner: Variant | None) -> str:
         """Genera recomendación basada en resultados"""
         if not current_winner:
             return "Insuficientes datos para recomendar"
@@ -612,13 +611,10 @@ class ABTestManager:
         if experiment.status != ExperimentStatus.COMPLETED:
             if experiment.is_statistically_significant:
                 return f"Recomendado: Implementar '{current_winner.name}' (diferencia significativa detectada)"
-            else:
-                return "Continuar experimento - diferencias no son significativas aún"
-        else:
-            if experiment.is_statistically_significant:
-                return f"✅ IMPLEMENTAR: '{current_winner.name}' ganó con significancia estadística"
-            else:
-                return f"⚠️ '{current_winner.name}' lideró pero sin significancia estadística - considerar mantener actual"
+            return "Continuar experimento - diferencias no son significativas aún"
+        if experiment.is_statistically_significant:
+            return f"✅ IMPLEMENTAR: '{current_winner.name}' ganó con significancia estadística"
+        return f"⚠️ '{current_winner.name}' lideró pero sin significancia estadística - considerar mantener actual"
 
     def get_stats(self) -> dict[str, Any]:
         """Estadísticas generales de A/B testing"""

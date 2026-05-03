@@ -116,13 +116,13 @@ def test_security_export_checkpoints_crud_and_authz(
         headers=admin_headers,
     )
     assert upsert.status_code == 200
-    checkpoint = (upsert.json().get("checkpoint") or {})
+    checkpoint = upsert.json().get("checkpoint") or {}
     assert checkpoint.get("consumer") == "siem-main"
     assert int(checkpoint.get("after_id", -1)) == 9
 
     fetched = client.get("/api/audit/security-export-checkpoints/siem-main", headers=admin_headers)
     assert fetched.status_code == 200
-    stored = (fetched.json().get("checkpoint") or {})
+    stored = fetched.json().get("checkpoint") or {}
     assert stored.get("consumer") == "siem-main"
     assert int(stored.get("after_id", -1)) == 9
 

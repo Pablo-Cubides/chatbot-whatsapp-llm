@@ -4,7 +4,7 @@ import json
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -29,7 +29,11 @@ def _replace_query_param(url: str, key: str, value: str) -> str:
 
 def _issue_oauth_state() -> str:
     now = datetime.now(timezone.utc)
-    expired = [state for state, created_at in _oauth_state_store.items() if (now - created_at).total_seconds() > OAUTH_STATE_TTL_SECONDS]
+    expired = [
+        state
+        for state, created_at in _oauth_state_store.items()
+        if (now - created_at).total_seconds() > OAUTH_STATE_TTL_SECONDS
+    ]
     for state in expired:
         _oauth_state_store.pop(state, None)
 
@@ -38,7 +42,7 @@ def _issue_oauth_state() -> str:
     return state
 
 
-def _consume_oauth_state(state: Optional[str]) -> bool:
+def _consume_oauth_state(state: str | None) -> bool:
     if not state:
         return False
 
@@ -151,7 +155,9 @@ async def save_calendar_config(config: dict[str, Any], current_user: dict[str, A
 
 
 @router.post("/api/calendar/google/credentials")
-async def upload_google_credentials(credentials: UploadFile = File(...), current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
+async def upload_google_credentials(
+    credentials: UploadFile = File(...), current_user: dict[str, Any] = Depends(require_admin)
+) -> JSONResponse:
     """Sube y valida credenciales OAuth de Google Calendar."""
     try:
         if not credentials.filename or not credentials.filename.lower().endswith(".json"):
@@ -214,7 +220,7 @@ async def google_oauth_authorize(current_user: dict[str, Any] = Depends(get_curr
 
 
 @router.get("/api/calendar/oauth/google/callback")
-async def google_oauth_callback(code: str, state: Optional[str] = None) -> JSONResponse:
+async def google_oauth_callback(code: str, state: str | None = None) -> JSONResponse:
     """Procesa callback OAuth de Google y guarda tokens de acceso."""
     if not _consume_oauth_state(state):
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
@@ -256,7 +262,7 @@ async def outlook_oauth_authorize(current_user: dict[str, Any] = Depends(get_cur
 
 
 @router.get("/api/calendar/oauth/outlook/callback")
-async def outlook_oauth_callback(code: str, state: Optional[str] = None) -> JSONResponse:
+async def outlook_oauth_callback(code: str, state: str | None = None) -> JSONResponse:
     """Procesa callback OAuth de Outlook y guarda tokens de acceso."""
     if not _consume_oauth_state(state):
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")

@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -47,19 +47,19 @@ class AppointmentSession:
     state: AppointmentState = AppointmentState.NONE
 
     # Collected data
-    client_name: Optional[str] = None
-    client_email: Optional[str] = None
-    client_phone: Optional[str] = None
-    preferred_date: Optional[datetime] = None
-    preferred_time: Optional[str] = None
-    reason: Optional[str] = None
+    client_name: str | None = None
+    client_email: str | None = None
+    client_phone: str | None = None
+    preferred_date: datetime | None = None
+    preferred_time: str | None = None
+    reason: str | None = None
 
     # Available slots shown to user
     available_slots: list[TimeSlot] = field(default_factory=list)
-    selected_slot: Optional[TimeSlot] = None
+    selected_slot: TimeSlot | None = None
 
     # Result
-    appointment_result: Optional[AppointmentResult] = None
+    appointment_result: AppointmentResult | None = None
 
     # Timestamps
     started_at: datetime = field(default_factory=datetime.now)
@@ -69,7 +69,7 @@ class AppointmentSession:
     retry_count: int = 0
     max_retries: int = 3
 
-    def update(self):
+    def update(self) -> None:
         self.updated_at = datetime.now()
 
     def is_expired(self, timeout_minutes: int = 30) -> bool:
@@ -103,7 +103,7 @@ class AppointmentFlowManager:
     6. Send confirmation message
     """
 
-    def __init__(self, calendar_mgr: CalendarManager = None):
+    def __init__(self, calendar_mgr: CalendarManager = None) -> None:
         self._calendar = calendar_mgr or calendar_manager
         self._sessions: dict[str, AppointmentSession] = {}
 
@@ -151,7 +151,7 @@ class AppointmentFlowManager:
         # Phone validation (flexible)
         self._phone_pattern = r"[\d\s\-\+\(\)]{7,}"
 
-    def get_session(self, chat_id: str) -> Optional[AppointmentSession]:
+    def get_session(self, chat_id: str) -> AppointmentSession | None:
         """Get existing session for a chat"""
         session = self._sessions.get(chat_id)
         if session and not session.is_expired():
@@ -165,7 +165,7 @@ class AppointmentFlowManager:
         logger.info(f"📅 Created appointment session for {chat_id}")
         return session
 
-    def end_session(self, chat_id: str):
+    def end_session(self, chat_id: str) -> None:
         """End and remove a session"""
         if chat_id in self._sessions:
             del self._sessions[chat_id]
@@ -230,22 +230,22 @@ class AppointmentFlowManager:
         if session.state == AppointmentState.COLLECTING_NAME:
             return await self._process_name(session, message)
 
-        elif session.state == AppointmentState.COLLECTING_EMAIL:
+        if session.state == AppointmentState.COLLECTING_EMAIL:
             return await self._process_email(session, message)
 
-        elif session.state == AppointmentState.COLLECTING_PHONE:
+        if session.state == AppointmentState.COLLECTING_PHONE:
             return await self._process_phone(session, message)
 
-        elif session.state == AppointmentState.COLLECTING_REASON:
+        if session.state == AppointmentState.COLLECTING_REASON:
             return await self._process_reason(session, message)
 
-        elif session.state == AppointmentState.COLLECTING_DATE:
+        if session.state == AppointmentState.COLLECTING_DATE:
             return await self._process_date(session, message)
 
-        elif session.state == AppointmentState.SHOWING_SLOTS:
+        if session.state == AppointmentState.SHOWING_SLOTS:
             return await self._process_slot_selection(session, message)
 
-        elif session.state == AppointmentState.CONFIRMING:
+        if session.state == AppointmentState.CONFIRMING:
             return await self._process_confirmation(session, message)
 
         return ("", False)
@@ -491,12 +491,10 @@ class AppointmentFlowManager:
                     response += "\n\n¡Nos vemos pronto! 👋"
 
                     return (response, True)
-                else:
-                    return (
-                        f"❌ Hubo un problema al crear la cita: {result.error_message}\n"
-                        "Por favor intenta nuevamente más tarde.",
-                        True,
-                    )
+                return (
+                    f"❌ Hubo un problema al crear la cita: {result.error_message}\nPor favor intenta nuevamente más tarde.",
+                    True,
+                )
 
             except Exception as e:
                 logger.error(f"❌ Error creating appointment: {e}")
@@ -512,7 +510,7 @@ class AppointmentFlowManager:
             True,
         )
 
-    def _parse_date(self, text: str) -> Optional[datetime]:
+    def _parse_date(self, text: str) -> datetime | None:
         """Parse natural language date"""
         text_lower = text.lower().strip()
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)

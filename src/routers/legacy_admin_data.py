@@ -1,6 +1,6 @@
 """Legacy non-/api data endpoints extracted from admin_panel."""
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,21 +15,21 @@ router = APIRouter(tags=["legacy-admin-data"])
 class ModelIn(BaseModel):
     name: str
     provider: str
-    model_type: Optional[str] = "local"  # 'local' or 'online'
-    config: Optional[dict] = None
-    active: Optional[bool] = True
+    model_type: str | None = "local"  # 'local' or 'online'
+    config: dict | None = None
+    active: bool | None = True
 
 
 class RuleIn(BaseModel):
     name: str
     every_n_messages: int
     model_id: int
-    enabled: Optional[bool] = True
+    enabled: bool | None = True
 
 
 class ContactIn(BaseModel):
     contact_id: str
-    label: Optional[str]
+    label: str | None
 
 
 @router.post("/models", response_model=dict)
@@ -54,7 +54,9 @@ def create_model(payload: ModelIn, current_user: dict[str, Any] = Depends(get_cu
 
 
 @router.get("/models", response_model=list[dict])
-def list_models(model_type: Optional[str] = None, current_user: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
+def list_models(
+    model_type: str | None = None, current_user: dict[str, Any] = Depends(get_current_user)
+) -> list[dict[str, Any]]:
     """Lista modelos filtrables por tipo (`local`/`online`)."""
     session = get_session()
     try:

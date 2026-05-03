@@ -6,9 +6,11 @@ import os
 import shutil
 import subprocess
 import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any
+
 import aiohttp
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,9 +55,9 @@ from src.services.audit_system import log_security_event
 # Import auth dependencies
 from src.services.auth_system import auth_manager, get_current_user
 from src.services.http_rate_limit import http_rate_limiter
+from src.services.metrics import inc_counter, observe_histogram, set_gauge
 from src.services.multi_provider_llm import llm_manager
 from src.services.queue_system import queue_manager
-from src.services.metrics import inc_counter, observe_histogram, set_gauge
 
 
 class RuntimeEnvSettings(BaseSettings):
@@ -95,9 +97,7 @@ def _configure_logging_output() -> None:
         return
 
     root_logger = logging.getLogger()
-    formatter = jsonlogger.JsonFormatter(
-        "%(asctime)s %(levelname)s %(name)s %(message)s %(request_id)s"
-    )
+    formatter = jsonlogger.JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s %(request_id)s")
     for handler in root_logger.handlers:
         handler.setFormatter(formatter)
 
@@ -262,10 +262,7 @@ async def add_security_headers(request: Request, call_next: Callable[[Request], 
 
     if path.startswith("/api"):
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; "
-            "frame-ancestors 'none'; "
-            "base-uri 'none'; "
-            "form-action 'none'"
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
         )
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
@@ -316,6 +313,7 @@ async def metrics_http_middleware(request: Request, call_next: Callable[[Request
     observe_histogram("http_request_duration_seconds", elapsed)
     return response
 
+
 # Mount simple static UI
 ui_path = os.path.join(os.path.dirname(__file__), "ui")
 if os.path.isdir(ui_path):
@@ -325,28 +323,28 @@ if os.path.isdir(ui_path):
 # 🔌 INCLUDE EXTRACTED ROUTERS (source of truth)
 # ═══════════════════════════════════════════════════════════════
 try:
-    from src.routers.analysis_adaptive import router as analysis_adaptive_router
     from src.routers.ai_models_admin import router as ai_models_admin_router
-    from src.routers.auth import router as auth_router
+    from src.routers.analysis_adaptive import router as analysis_adaptive_router
     from src.routers.analytics import router as analytics_router
+    from src.routers.auth import router as auth_router
     from src.routers.business_config import router as business_config_router
     from src.routers.calendar_admin import router as calendar_admin_router
     from src.routers.campaigns import router as campaigns_router
     from src.routers.chat_core import router as chat_core_router
     from src.routers.chat_files_admin import router as chat_files_admin_router
-    from src.routers.contexts_data import router as contexts_data_router
     from src.routers.contacts import router as contacts_router
-    from src.routers.lmstudio_admin import router as lmstudio_admin_router
+    from src.routers.contexts_data import router as contexts_data_router
     from src.routers.legacy_admin_data import router as legacy_admin_data_router
     from src.routers.legacy_compat import router as legacy_compat_router
+    from src.routers.lmstudio_admin import router as lmstudio_admin_router
     from src.routers.manual_messaging_admin import router as manual_messaging_admin_router
     from src.routers.model_switch_admin import router as model_switch_admin_router
     from src.routers.models_online import router as models_online_router
     from src.routers.monitoring import router as monitoring_router
     from src.routers.system_admin import router as system_admin_router
+    from src.routers.webhooks import router as webhooks_router
     from src.routers.whatsapp_provider import router as whatsapp_provider_router
     from src.routers.whatsapp_runtime_admin import router as whatsapp_runtime_admin_router
-    from src.routers.webhooks import router as webhooks_router
 
     app.include_router(auth_router)
     app.include_router(ai_models_admin_router)
@@ -469,7 +467,7 @@ async def sanitized_http_exception_handler(request: Request, exc: HTTPException)
         custom_500 = os.path.join(os.path.dirname(__file__), "ui", "500.html")
         if os.path.isfile(custom_500):
             try:
-                with open(custom_500, "r", encoding="utf-8") as file_handler:
+                with open(custom_500, encoding="utf-8") as file_handler:
                     return HTMLResponse(content=file_handler.read(), status_code=exc.status_code)
             except OSError:
                 logger.exception("❌ Failed to load custom 500 page")
@@ -491,12 +489,13 @@ async def not_found_html_handler(request: Request, exc: StarletteHTTPException) 
     custom_404 = os.path.join(os.path.dirname(__file__), "ui", "404.html")
     if os.path.isfile(custom_404):
         try:
-            with open(custom_404, "r", encoding="utf-8") as file_handler:
+            with open(custom_404, encoding="utf-8") as file_handler:
                 return HTMLResponse(content=file_handler.read(), status_code=404)
         except OSError:
             logger.exception("❌ Failed to load custom 404 page")
 
     return HTMLResponse(content="<h1>404</h1><p>Página no encontrada.</p>", status_code=404)
+
 
 @app.exception_handler(Exception)
 async def sanitized_unhandled_exception_handler(request: Request, exc: Exception) -> Response:
@@ -506,7 +505,7 @@ async def sanitized_unhandled_exception_handler(request: Request, exc: Exception
         custom_500 = os.path.join(os.path.dirname(__file__), "ui", "500.html")
         if os.path.isfile(custom_500):
             try:
-                with open(custom_500, "r", encoding="utf-8") as file_handler:
+                with open(custom_500, encoding="utf-8") as file_handler:
                     return HTMLResponse(content=file_handler.read(), status_code=500)
             except OSError:
                 logger.exception("❌ Failed to load custom 500 page")
@@ -553,9 +552,7 @@ def health() -> Response:
     if redis is not None and (redis_url or redis_password):
         try:
             client = (
-                redis.from_url(redis_url)
-                if redis_url
-                else redis.Redis(host="localhost", port=6379, password=redis_password)
+                redis.from_url(redis_url) if redis_url else redis.Redis(host="localhost", port=6379, password=redis_password)
             )
             pong = client.ping()
             redis_status = {"status": "ok" if pong else "unhealthy"}

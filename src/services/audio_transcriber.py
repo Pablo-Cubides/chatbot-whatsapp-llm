@@ -7,7 +7,6 @@ import hashlib
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ except ImportError:
 class AudioTranscriber:
     """Transcriptor de audio usando faster-whisper"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = os.environ.get("AUDIO_TRANSCRIPTION_ENABLED", "true").lower() == "true"
         self.model_size = os.environ.get("WHISPER_MODEL_SIZE", "base")  # tiny, base, small, medium, large
         self.device = os.environ.get("WHISPER_DEVICE", "cpu")  # cpu, cuda
@@ -44,7 +43,7 @@ class AudioTranscriber:
         else:
             logger.info("🔇 Transcripción de audio deshabilitada")
 
-    def _initialize_model(self):
+    def _initialize_model(self) -> None:
         """Inicializar modelo de Whisper"""
         try:
             self.model = WhisperModel(
@@ -55,7 +54,7 @@ class AudioTranscriber:
             logger.error("❌ Error cargando modelo Whisper: %s", e)
             self.enabled = False
 
-    def transcribe(self, audio_bytes: bytes, language: str = "es", audio_id: Optional[str] = None) -> Optional[str]:
+    def transcribe(self, audio_bytes: bytes, language: str = "es", audio_id: str | None = None) -> str | None:
         """
         Transcribir audio a texto
 
@@ -137,7 +136,7 @@ class AudioTranscriber:
         """Generar clave de caché usando hash del audio"""
         return hashlib.sha256(audio_bytes).hexdigest()
 
-    def _get_from_cache(self, cache_key: str) -> Optional[str]:
+    def _get_from_cache(self, cache_key: str) -> str | None:
         """Obtener transcripción desde caché"""
         cache_file = self.cache_dir / f"{cache_key}.txt"
 
@@ -150,7 +149,7 @@ class AudioTranscriber:
 
         return None
 
-    def _save_to_cache(self, cache_key: str, text: str):
+    def _save_to_cache(self, cache_key: str, text: str) -> None:
         """Guardar transcripción en caché"""
         cache_file = self.cache_dir / f"{cache_key}.txt"
 
@@ -160,7 +159,7 @@ class AudioTranscriber:
         except Exception as e:
             logger.warning("⚠️ Error guardando en caché: %s", e)
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         """Limpiar caché de transcripciones"""
         try:
             for cache_file in self.cache_dir.glob("*.txt"):

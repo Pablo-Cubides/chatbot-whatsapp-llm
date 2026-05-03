@@ -8,7 +8,7 @@ import hashlib
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ImageAnalyzer:
     """Analizador de imágenes con múltiples proveedores"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = os.getenv("IMAGE_ANALYSIS_ENABLED", "true").lower() == "true"
 
         # Configuración de proveedores
@@ -42,9 +42,9 @@ class ImageAnalyzer:
     async def analyze_image(
         self,
         image_bytes: bytes,
-        context: Optional[str] = None,
-        conversation_history: Optional[list[dict]] = None,
-        image_id: Optional[str] = None,
+        context: str | None = None,
+        conversation_history: list[dict] | None = None,
+        image_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Analiza una imagen y retorna descripción contextual
@@ -121,7 +121,7 @@ class ImageAnalyzer:
                 "error": str(e),
             }
 
-    def _build_analysis_prompt(self, context: Optional[str], conversation_history: Optional[list[dict]]) -> str:
+    def _build_analysis_prompt(self, context: str | None, conversation_history: list[dict] | None) -> str:
         """
         Construye prompt HUMANIZADO para análisis de imagen
         NO debe parecer descripción de IA
@@ -257,19 +257,18 @@ REGLAS:
         """Genera clave de caché para la imagen"""
         return hashlib.md5(image_bytes, usedforsecurity=False).hexdigest()
 
-    def _get_from_cache(self, cache_key: str) -> Optional[dict[str, Any]]:
+    def _get_from_cache(self, cache_key: str) -> dict[str, Any] | None:
         """Obtiene análisis desde caché si está disponible"""
         if cache_key in self.cache:
             cached = self.cache[cache_key]
             # Verificar si no expiró
             if datetime.now() < cached["expires_at"]:
                 return cached["data"]
-            else:
-                # Expiró, eliminar
-                del self.cache[cache_key]
+            # Expiró, eliminar
+            del self.cache[cache_key]
         return None
 
-    def _save_to_cache(self, cache_key: str, result: dict[str, Any]):
+    def _save_to_cache(self, cache_key: str, result: dict[str, Any]) -> None:
         """Guarda análisis en caché"""
         self.cache[cache_key] = {
             "data": result,
@@ -281,7 +280,7 @@ REGLAS:
         if len(self.cache) > 100:
             self._cleanup_cache()
 
-    def _cleanup_cache(self):
+    def _cleanup_cache(self) -> None:
         """Limpia entradas expiradas del caché"""
         now = datetime.now()
         expired = [key for key, value in self.cache.items() if now >= value["expires_at"]]

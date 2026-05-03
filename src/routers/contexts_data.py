@@ -1,6 +1,6 @@
 """Daily and user context data routes extracted from admin_panel.py."""
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -14,11 +14,13 @@ router = APIRouter(tags=["contexts-data"])
 
 class DailyContextCreate(BaseModel):
     text: str
-    active: Optional[bool] = True
+    active: bool | None = True
 
 
 @router.post("/api/daily-contexts")
-def api_create_daily_context(payload: DailyContextCreate, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def api_create_daily_context(
+    payload: DailyContextCreate, current_user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     """Crea un contexto diario para enriquecer respuestas."""
     session = get_session()
     try:
@@ -64,11 +66,13 @@ def api_list_daily_contexts(current_user: dict[str, Any] = Depends(get_current_u
 class UserContextCreate(BaseModel):
     user_id: str
     text: str
-    source: Optional[str] = "manual_admin"
+    source: str | None = "manual_admin"
 
 
 @router.post("/api/user-contexts")
-def api_create_user_context(payload: UserContextCreate, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def api_create_user_context(
+    payload: UserContextCreate, current_user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     """Crea contexto manual asociado a un usuario/chat."""
     session = get_session()
     try:
@@ -92,7 +96,9 @@ def api_create_user_context(payload: UserContextCreate, current_user: dict[str, 
 
 
 @router.get("/api/user-contexts")
-def api_list_user_contexts(user_id: Optional[str] = None, current_user: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
+def api_list_user_contexts(
+    user_id: str | None = None, current_user: dict[str, Any] = Depends(get_current_user)
+) -> list[dict[str, Any]]:
     """Lista contextos por usuario o todos si no se indica filtro."""
     session = get_session()
     try:

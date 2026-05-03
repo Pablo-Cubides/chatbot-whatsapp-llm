@@ -21,14 +21,14 @@ def _read(rel_path: str) -> str:
 def test_queue_system_uses_lazy_logging_for_representative_events() -> None:
     text = _read("src/services/queue_system.py")
 
-    assert "logger.info(\"✅ Mensaje encolado: %s para %s\", message_id, chat_id)" in text
-    assert "logger.error(\"❌ Error encolando mensaje: %s\", e)" in text
-    assert "logger.info(\"✅ Campaña creada: %s\", campaign_id)" in text
-    assert "logger.error(\"❌ Error actualizando stats de campaña: %s\", e)" in text
+    assert 'logger.info("✅ Mensaje encolado: %s para %s", message_id, chat_id)' in text
+    assert 'logger.error("❌ Error encolando mensaje: %s", e)' in text
+    assert 'logger.info("✅ Campaña creada: %s", campaign_id)' in text
+    assert 'logger.error("❌ Error actualizando stats de campaña: %s", e)' in text
 
 
 def test_scheduler_worker_uses_lazy_logging_for_error_and_signal_paths() -> None:
     text = _read("src/workers/scheduler_worker.py")
 
-    assert "logger.error(\"❌ Error procesando mensajes programados: %s\", e)" in text
-    assert "logger.info(\"⚠️ Señal %s recibida\", signum)" in text
+    assert 'logger.error("❌ Error procesando mensajes programados: %s", e)' in text
+    assert 'logger.info("⚠️ Señal %s recibida", signum)' in text

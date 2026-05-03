@@ -6,14 +6,14 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
-import chat_sessions
 import stub_chat
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+import chat_sessions
 from src.services.adaptive_layer import adaptive_layer_manager
 from src.services.auth_system import get_current_user, require_admin
 from src.services.business_config_manager import business_config
@@ -26,7 +26,7 @@ router = APIRouter(tags=["chat-core"])
 class ScheduleIn(BaseModel):
     chat_id: str
     message: str
-    when: Optional[str] = None  # ISO timestamp or 'now'
+    when: str | None = None  # ISO timestamp or 'now'
 
 
 @router.post("/api/schedule")
@@ -75,9 +75,7 @@ class ClearChatIn(BaseModel):
 
 
 @router.post("/api/conversations/clear", response_class=JSONResponse)
-def api_clear_conversation(
-    payload: ClearChatIn, current_user: dict[str, Any] = Depends(get_current_user)
-) -> dict[str, Any]:
+def api_clear_conversation(payload: ClearChatIn, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """Delete persisted conversation history for one chat."""
     try:
         n = chat_sessions.clear_conversation_history(payload.chat_id)
@@ -113,7 +111,9 @@ async def api_chat(payload: ChatIn, current_user: dict[str, Any] = Depends(get_c
             adaptive_layer_manager.sync_runtime_settings()
             adaptive_layer_manager.register_interaction(payload.chat_id)
             adaptive_overrides = adaptive_layer_manager.get_runtime_overrides(payload.chat_id)
-            adaptive_layer_manager.apply_runtime_overrides(adaptive_overrides, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            adaptive_layer_manager.apply_runtime_overrides(
+                adaptive_overrides, os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            )
         except Exception as adaptive_error:
             logger.warning(f"Adaptive override warning: {adaptive_error}")
 
@@ -146,7 +146,7 @@ async def api_chat(payload: ChatIn, current_user: dict[str, Any] = Depends(get_c
 
 class ChatTestIn(BaseModel):
     message: str
-    chat_id: Optional[str] = "test_chat"
+    chat_id: str | None = "test_chat"
 
 
 @router.post("/api/chat/test")
@@ -196,9 +196,9 @@ def api_status(current_user: dict[str, Any] = Depends(get_current_user)) -> dict
 
 
 class PromptsIn(BaseModel):
-    conversational: Optional[str] = None
-    reasoner: Optional[str] = None
-    conversation: Optional[str] = None
+    conversational: str | None = None
+    reasoner: str | None = None
+    conversation: str | None = None
 
 
 @router.put("/api/prompts")
@@ -235,10 +235,10 @@ def api_get_prompts(current_user: dict[str, Any] = Depends(require_admin)) -> di
 
 
 class SettingsIn(BaseModel):
-    temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
-    max_tokens: Optional[int] = Field(None, ge=1, le=32000)
-    reason_after_messages: Optional[int] = None
-    respond_to_all: Optional[bool] = None
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(None, ge=1, le=32000)
+    reason_after_messages: int | None = None
+    respond_to_all: bool | None = None
 
 
 @router.put("/api/settings")

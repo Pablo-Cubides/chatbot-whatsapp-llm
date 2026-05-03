@@ -50,14 +50,14 @@ def test_selected_services_migrate_logger_fstrings_to_lazy_format() -> None:
     alert_system = _read("src/services/alert_system.py")
 
     # Verify representative lazy-format migrations in both modules.
-    assert "logger.warning(\"🔇 TRANSFERENCIA SILENCIOSA creada: %s\", transfer_id)" in silent_transfer
-    assert "logger.warning(\"Transfer ID: %s\", transfer_id)" in silent_transfer
-    assert "logger.info(\"✅ Transferencia %s completada\", transfer_id)" in silent_transfer
-    assert "logger.error(\"Error obteniendo estadísticas: %s\", e)" in silent_transfer
+    assert 'logger.warning("🔇 TRANSFERENCIA SILENCIOSA creada: %s", transfer_id)' in silent_transfer
+    assert 'logger.warning("Transfer ID: %s", transfer_id)' in silent_transfer
+    assert 'logger.info("✅ Transferencia %s completada", transfer_id)' in silent_transfer
+    assert 'logger.error("Error obteniendo estadísticas: %s", e)' in silent_transfer
 
-    assert "logger.warning(\"⚠️ Regex inválido en regla %s: %s - %s\", rule.id, rule.pattern, regex_err)" in alert_system
-    assert "logger.info(\"🚨 Alerta creada: %s (regla: %s)\", alert_id, rule.name)" in alert_system
-    assert "logger.error(\"❌ Error creando alerta: %s\", e)" in alert_system
+    assert 'logger.warning("⚠️ Regex inválido en regla %s: %s - %s", rule.id, rule.pattern, regex_err)' in alert_system
+    assert 'logger.info("🚨 Alerta creada: %s (regla: %s)", alert_id, rule.name)' in alert_system
+    assert 'logger.error("❌ Error creando alerta: %s", e)' in alert_system
 
 
 def test_api_docs_include_five_practical_curl_examples() -> None:
@@ -66,6 +66,6 @@ def test_api_docs_include_five_practical_curl_examples() -> None:
     assert "## Curl examples (5)" in text
     assert "curl -fsS http://localhost:8003/healthz" in text
     assert "curl -fsS -X POST http://localhost:8003/api/auth/login" in text
-    assert "curl -fsS http://localhost:8003/api/auth/me -H \"Authorization: Bearer ${TOKEN}\"" in text
-    assert "curl -fsS http://localhost:8003/api/chats -H \"Authorization: Bearer ${TOKEN}\"" in text
-    assert "curl -fsS http://localhost:8003/api/queue/pending -H \"Authorization: Bearer ${TOKEN}\"" in text
+    assert 'curl -fsS http://localhost:8003/api/auth/me -H "Authorization: Bearer ${TOKEN}"' in text
+    assert 'curl -fsS http://localhost:8003/api/chats -H "Authorization: Bearer ${TOKEN}"' in text
+    assert 'curl -fsS http://localhost:8003/api/queue/pending -H "Authorization: Bearer ${TOKEN}"' in text

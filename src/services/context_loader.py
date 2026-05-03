@@ -6,7 +6,7 @@ para inyección en prompts de LLM
 
 import logging
 from datetime import date, datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class ContextLoader:
     def __init__(self) -> None:
         self.cache: dict[str, Any] = {}
 
-    def load_all_contexts(self, chat_id: str, user_id: Optional[str] = None) -> dict[str, Any]:
+    def load_all_contexts(self, chat_id: str, user_id: str | None = None) -> dict[str, Any]:
         """
         Carga todos los contextos relevantes para una conversación
 
@@ -47,7 +47,7 @@ class ContextLoader:
 
         return contexts
 
-    def load_daily_context(self) -> Optional[dict[str, Any]]:
+    def load_daily_context(self) -> dict[str, Any] | None:
         """Carga el contexto diario activo"""
         try:
             from src.models.admin_db import get_db_session
@@ -65,13 +65,12 @@ class ContextLoader:
                 )
 
                 if daily:
-                    result = {
+                    return {
                         "id": daily.id,
                         "text": daily.text,
                         "effective_date": str(daily.date.date() if hasattr(daily.date, "date") else today),
                         "source": getattr(daily, "created_by", "system"),
                     }
-                    return result
 
             return None
 
@@ -111,7 +110,7 @@ class ContextLoader:
             logger.warning(f"Error cargando contextos de usuario: {e}")
             return []
 
-    def load_contact_profile(self, chat_id: str) -> Optional[dict[str, Any]]:
+    def load_contact_profile(self, chat_id: str) -> dict[str, Any] | None:
         """Carga el perfil del contacto con objetivo y contexto inicial"""
         try:
             from src.models.admin_db import get_db_session
@@ -122,26 +121,24 @@ class ContextLoader:
                 profile = session.query(ChatProfile).filter(ChatProfile.chat_id == chat_id).first()
 
                 if profile:
-                    result = {
+                    return {
                         "chat_id": profile.chat_id,
                         "initial_context": profile.initial_context,
                         "objective": profile.objective,
                         "instructions": profile.instructions,
                         "perfil": getattr(profile, "perfil", None),
                     }
-                    return result
 
                 # Fallback a contacto básico
                 contact = session.query(Contact).filter(Contact.chat_id == chat_id).first()
                 if contact:
-                    result = {
+                    return {
                         "chat_id": contact.chat_id,
                         "initial_context": None,
                         "objective": None,
                         "instructions": None,
                         "perfil": contact.name,
                     }
-                    return result
 
             return None
 
@@ -149,7 +146,7 @@ class ContextLoader:
             logger.warning(f"Error cargando perfil de contacto: {e}")
             return None
 
-    def load_active_strategy(self, chat_id: str) -> Optional[dict[str, Any]]:
+    def load_active_strategy(self, chat_id: str) -> dict[str, Any] | None:
         """Carga la estrategia activa para el chat"""
         try:
             from chat_sessions import get_active_strategy

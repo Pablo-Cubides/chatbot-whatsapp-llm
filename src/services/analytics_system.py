@@ -3,7 +3,6 @@
 Métricas en tiempo real del chatbot
 """
 
-import json
 import logging
 import os
 from collections import defaultdict
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnalyticsManager:
-    def __init__(self, db_path: str | None = None):
+    def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path
         self.metrics_cache = {}
         self._is_local_sqlite = bool(db_path)
@@ -38,7 +37,7 @@ class AnalyticsManager:
             self._engine = None
             self._session_factory = SessionLocal
 
-    def init_database(self):
+    def init_database(self) -> None:
         """Inicializar esquema para pruebas locales con SQLite."""
         if self._is_local_sqlite and self._engine is not None:
             Base.metadata.create_all(
@@ -88,7 +87,7 @@ class AnalyticsManager:
 
     def record_conversation_end(
         self, session_id: str, message_count: int, satisfaction_score: float = None, converted: bool = False
-    ):
+    ) -> None:
         """Registrar fin de conversación"""
         with self._session_scope() as session:
             conversation = (
@@ -120,7 +119,7 @@ class AnalyticsManager:
         success: bool = True,
         error_message: str = None,
         cost_estimate: float = None,
-    ):
+    ) -> None:
         """Registrar uso de API"""
         with self._session_scope() as session:
             session.add(
@@ -136,7 +135,7 @@ class AnalyticsManager:
                 )
             )
 
-    def record_metric(self, metric_type: str, value: float, metadata: dict = None):
+    def record_metric(self, metric_type: str, value: float, metadata: dict = None) -> None:
         """Registrar métrica general"""
         with self._session_scope() as session:
             session.add(
@@ -153,16 +152,8 @@ class AnalyticsManager:
         since = self._now() - timedelta(hours=hours)
 
         with self._session_scope() as session:
-            conv_rows = (
-                session.query(AnalyticsConversation)
-                .filter(AnalyticsConversation.started_at >= since)
-                .all()
-            )
-            api_rows = (
-                session.query(AnalyticsApiUsage)
-                .filter(AnalyticsApiUsage.timestamp >= since)
-                .all()
-            )
+            conv_rows = session.query(AnalyticsConversation).filter(AnalyticsConversation.started_at >= since).all()
+            api_rows = session.query(AnalyticsApiUsage).filter(AnalyticsApiUsage.timestamp >= since).all()
 
             total_conversations = len(conv_rows)
             active_conversations = sum(1 for c in conv_rows if c.ended_at is None)
@@ -238,11 +229,7 @@ class AnalyticsManager:
 
         with self._session_scope() as session:
             if metric == "conversations":
-                rows = (
-                    session.query(AnalyticsConversation.started_at)
-                    .filter(AnalyticsConversation.started_at >= since)
-                    .all()
-                )
+                rows = session.query(AnalyticsConversation.started_at).filter(AnalyticsConversation.started_at >= since).all()
                 timestamps = [self._normalize_dt(row[0]) for row in rows]
             elif metric == "errors":
                 rows = (
@@ -252,11 +239,7 @@ class AnalyticsManager:
                 )
                 timestamps = [self._normalize_dt(row[0]) for row in rows]
             else:
-                rows = (
-                    session.query(AnalyticsApiUsage.timestamp)
-                    .filter(AnalyticsApiUsage.timestamp >= since)
-                    .all()
-                )
+                rows = session.query(AnalyticsApiUsage.timestamp).filter(AnalyticsApiUsage.timestamp >= since).all()
                 timestamps = [self._normalize_dt(row[0]) for row in rows]
 
         for ts in timestamps:
@@ -280,15 +263,9 @@ class AnalyticsManager:
         recent = self._now() - timedelta(minutes=5)
 
         with self._session_scope() as session:
-            recent_api_calls = (
-                session.query(AnalyticsApiUsage)
-                .filter(AnalyticsApiUsage.timestamp >= recent)
-                .count()
-            )
+            recent_api_calls = session.query(AnalyticsApiUsage).filter(AnalyticsApiUsage.timestamp >= recent).count()
             recent_conversations = (
-                session.query(AnalyticsConversation)
-                .filter(AnalyticsConversation.started_at >= recent)
-                .count()
+                session.query(AnalyticsConversation).filter(AnalyticsConversation.started_at >= recent).count()
             )
             recent_errors = (
                 session.query(AnalyticsApiUsage)

@@ -7,7 +7,6 @@ import logging
 import os
 import signal
 import time
-from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -24,8 +23,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from src.services.queue_system import queue_manager
 from crypto import is_key_rotation_due
+from src.services.queue_system import queue_manager
 
 
 class SchedulerWorker:

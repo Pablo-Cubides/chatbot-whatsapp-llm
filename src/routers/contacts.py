@@ -1,8 +1,7 @@
 """Contacts and allowed-contacts routes extracted from admin_panel.py."""
 
-import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -19,14 +18,14 @@ ENCRYPTED_CONTEXT_PREFIX = "enc:v1:"
 
 class ContactCreate(BaseModel):
     contact_id: str
-    label: Optional[str] = None
+    label: str | None = None
 
 
 class AllowedContactCreate(BaseModel):
     chat_id: str
-    initial_context: Optional[str] = ""
-    objective: Optional[str] = ""
-    perfil: Optional[str] = ""
+    initial_context: str | None = ""
+    objective: str | None = ""
+    perfil: str | None = ""
 
 
 def _write_secure_context_file(path: str, content: str) -> None:

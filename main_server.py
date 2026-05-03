@@ -7,7 +7,6 @@ Use `admin_panel:app` as the canonical ASGI entrypoint.
 import warnings
 
 import uvicorn
-from admin_panel import app
 
 warnings.warn(
     "`main_server.py` is deprecated. Use `admin_panel.py` (`admin_panel:app`) instead.",

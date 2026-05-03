@@ -3,13 +3,13 @@
 Transfiere conversaciones a humanos SIN que el cliente se entere
 """
 
+import asyncio
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from enum import Enum
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from sqlalchemy import String, cast, func
@@ -68,7 +68,7 @@ class SilentTransferManager:
     El cliente NO se entera de la transferencia
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = os.getenv("SILENT_TRANSFER_ENABLED", "true").lower() == "true"
         self.notification_webhook = os.getenv("TRANSFER_NOTIFICATION_WEBHOOK")
 
@@ -130,7 +130,7 @@ class SilentTransferManager:
         conversation_history: list[dict] = None,
         metadata: dict[str, Any] = None,
         notify_client: bool = False,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Crea una transferencia silenciosa
 
@@ -208,7 +208,7 @@ class SilentTransferManager:
                 pass
             return None
 
-    def _notify_operators_silent(self, transfer_id: str, chat_id: str, reason: TransferReason, trigger_message: str):
+    def _notify_operators_silent(self, transfer_id: str, chat_id: str, reason: TransferReason, trigger_message: str) -> None:
         """
         Notifica a operadores humanos de transferencia SILENCIOSA
 
@@ -248,7 +248,7 @@ class SilentTransferManager:
 
         self._dispatch_notification(notification)
 
-    def _notify_operators_explicit(self, transfer_id: str, chat_id: str, reason: TransferReason):
+    def _notify_operators_explicit(self, transfer_id: str, chat_id: str, reason: TransferReason) -> None:
         """
         Notifica transferencia EXPLÍCITA (cliente pidió hablar con humano)
         """
@@ -461,8 +461,8 @@ class SilentTransferManager:
             else:
                 # SQLite fallback
                 avg_minutes_expr = (
-                    func.julianday(SilentTransfer.completed_at) - func.julianday(SilentTransfer.created_at)
-                ) * 24 * 60
+                    (func.julianday(SilentTransfer.completed_at) - func.julianday(SilentTransfer.created_at)) * 24 * 60
+                )
 
             avg_time = (
                 session.query(func.avg(avg_minutes_expr))

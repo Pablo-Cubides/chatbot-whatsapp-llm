@@ -48,15 +48,12 @@ def api_analytics_dashboard(hours: int = 24, current_user: dict[str, Any] = Depe
         active_count = len(active_chat_ids)
 
         error_count = (
-            session.query(AuditLog)
-            .filter(AuditLog.timestamp >= window_start)
-            .filter(AuditLog.action.ilike("%error%"))
-            .count()
+            session.query(AuditLog).filter(AuditLog.timestamp >= window_start).filter(AuditLog.action.ilike("%error%")).count()
         )
 
         api_usage = session.query(ModelConfig.provider).filter(ModelConfig.active.is_(True)).all()
         usage_map: dict[str, int] = {}
-        for provider, in api_usage:
+        for (provider,) in api_usage:
             key = provider or "unknown"
             usage_map[key] = usage_map.get(key, 0) + 1
 
@@ -78,7 +75,9 @@ def api_analytics_dashboard(hours: int = 24, current_user: dict[str, Any] = Depe
 
 
 @router.get("/api/analytics/timeseries")
-def api_analytics_timeseries(metric: str = "conversations", hours: int = 24, current_user: dict[str, Any] = Depends(get_current_user)) -> JSONResponse:
+def api_analytics_timeseries(
+    metric: str = "conversations", hours: int = 24, current_user: dict[str, Any] = Depends(get_current_user)
+) -> JSONResponse:
     """Entrega serie temporal por métrica (`conversations`, `api_calls`, `errors`)."""
     safe_hours = max(1, min(int(hours), 168))
     if analytics_manager:
@@ -136,12 +135,7 @@ def api_analytics_realtime(current_user: dict[str, Any] = Depends(get_current_us
     try:
         new_conversations = session.query(Conversation).filter(Conversation.timestamp >= last_5).count()
         api_calls = session.query(AuditLog).filter(AuditLog.timestamp >= last_5).count()
-        errors = (
-            session.query(AuditLog)
-            .filter(AuditLog.timestamp >= last_5)
-            .filter(AuditLog.action.ilike("%error%"))
-            .count()
-        )
+        errors = session.query(AuditLog).filter(AuditLog.timestamp >= last_5).filter(AuditLog.action.ilike("%error%")).count()
         return {
             "timestamp": now.isoformat(),
             "last_5_minutes": {"new_conversations": new_conversations, "api_calls": api_calls, "errors": errors},

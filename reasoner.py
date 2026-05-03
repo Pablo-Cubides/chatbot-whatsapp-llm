@@ -8,7 +8,7 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from openai import OpenAI
 
@@ -50,7 +50,7 @@ _client = None
 _client_lock = threading.Lock()
 
 
-def get_lm_studio_client() -> Optional[OpenAI]:
+def get_lm_studio_client() -> OpenAI | None:
     """Get or create LM Studio client with lazy initialization."""
     global _client
     if _client is None:
@@ -85,7 +85,7 @@ def _secure_read_text(path: str) -> str:
     return raw
 
 
-def _secure_write_text(path: str, plaintext: str):
+def _secure_write_text(path: str, plaintext: str) -> None:
     """Write encrypted context text files to reduce PII exposure at rest."""
     token = encrypt_text(plaintext or "")
     with open(path, "w", encoding="utf-8") as f:
@@ -143,7 +143,7 @@ def _build_reasoner_messages(chat_id: str, turns: int = 30) -> tuple[list[dict[s
     return messages, snapshot
 
 
-def run_reasoner_for_chat(chat_id: str) -> Optional[int]:
+def run_reasoner_for_chat(chat_id: str) -> int | None:
     """
     Run the analysis model to produce a new strategy and activate it.
 
@@ -172,8 +172,7 @@ def run_reasoner_for_chat(chat_id: str) -> Optional[int]:
         return None
 
     # Save as new active strategy (with snapshot stored for audit)
-    version = activate_new_strategy(chat_id, strategy_text=strategy_text, source_snapshot=snapshot)
-    return version
+    return activate_new_strategy(chat_id, strategy_text=strategy_text, source_snapshot=snapshot)
 
 
 def _build_profile_prompt(contact: str, history: list[dict[str, Any]]) -> dict[str, Any]:
@@ -223,7 +222,7 @@ def _build_profile_prompt(contact: str, history: list[dict[str, Any]]) -> dict[s
     }
 
 
-def _call_llm_for_profile(prompt_messages: list[dict[str, str]]) -> Optional[str]:
+def _call_llm_for_profile(prompt_messages: list[dict[str, str]]) -> str | None:
     """Invoca el modelo para obtener JSON de perfil/contexto/estrategia."""
     payload = _load_payload().copy()
     payload["messages"] = list(payload.get("messages", []))
@@ -298,7 +297,7 @@ def _persist_profile_to_disk(profile: dict[str, str], contact: str) -> tuple[boo
     return wrote_contexto, wrote_perfil
 
 
-def _sync_profile_to_db(profile: dict[str, str], contact: str, snapshot: str, estrategia_prev: str) -> Optional[int]:
+def _sync_profile_to_db(profile: dict[str, str], contact: str, snapshot: str, estrategia_prev: str) -> int | None:
     """Sincroniza estrategia/perfil en DB y retorna nueva versión de estrategia."""
     contexto_prioritario = (profile.get("contexto_prioritario") or "").strip()
     estrategia_text = (profile.get("estrategia") or "").strip()
@@ -328,7 +327,7 @@ def _sync_profile_to_db(profile: dict[str, str], contact: str, snapshot: str, es
     return version
 
 
-def update_chat_context_and_profile(chat_id: str) -> Optional[dict[str, Any]]:
+def update_chat_context_and_profile(chat_id: str) -> dict[str, Any] | None:
     """
     Runs the reasoner to produce:
     - contexto_prioritario: brief summary of the most important ongoing items

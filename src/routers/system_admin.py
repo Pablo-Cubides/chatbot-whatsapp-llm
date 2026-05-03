@@ -81,8 +81,7 @@ def api_system_check_processes(current_user: dict[str, Any] = Depends(get_curren
             "problematic_processes": problematic_processes,
             "total_problematic": len(problematic_processes),
             "ports_status": ports_status,
-            "needs_cleanup": len(problematic_processes) > 0
-            or any(status == "OCUPADO" for status in ports_status.values()),
+            "needs_cleanup": len(problematic_processes) > 0 or any(status == "OCUPADO" for status in ports_status.values()),
         }
 
     except Exception as e:

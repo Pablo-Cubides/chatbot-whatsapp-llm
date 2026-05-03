@@ -25,6 +25,6 @@ def test_ci_deploy_smoke_checks_validate_auth_flow() -> None:
     assert 'curl -fsS -X POST "http://localhost:8003/api/auth/login"' in text
     assert "Content-Type: application/json" in text
     assert "python3 -c \"import json,sys; print(json.load(sys.stdin).get('access_token',''))\"" in text
-    assert 'Authorization: Bearer ${ACCESS_TOKEN}' in text
+    assert "Authorization: Bearer ${ACCESS_TOKEN}" in text
     assert "grep -q" in text
     assert '"username":"admin"' in text

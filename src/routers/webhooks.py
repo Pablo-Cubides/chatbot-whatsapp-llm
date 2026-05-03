@@ -37,8 +37,7 @@ async def whatsapp_webhook_verify(request: Request) -> JSONResponse:
 
         if verified_challenge:
             return JSONResponse(content=int(verified_challenge), media_type="text/plain")
-        else:
-            raise HTTPException(status_code=403, detail="Verification failed")
+        raise HTTPException(status_code=403, detail="Verification failed")
 
     except HTTPException:
         raise

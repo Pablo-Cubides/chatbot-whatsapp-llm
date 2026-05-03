@@ -7,13 +7,13 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import PurePath
-from typing import Any, Optional
+from typing import Any
 
-import chat_sessions
 import stub_chat
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+import chat_sessions
 from src.routers.whatsapp_runtime_admin import get_whatsapp_runtime_status
 from src.services.audit_system import log_bulk_send
 from src.services.auth_system import get_current_user, require_admin
@@ -26,20 +26,20 @@ logger = logging.getLogger(__name__)
 class MessageComposeRequest(BaseModel):
     chat_id: str
     objective: str
-    additional_context: Optional[str] = ""
+    additional_context: str | None = ""
 
 
 class MessageSendRequest(BaseModel):
     chat_id: str
     message: str
-    media: Optional[dict] = None  # {"fileId": str, "type": str}
+    media: dict | None = None  # {"fileId": str, "type": str}
 
 
 class BulkMessageRequest(BaseModel):
     contacts: list[str]
     template: str
     objective: str
-    media: Optional[dict] = None
+    media: dict | None = None
 
 
 @router.post("/api/settings/chat/toggle")
@@ -81,7 +81,9 @@ def api_test_reply(current_user: dict[str, Any] = Depends(require_admin)) -> dic
 
 
 @router.post("/api/chat/compose")
-def api_compose_message(payload: MessageComposeRequest, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def api_compose_message(
+    payload: MessageComposeRequest, current_user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     """Generate a message using AI for a specific contact and objective."""
     try:
         compose_prompt = f"""Eres un asistente experto en comunicación. Tu tarea es generar un mensaje de WhatsApp profesional y personalizado.
@@ -109,7 +111,9 @@ Genera ÚNICAMENTE el texto del mensaje:"""
 
 
 @router.post("/api/whatsapp/send")
-def api_send_whatsapp_message(payload: MessageSendRequest, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+def api_send_whatsapp_message(
+    payload: MessageSendRequest, current_user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     """Queue a message for WhatsApp automator."""
     try:
         status = get_whatsapp_runtime_status()
@@ -155,7 +159,9 @@ def api_send_whatsapp_message(payload: MessageSendRequest, current_user: dict[st
 
 
 @router.post("/api/whatsapp/bulk-send")
-async def api_bulk_send_messages(payload: BulkMessageRequest, current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+async def api_bulk_send_messages(
+    payload: BulkMessageRequest, current_user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     """Create a campaign and enqueue bulk messages."""
     try:
         campaign_id = queue_manager.create_campaign(

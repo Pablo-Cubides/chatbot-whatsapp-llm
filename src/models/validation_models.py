@@ -4,7 +4,7 @@ Modelos Pydantic para validación de datos
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
@@ -51,8 +51,8 @@ class BusinessInfoModel(BaseModel):
     services: list[str] = Field(default_factory=list, max_items=20, description="Lista de servicios")
     hours: str = Field(..., max_length=200, description="Horario de atención")
     contact_info: str = Field(..., max_length=500, description="Información de contacto")
-    website: Optional[str] = Field(None, max_length=200, description="Sitio web")
-    location: Optional[str] = Field(None, max_length=200, description="Ubicación")
+    website: str | None = Field(None, max_length=200, description="Sitio web")
+    location: str | None = Field(None, max_length=200, description="Ubicación")
 
     @field_validator("services")
     @classmethod
@@ -124,8 +124,8 @@ class AIBehaviorModel(BaseModel):
 class WorkingScheduleModel(BaseModel):
     """Modelo para horario de trabajo de un día"""
 
-    start: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Hora inicio (HH:MM)")
-    end: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Hora fin (HH:MM)")
+    start: str | None = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Hora inicio (HH:MM)")
+    end: str | None = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Hora fin (HH:MM)")
     closed: bool = Field(default=False, description="Día cerrado")
 
     @field_validator("end")
@@ -187,8 +187,10 @@ class FullBusinessConfigModel(BaseModel):
     conversation_flow: ConversationFlowModel
     ai_behavior: AIBehaviorModel
     business_rules: BusinessRulesModel
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), description="Fecha de creación")
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), description="Fecha de actualización")
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc), description="Fecha de creación")
+    updated_at: datetime | None = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="Fecha de actualización"
+    )
 
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
@@ -199,7 +201,7 @@ class LLMRequestModel(BaseModel):
     messages: list[dict[str, str]] = Field(..., min_length=1, description="Lista de mensajes")
     max_tokens: int = Field(default=150, ge=1, le=4000, description="Máximo tokens")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="Temperatura")
-    provider: Optional[str] = Field(None, description="Proveedor específico")
+    provider: str | None = Field(None, description="Proveedor específico")
     free_only: bool = Field(default=False, description="Solo modelos gratuitos")
     use_case: str = Field(default="normal", pattern="^(normal|reasoning)$", description="Caso de uso")
 
@@ -227,9 +229,9 @@ class AnalyticsFilterModel(BaseModel):
     """Modelo para filtros de analytics"""
 
     hours: int = Field(default=24, ge=1, le=8760, description="Horas a consultar")  # Max 1 año
-    metric: Optional[str] = Field(None, pattern="^(conversations|messages|api_usage|errors)$", description="Métrica específica")
-    start_date: Optional[datetime] = Field(None, description="Fecha inicio")
-    end_date: Optional[datetime] = Field(None, description="Fecha fin")
+    metric: str | None = Field(None, pattern="^(conversations|messages|api_usage|errors)$", description="Métrica específica")
+    start_date: datetime | None = Field(None, description="Fecha inicio")
+    end_date: datetime | None = Field(None, description="Fecha fin")
 
     @field_validator("end_date")
     @classmethod
@@ -307,7 +309,7 @@ class ErrorResponseModel(BaseModel):
 
     error: bool = True
     message: str
-    details: Optional[dict[str, Any]] = None
+    details: dict[str, Any] | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
@@ -318,7 +320,7 @@ class SuccessResponseModel(BaseModel):
 
     success: bool = True
     message: str
-    data: Optional[dict[str, Any]] = None
+    data: dict[str, Any] | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})

@@ -1,6 +1,6 @@
 """WhatsApp provider configuration routes extracted from admin_panel.py."""
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -15,7 +15,7 @@ router = APIRouter(tags=["whatsapp", "provider"])
 
 class WhatsAppProviderConfig(BaseModel):
     mode: str  # web, cloud, both
-    cloud_api: Optional[dict[str, str]] = None
+    cloud_api: dict[str, str] | None = None
 
 
 @router.get("/api/whatsapp/provider/config")
@@ -63,7 +63,9 @@ async def update_whatsapp_provider_config(
 
 
 @router.post("/api/whatsapp/cloud/credentials")
-async def update_cloud_api_credentials(data: dict[str, str], current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
+async def update_cloud_api_credentials(
+    data: dict[str, str], current_user: dict[str, Any] = Depends(require_admin)
+) -> JSONResponse:
     """Actualiza las credenciales del Cloud API de WhatsApp."""
     try:
         required_fields = ["access_token", "phone_number_id"]

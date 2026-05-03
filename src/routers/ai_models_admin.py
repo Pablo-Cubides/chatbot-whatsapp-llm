@@ -1,6 +1,6 @@
 """AI models admin/configuration router extracted from admin_panel."""
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -18,18 +18,18 @@ class CustomProviderConfig(BaseModel):
     name: str
     provider_type: str
     api_key: str
-    base_url: Optional[str] = None
+    base_url: str | None = None
     model: str
-    is_free: Optional[bool] = False
-    is_reasoning: Optional[bool] = False
-    active: Optional[bool] = True
+    is_free: bool | None = False
+    is_reasoning: bool | None = False
+    active: bool | None = True
 
 
 class AIModelsConfig(BaseModel):
-    default_provider: Optional[str] = "gemini"
-    response_layer: Optional[dict[str, str]] = None
-    reasoner_layer: Optional[dict[str, str]] = None
-    analyzer_layer: Optional[dict[str, str]] = None
+    default_provider: str | None = "gemini"
+    response_layer: dict[str, str] | None = None
+    reasoner_layer: dict[str, str] | None = None
+    analyzer_layer: dict[str, str] | None = None
 
 
 @router.get("/api/ai-models/config")
@@ -63,7 +63,9 @@ async def get_ai_models_config(current_user: dict[str, Any] = Depends(get_curren
 
 
 @router.post("/api/ai-models/config")
-async def update_ai_models_config(config: AIModelsConfig, current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
+async def update_ai_models_config(
+    config: AIModelsConfig, current_user: dict[str, Any] = Depends(require_admin)
+) -> JSONResponse:
     """Actualiza la configuración de modelos de IA."""
     try:
         ai_config = business_config.config.get("ai_models", {})
@@ -94,7 +96,9 @@ async def update_ai_models_config(config: AIModelsConfig, current_user: dict[str
 
 
 @router.post("/api/ai-models/custom-provider")
-async def add_custom_provider(provider: CustomProviderConfig, current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
+async def add_custom_provider(
+    provider: CustomProviderConfig, current_user: dict[str, Any] = Depends(require_admin)
+) -> JSONResponse:
     """Agrega un proveedor de IA personalizado con API key del usuario."""
     try:
         ai_config = business_config.config.get("ai_models", {})
@@ -165,7 +169,9 @@ async def delete_custom_provider(provider_name: str, current_user: dict[str, Any
 
 
 @router.post("/api/ai-models/test-connection")
-async def test_ai_provider_connection(data: dict[str, str], current_user: dict[str, Any] = Depends(get_current_user)) -> JSONResponse:
+async def test_ai_provider_connection(
+    data: dict[str, str], current_user: dict[str, Any] = Depends(get_current_user)
+) -> JSONResponse:
     """Prueba la conexión con un proveedor de IA."""
     try:
         provider_type = data.get("provider_type")
@@ -183,9 +189,14 @@ async def test_ai_provider_connection(data: dict[str, str], current_user: dict[s
             url = (base_url or "https://api.openai.com/v1") + "/models"
             async with (
                 aiohttp.ClientSession() as session,
-                session.get(url, headers={"Authorization": f"Bearer {api_key}"}, timeout=aiohttp.ClientTimeout(total=10)) as response,
+                session.get(
+                    url, headers={"Authorization": f"Bearer {api_key}"}, timeout=aiohttp.ClientTimeout(total=10)
+                ) as response,
             ):
-                test_result = {"success": response.status == 200, "message": "Conexión exitosa con OpenAI" if response.status == 200 else f"Error: {response.status}"}
+                test_result = {
+                    "success": response.status == 200,
+                    "message": "Conexión exitosa con OpenAI" if response.status == 200 else f"Error: {response.status}",
+                }
 
         elif provider_type == "gemini":
             url = (base_url or "https://generativelanguage.googleapis.com/v1beta") + "/models"
@@ -195,15 +206,23 @@ async def test_ai_provider_connection(data: dict[str, str], current_user: dict[s
                     headers={"x-goog-api-key": api_key},
                     timeout=aiohttp.ClientTimeout(total=10),
                 ) as response:
-                    test_result = {"success": response.status == 200, "message": "Conexión exitosa con Gemini" if response.status == 200 else f"Error: {response.status}"}
+                    test_result = {
+                        "success": response.status == 200,
+                        "message": "Conexión exitosa con Gemini" if response.status == 200 else f"Error: {response.status}",
+                    }
 
         elif provider_type == "xai":
             url = (base_url or "https://api.x.ai/v1") + "/models"
             async with (
                 aiohttp.ClientSession() as session,
-                session.get(url, headers={"Authorization": f"Bearer {api_key}"}, timeout=aiohttp.ClientTimeout(total=10)) as response,
+                session.get(
+                    url, headers={"Authorization": f"Bearer {api_key}"}, timeout=aiohttp.ClientTimeout(total=10)
+                ) as response,
             ):
-                test_result = {"success": response.status == 200, "message": "Conexión exitosa con xAI/Grok" if response.status == 200 else f"Error: {response.status}"}
+                test_result = {
+                    "success": response.status == 200,
+                    "message": "Conexión exitosa con xAI/Grok" if response.status == 200 else f"Error: {response.status}",
+                }
         else:
             test_result = {
                 "success": False,
@@ -276,7 +295,9 @@ async def get_available_providers(current_user: dict[str, Any] = Depends(get_cur
 
 
 @router.get("/api/llm/providers")
-async def get_llm_providers_compat(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, list[dict[str, Any]]]:
+async def get_llm_providers_compat(
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, list[dict[str, Any]]]:
     """Compatibilidad con analytics UI."""
     ai_config = business_config.config.get("ai_models", {})
     providers: list[dict[str, Any]] = []

@@ -4,15 +4,15 @@ Maneja múltiples proveedores de IA con fallback automático
 Incluye sistema de humanización y detección de respuestas bot
 """
 
-import logging
-import os
 import asyncio
 import hashlib
 import json
+import logging
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
 
@@ -73,7 +73,7 @@ class LLMProvider(Enum):
 @dataclass
 class APIConfig:
     name: str
-    api_key: Optional[str]
+    api_key: str | None
     base_url: str
     model: str
     active: bool = True
@@ -84,17 +84,17 @@ class APIConfig:
 
 
 class MultiProviderLLM:
-    def __init__(self):
+    def __init__(self) -> None:
         self.providers = {}
         self.fallback_order = []
-        self._http_session: Optional[aiohttp.ClientSession] = None
+        self._http_session: aiohttp.ClientSession | None = None
         self.provider_timeout_seconds = int(os.getenv("LLM_PROVIDER_TIMEOUT_SECONDS", "30"))
         self.retry_base_delay_seconds = float(os.getenv("LLM_RETRY_BASE_DELAY_SECONDS", "0.5"))
         self.cache_enabled = os.getenv("LLM_CACHE_ENABLED", "true").lower() == "true"
         self.cache_ttl_seconds = int(os.getenv("LLM_CACHE_TTL_SECONDS", "3600"))
         self.load_configurations()
 
-    def load_configurations(self):
+    def load_configurations(self) -> None:
         """Carga configuraciones de todos los proveedores desde .env"""
 
         # Gemini (Excelente relación calidad/precio, bueno para uso general)
@@ -201,7 +201,7 @@ class MultiProviderLLM:
         except Exception:
             return False
 
-    def set_http_session(self, session: Optional[aiohttp.ClientSession]) -> None:
+    def set_http_session(self, session: aiohttp.ClientSession | None) -> None:
         """Inject shared aiohttp session managed by app lifespan."""
         self._http_session = session
 
@@ -238,7 +238,7 @@ class MultiProviderLLM:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             yield session
 
-    def _setup_intelligent_fallback(self):
+    def _setup_intelligent_fallback(self) -> None:
         """Configura orden de fallback inteligente basado en benchmarks y uso"""
 
         # Para conversaciones normales: Priorizar calidad/precio y velocidad
@@ -288,7 +288,7 @@ class MultiProviderLLM:
         logger.info("Fallback razonamiento: %s", [p.value for p in self.reasoning_fallback])
         logger.info("Fallback gratuito: %s", [p.value for p in self.free_only_fallback])
 
-    def _log_provider_capabilities(self):
+    def _log_provider_capabilities(self) -> None:
         """Log de capacidades de cada proveedor"""
         for _provider, config in self.providers.items():
             capabilities = []
@@ -306,10 +306,9 @@ class MultiProviderLLM:
 
         if free_only or os.getenv("ENABLE_FREE_MODELS_FALLBACK", "false").lower() == "true":
             return self.free_only_fallback
-        elif use_case == "reasoning":
+        if use_case == "reasoning":
             return self.reasoning_fallback
-        else:
-            return self.normal_fallback
+        return self.normal_fallback
 
     def _inject_contexts_into_messages(self, messages: list[dict[str, str]], chat_id: str) -> list[dict[str, str]]:
         """
@@ -358,7 +357,7 @@ class MultiProviderLLM:
     async def generate_response(
         self,
         messages: list[dict[str, str]],
-        business_context: Optional[dict] = None,
+        business_context: dict | None = None,
         use_case: str = "normal",
         free_only: bool = False,
         max_retries: int = 3,
@@ -415,17 +414,19 @@ class MultiProviderLLM:
                 if self.cache_enabled and CACHE_AVAILABLE:
                     cached = await get_cached_llm_response(prompt_hash, provider.value)
                     if cached and cached.get("response"):
-                        return _finalize({
-                            "success": True,
-                            "response": cached["response"],
-                            "provider": provider.value,
-                            "model": self.providers[provider].model,
-                            "tokens_used": 0,
-                            "is_free": self.providers[provider].is_free,
-                            "use_case": use_case,
-                            "was_humanized": False,
-                            "cached": True,
-                        })
+                        return _finalize(
+                            {
+                                "success": True,
+                                "response": cached["response"],
+                                "provider": provider.value,
+                                "model": self.providers[provider].model,
+                                "tokens_used": 0,
+                                "is_free": self.providers[provider].is_free,
+                                "use_case": use_case,
+                                "was_humanized": False,
+                                "cached": True,
+                            }
+                        )
 
                 result = await self._call_provider(
                     provider,
@@ -472,16 +473,18 @@ class MultiProviderLLM:
                         )
 
                     logger.info("✅ Respuesta exitosa de %s", provider.value)
-                    return _finalize({
-                        "success": True,
-                        "response": response_text,
-                        "provider": provider.value,
-                        "model": self.providers[provider].model,
-                        "tokens_used": result.get("tokens_used", 0),
-                        "is_free": self.providers[provider].is_free,
-                        "use_case": use_case,
-                        "was_humanized": validation.get("is_valid", True) if HUMANIZATION_AVAILABLE else False,
-                    })
+                    return _finalize(
+                        {
+                            "success": True,
+                            "response": response_text,
+                            "provider": provider.value,
+                            "model": self.providers[provider].model,
+                            "tokens_used": result.get("tokens_used", 0),
+                            "is_free": self.providers[provider].is_free,
+                            "use_case": use_case,
+                            "was_humanized": validation.get("is_valid", True) if HUMANIZATION_AVAILABLE else False,
+                        }
+                    )
 
             except Exception as e:
                 logger.warning("❌ Error con %s: %s", provider.value, str(e))
@@ -514,33 +517,39 @@ class MultiProviderLLM:
                     notify_client=False,  # SILENCIOSO
                 )
 
-                return _finalize({
-                    "success": False,
-                    "response": None,  # NO responder
-                    "action": "silent_transfer",
-                    "transfer_id": transfer_id,
-                    "error": "LLM failure - silent transfer initiated",
-                })
+                return _finalize(
+                    {
+                        "success": False,
+                        "response": None,  # NO responder
+                        "action": "silent_transfer",
+                        "transfer_id": transfer_id,
+                        "error": "LLM failure - silent transfer initiated",
+                    }
+                )
 
             # Dar respuesta humanizada y marcar para reintento
             logger.info("💬 Respuesta humanizada: %s", error_response["response"])
-            return _finalize({
-                "success": True,  # Técnicamente "exitoso" porque damos respuesta
-                "response": error_response["response"],
-                "action": "humanized_fallback",
-                "should_retry": error_response.get("should_retry", False),
-                "delay_before_response": error_response.get("delay_before_response", 0),
-                "provider": "humanized_fallback",
-            })
+            return _finalize(
+                {
+                    "success": True,  # Técnicamente "exitoso" porque damos respuesta
+                    "response": error_response["response"],
+                    "action": "humanized_fallback",
+                    "should_retry": error_response.get("should_retry", False),
+                    "delay_before_response": error_response.get("delay_before_response", 0),
+                    "provider": "humanized_fallback",
+                }
+            )
 
         # Sin sistema de humanización, fallback tradicional
-        return _finalize({
-            "success": False,
-            "error": f"Todos los proveedores para {use_case} no están disponibles",
-            "response": self._get_fallback_response(business_context),
-            "provider": "fallback",
-            "use_case": use_case,
-        })
+        return _finalize(
+            {
+                "success": False,
+                "error": f"Todos los proveedores para {use_case} no están disponibles",
+                "response": self._get_fallback_response(business_context),
+                "provider": "fallback",
+                "use_case": use_case,
+            }
+        )
 
     def _reorder_for_sensitive(self, providers: list[LLMProvider], preferred: list[str]) -> list[LLMProvider]:
         """
@@ -589,7 +598,7 @@ class MultiProviderLLM:
         self,
         provider: LLMProvider,
         messages: list[dict[str, str]],
-        business_context: Optional[dict] = None,
+        business_context: dict | None = None,
         max_retries: int = 3,
     ) -> dict[str, Any]:
         """Llama a un proveedor específico"""
@@ -599,17 +608,17 @@ class MultiProviderLLM:
         async def _dispatch() -> dict[str, Any]:
             if provider == LLMProvider.GEMINI:
                 return await self._call_gemini(config, messages, business_context, max_retries=max_retries)
-            elif provider == LLMProvider.OPENAI:
+            if provider == LLMProvider.OPENAI:
                 return await self._call_openai(config, messages, max_retries=max_retries)
-            elif provider == LLMProvider.CLAUDE:
+            if provider == LLMProvider.CLAUDE:
                 return await self._call_claude(config, messages, max_retries=max_retries)
-            elif provider == LLMProvider.OLLAMA:
+            if provider == LLMProvider.OLLAMA:
                 return await self._call_ollama(config, messages, max_retries=max_retries)
-            elif provider == LLMProvider.LM_STUDIO:
+            if provider == LLMProvider.LM_STUDIO:
                 return await self._call_lmstudio(config, messages, max_retries=max_retries)
-            elif provider == LLMProvider.XAI:
+            if provider == LLMProvider.XAI:
                 return await self._call_xai(config, messages, max_retries=max_retries)
-            elif provider == LLMProvider.OPENROUTER:
+            if provider == LLMProvider.OPENROUTER:
                 return await self._call_openrouter(config, messages, max_retries=max_retries)
             return {"success": False, "error": "Proveedor no soportado"}
 
@@ -632,7 +641,7 @@ class MultiProviderLLM:
         self,
         config: APIConfig,
         messages: list[dict],
-        context: Optional[dict] = None,
+        context: dict | None = None,
         max_retries: int = 3,
     ) -> dict:
         """Llama a Google Gemini API"""
@@ -698,7 +707,7 @@ class MultiProviderLLM:
     @staticmethod
     def _compute_prompt_hash(
         messages: list[dict[str, str]],
-        business_context: Optional[dict[str, Any]],
+        business_context: dict[str, Any] | None,
         use_case: str,
         free_only: bool,
     ) -> str:
@@ -792,7 +801,9 @@ class MultiProviderLLM:
         for attempt in range(max_retries):
             try:
                 async with self._session_scope() as session:
-                    async with session.post(f"{config.base_url}/v1/messages", headers=headers, json=payload, timeout=timeout) as response:
+                    async with session.post(
+                        f"{config.base_url}/v1/messages", headers=headers, json=payload, timeout=timeout
+                    ) as response:
                         if response.status == 200:
                             data = await response.json()
                             content = data.get("content", [])
@@ -895,7 +906,7 @@ class MultiProviderLLM:
         self,
         provider_label: str,
         base_url: str,
-        api_key: Optional[str],
+        api_key: str | None,
         model: str,
         messages: list[dict],
         temperature: float,
@@ -949,7 +960,7 @@ class MultiProviderLLM:
 
         return {"success": False, "error": f"{provider_label} retries exhausted"}
 
-    def _get_fallback_response(self, context: Optional[dict] = None) -> str:
+    def _get_fallback_response(self, context: dict | None = None) -> str:
         """Respuesta de emergencia cuando todos los proveedores fallan"""
         business_name = context.get("business_name", "nuestro negocio") if context else "nuestro negocio"
 

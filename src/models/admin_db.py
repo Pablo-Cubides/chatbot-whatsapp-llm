@@ -107,7 +107,7 @@ def get_db_session() -> Generator:
         session.close()
 
 
-def initialize_schema():
+def initialize_schema() -> None:
     """Inicializar esquema de base de datos"""
     if not ALLOW_CREATE_ALL:
         logger.info("⏭️ initialize_schema omitido (DB_ALLOW_CREATE_ALL=false)")
@@ -125,7 +125,7 @@ def initialize_schema():
         raise
 
 
-def test_connection():
+def test_connection() -> bool | None:
     """Probar conexión a la base de datos"""
     try:
         with get_db_session() as db:
@@ -143,7 +143,7 @@ def get_db_info():
     try:
         db_type = DATABASE_URL.split("://")[0]
 
-        info = {
+        return {
             "type": db_type,
             "url": DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else DATABASE_URL,  # Ocultar credenciales
             "pool_size": getattr(engine.pool, "size", None),
@@ -153,13 +153,12 @@ def get_db_info():
             "connected": test_connection(),
         }
 
-        return info
     except Exception as e:
         logger.error(f"Error obteniendo info de DB: {e}")
         return {"error": str(e)}
 
 
-def cleanup_connections():
+def cleanup_connections() -> None:
     """Limpiar conexiones de la pool"""
     try:
         engine.dispose()
@@ -192,7 +191,7 @@ def get_db():
 
 
 # Función de migración simple
-def migrate_sqlite_to_postgresql(postgresql_url: str):
+def migrate_sqlite_to_postgresql(postgresql_url: str) -> bool | None:
     """
     Migrar datos de SQLite a PostgreSQL (función básica)
     Para migraciones complejas, usar Alembic

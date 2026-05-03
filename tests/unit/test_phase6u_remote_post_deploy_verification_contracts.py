@@ -36,4 +36,4 @@ def test_post_deploy_verification_workflow_checks_health_metrics_auth_and_servic
     assert 'curl -fsS -X POST "${BASE_URL}/api/auth/login"' in text
     assert 'curl -fsS "${BASE_URL}/api/auth/me" -H "Authorization: Bearer ${ACCESS_TOKEN}"' in text
     assert "for svc in app worker-web scheduler; do" in text
-    assert "grep -Eiq \"Up|running|healthy\"" in text
+    assert 'grep -Eiq "Up|running|healthy"' in text

@@ -35,9 +35,13 @@ def test_security_recommendations_include_targeted_actions_on_anomalies(
     client: TestClient, admin_headers: dict[str, str]
 ) -> None:
     for _ in range(5):
-        log_security_event("login_failed", username="admin", role="admin", success=False, details={"reason": "bad-credentials"})
+        log_security_event(
+            "login_failed", username="admin", role="admin", success=False, details={"reason": "bad-credentials"}
+        )
     for _ in range(8):
-        log_security_event("refresh_failed", username="admin", role="admin", success=False, details={"reason": "missing_cookie"})
+        log_security_event(
+            "refresh_failed", username="admin", role="admin", success=False, details={"reason": "missing_cookie"}
+        )
 
     response = client.get(
         "/api/audit/security-recommendations",

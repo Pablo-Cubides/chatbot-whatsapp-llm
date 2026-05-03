@@ -6,7 +6,7 @@ Wrapper para whatsapp_automator.py usando Playwright
 import json
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 from src.services.queue_system import queue_manager
 from src.services.whatsapp_provider import MessageType, NormalizedMessage, SendResult, WhatsAppProvider
@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 class WebProvider(WhatsAppProvider):
     """Proveedor para WhatsApp Web via Playwright"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.queue_file = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "manual_queue.json"
         )
         logger.info("🌐 WebProvider inicializado (Playwright)")
 
-    def send_message(self, chat_id: str, text: str, media: Optional[dict[str, Any]] = None) -> SendResult:
+    def send_message(self, chat_id: str, text: str, media: dict[str, Any] | None = None) -> SendResult:
         """
         Enviar mensaje a través de WhatsApp Web
         Encola el mensaje para que whatsapp_automator.py lo procese
@@ -40,7 +40,7 @@ class WebProvider(WhatsAppProvider):
             logger.error("❌ Error enviando mensaje via Web: %s", e)
             return SendResult(success=False, error=str(e), provider="web")
 
-    def receive_message(self, raw_event: dict[str, Any]) -> Optional[NormalizedMessage]:
+    def receive_message(self, raw_event: dict[str, Any]) -> NormalizedMessage | None:
         """
         Recibir mensaje de WhatsApp Web
         El formato viene de whatsapp_automator.py

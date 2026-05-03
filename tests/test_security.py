@@ -3,10 +3,10 @@
 Tests específicos para verificar seguridad del sistema.
 """
 
+import importlib
 import os
 import sys
 import types
-import importlib
 from unittest.mock import patch
 
 import pytest

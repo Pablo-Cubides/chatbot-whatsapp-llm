@@ -67,7 +67,9 @@ def api_get_current_model(current_user: dict[str, Any] = Depends(get_current_use
 
 
 @router.put("/api/current-model")
-def api_set_current_model(request: ModelChangeRequest, current_user: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
+def api_set_current_model(
+    request: ModelChangeRequest, current_user: dict[str, Any] = Depends(require_admin)
+) -> dict[str, Any]:
     """Update current model in payload.json."""
     try:
         payload_path = os.path.join(os.path.dirname(__file__), "..", "..", "payload.json")

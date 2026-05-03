@@ -8,7 +8,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +36,13 @@ class NormalizedMessage:
     """Mensaje normalizado independiente del proveedor"""
 
     chat_id: str
-    text: Optional[str] = None
+    text: str | None = None
     message_type: MessageType = MessageType.TEXT
-    media_url: Optional[str] = None
-    media_id: Optional[str] = None
-    timestamp: Optional[str] = None
-    from_user: Optional[str] = None
-    metadata: Optional[dict[str, Any]] = None
+    media_url: str | None = None
+    media_id: str | None = None
+    timestamp: str | None = None
+    from_user: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass
@@ -50,16 +50,16 @@ class SendResult:
     """Resultado de envío de mensaje"""
 
     success: bool
-    message_id: Optional[str] = None
-    error: Optional[str] = None
-    provider: Optional[str] = None
+    message_id: str | None = None
+    error: str | None = None
+    provider: str | None = None
 
 
 class WhatsAppProvider(ABC):
     """Interfaz abstracta para proveedores de WhatsApp"""
 
     @abstractmethod
-    def send_message(self, chat_id: str, text: str, media: Optional[dict[str, Any]] = None) -> SendResult:
+    def send_message(self, chat_id: str, text: str, media: dict[str, Any] | None = None) -> SendResult:
         """
         Enviar mensaje
 
@@ -74,7 +74,7 @@ class WhatsAppProvider(ABC):
         pass
 
     @abstractmethod
-    def receive_message(self, raw_event: dict[str, Any]) -> Optional[NormalizedMessage]:
+    def receive_message(self, raw_event: dict[str, Any]) -> NormalizedMessage | None:
         """
         Recibir y normalizar mensaje
 
@@ -115,12 +115,11 @@ class WhatsAppProviderFactory:
             from src.services.whatsapp_web_provider import WebProvider
 
             return WebProvider()
-        elif provider_type == ProviderType.CLOUD:
+        if provider_type == ProviderType.CLOUD:
             from src.services.whatsapp_cloud_provider import CloudProvider
 
             return CloudProvider()
-        else:
-            raise ValueError(f"Tipo de proveedor desconocido: {provider_type}")
+        raise ValueError(f"Tipo de proveedor desconocido: {provider_type}")
 
     @staticmethod
     def create_from_env() -> WhatsAppProvider:
@@ -131,9 +130,8 @@ class WhatsAppProviderFactory:
             # Para modo dual, retornar el cloud como principal
             logger.info("📱 Modo DUAL activado: Cloud API principal, Web como backup")
             return WhatsAppProviderFactory.create_provider(ProviderType.CLOUD)
-        else:
-            logger.info(f"📱 Proveedor WhatsApp: {mode}")
-            return WhatsAppProviderFactory.create_provider(mode)
+        logger.info(f"📱 Proveedor WhatsApp: {mode}")
+        return WhatsAppProviderFactory.create_provider(mode)
 
 
 class DualProvider(WhatsAppProvider):
@@ -141,7 +139,7 @@ class DualProvider(WhatsAppProvider):
     Proveedor dual que usa Cloud API como principal y Web como backup
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         from src.services.whatsapp_cloud_provider import CloudProvider
         from src.services.whatsapp_web_provider import WebProvider
 
@@ -152,7 +150,7 @@ class DualProvider(WhatsAppProvider):
 
         logger.info("📱 DualProvider inicializado (Cloud principal, Web backup)")
 
-    def send_message(self, chat_id: str, text: str, media: Optional[dict[str, Any]] = None) -> SendResult:
+    def send_message(self, chat_id: str, text: str, media: dict[str, Any] | None = None) -> SendResult:
         """Enviar mensaje usando primary o backup según disponibilidad"""
 
         # Si este chat está marcado para usar backup, ir directo ahí
@@ -182,13 +180,13 @@ class DualProvider(WhatsAppProvider):
         result.provider = "web (backup)"
         return result
 
-    def receive_message(self, raw_event: dict[str, Any]) -> Optional[NormalizedMessage]:
+    def receive_message(self, raw_event: dict[str, Any]) -> NormalizedMessage | None:
         """Recibir mensaje (auto-detect el proveedor)"""
         # Intentar parsear como Cloud API primero
         if "entry" in raw_event:  # Cloud API format
             return self.primary.receive_message(raw_event)
-        else:  # Asumir Web format
-            return self.backup.receive_message(raw_event)
+        # Asumir Web format
+        return self.backup.receive_message(raw_event)
 
     def is_available(self) -> bool:
         """Disponible si al menos uno de los dos está disponible"""
@@ -205,7 +203,7 @@ class DualProvider(WhatsAppProvider):
 
 
 # Instancia global del router
-_current_provider: Optional[WhatsAppProvider] = None
+_current_provider: WhatsAppProvider | None = None
 
 
 def get_provider() -> WhatsAppProvider:
@@ -220,7 +218,7 @@ def get_provider() -> WhatsAppProvider:
     return _current_provider
 
 
-def send_message(chat_id: str, text: str, media: Optional[dict[str, Any]] = None) -> SendResult:
+def send_message(chat_id: str, text: str, media: dict[str, Any] | None = None) -> SendResult:
     """Helper function para enviar mensaje usando el proveedor configurado"""
     provider = get_provider()
     return provider.send_message(chat_id, text, media)

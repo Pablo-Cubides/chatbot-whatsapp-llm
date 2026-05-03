@@ -1,13 +1,13 @@
 """Analysis settings and adaptive layer routes extracted from admin_panel.py."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
-import chat_sessions
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import chat_sessions
 from src.services.adaptive_layer import adaptive_layer_manager
 from src.services.audit_system import log_config_change
 from src.services.auth_system import get_current_user, require_admin
@@ -19,13 +19,13 @@ router = APIRouter(tags=["analysis", "adaptive"])
 
 
 class AnalysisSettings(BaseModel):
-    deep_analysis_enabled: Optional[bool] = True
-    deep_analysis_trigger_conversations: Optional[int] = 50
-    deep_analysis_trigger_days: Optional[int] = 7
-    image_analysis_enabled: Optional[bool] = True
-    audio_transcription_enabled: Optional[bool] = True
-    whisper_model_size: Optional[str] = "base"
-    whisper_device: Optional[str] = "cpu"
+    deep_analysis_enabled: bool | None = True
+    deep_analysis_trigger_conversations: int | None = 50
+    deep_analysis_trigger_days: int | None = 7
+    image_analysis_enabled: bool | None = True
+    audio_transcription_enabled: bool | None = True
+    whisper_model_size: str | None = "base"
+    whisper_device: str | None = "cpu"
 
 
 @router.get("/api/settings/analysis")
@@ -50,7 +50,9 @@ async def get_analysis_settings(current_user: dict[str, Any] = Depends(get_curre
 
 
 @router.post("/api/settings/analysis")
-async def update_analysis_settings(settings: AnalysisSettings, current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
+async def update_analysis_settings(
+    settings: AnalysisSettings, current_user: dict[str, Any] = Depends(require_admin)
+) -> JSONResponse:
     """Actualiza la configuración de análisis."""
     try:
         analysis_config = {
@@ -92,7 +94,9 @@ async def get_adaptive_status(current_user: dict[str, Any] = Depends(get_current
 
 
 @router.post("/api/adaptive/run-now")
-async def run_adaptive_now(payload: dict[str, int] | None = None, current_user: dict[str, Any] = Depends(require_admin)) -> JSONResponse:
+async def run_adaptive_now(
+    payload: dict[str, int] | None = None, current_user: dict[str, Any] = Depends(require_admin)
+) -> JSONResponse:
     """Fuerza un ciclo de análisis adaptativo (admin)."""
     adaptive_layer_manager.business_config = business_config
     adaptive_layer_manager.sync_runtime_settings()

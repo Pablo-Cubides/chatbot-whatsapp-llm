@@ -9,9 +9,9 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
+from src.routers import business_config as business_config_router
 from src.routers import campaigns as campaigns_router
 from src.routers import deps
-from src.routers import business_config as business_config_router
 
 pytestmark = [pytest.mark.api]
 

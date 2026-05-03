@@ -12,7 +12,6 @@ from typing import Any
 from sqlalchemy import delete
 
 from admin_db import get_session, initialize_schema
-
 from crypto import decrypt_text, encrypt_text
 from models import (
     ChatCounter,
@@ -80,7 +79,9 @@ def prune_conversation_rows_ttl_and_cap(chat_id: str | None = None) -> int:
         if chat_id:
             target_chat_ids = [chat_id]
         else:
-            target_chat_ids = [row[0] for row in session.query(Conversation.chat_id).filter(Conversation.chat_id.isnot(None)).distinct().all()]
+            target_chat_ids = [
+                row[0] for row in session.query(Conversation.chat_id).filter(Conversation.chat_id.isnot(None)).distinct().all()
+            ]
 
         for cid in target_chat_ids:
             if not cid:
@@ -123,10 +124,7 @@ def load_last_context(chat_id: str) -> list[dict[str, Any]]:
     session = get_session()
     try:
         row = (
-            session.query(Conversation)
-            .filter(Conversation.chat_id == chat_id)
-            .order_by(Conversation.timestamp.desc())
-            .first()
+            session.query(Conversation).filter(Conversation.chat_id == chat_id).order_by(Conversation.timestamp.desc()).first()
         )
     finally:
         session.close()
@@ -281,13 +279,12 @@ def get_active_strategy(chat_id: str) -> ChatStrategy | None:
     """Obtiene la estrategia activa más reciente para un chat."""
     session = get_session()
     try:
-        s = (
+        return (
             session.query(ChatStrategy)
             .filter(ChatStrategy.chat_id == chat_id, ChatStrategy.is_active)
             .order_by(ChatStrategy.version.desc(), ChatStrategy.created_at.desc())
             .first()
         )
-        return s
     finally:
         session.close()
 

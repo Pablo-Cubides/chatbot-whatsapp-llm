@@ -3,7 +3,7 @@
 import json
 import os
 import subprocess
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -223,7 +223,9 @@ async def api_lmstudio_switch_model(request: Request, current_user: dict[str, An
             return {"success": False, "error": "model_id requerido"}
 
         models_response = get_lmstudio_models_info()
-        allowed_models = [m["id"] for m in models_response.get("main_models", []) + models_response.get("reasoning_models", [])]
+        allowed_models = [
+            m["id"] for m in models_response.get("main_models", []) + models_response.get("reasoning_models", [])
+        ]
         if model_id not in allowed_models:
             return {"success": False, "error": f"Modelo {model_id} no está en listas permitidas"}
 
@@ -339,7 +341,7 @@ def api_lmstudio_start(current_user: dict[str, Any] = Depends(require_admin)) ->
         return {"success": False, "error": str(e)}
 
 
-def _find_lms_exe() -> Optional[str]:
+def _find_lms_exe() -> str | None:
     """Try to locate LM Studio CLI executable (lms)."""
     env_exe = os.environ.get("LMS_EXE") or os.environ.get("LM_STUDIO_CLI")
     if env_exe and os.path.isfile(env_exe):
@@ -378,7 +380,7 @@ def _find_lms_exe() -> Optional[str]:
     return "lms"
 
 
-def _lm_app_cwd(lms_path: str) -> Optional[str]:
+def _lm_app_cwd(lms_path: str) -> str | None:
     """Best-effort app root for LM Studio CLI commands."""
     try:
         base = os.path.dirname(lms_path)
@@ -446,7 +448,7 @@ def api_lmstudio_server_start(current_user: dict[str, Any] = Depends(require_adm
 async def api_lmstudio_load(request: Request, current_user: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
     """Load a model via LM Studio CLI: lms load <model>."""
     try:
-        model_value: Optional[str] = None
+        model_value: str | None = None
 
         try:
             data = await request.json()
@@ -562,11 +564,11 @@ def api_lmstudio_warmup(req: LMStudioWarmupRequest, current_user: dict[str, Any]
             "max_tokens": 1,
             "temperature": 0,
         }
-        response = requests.post(url, json=payload, timeout=60)
+        response = httpx.post(url, json=payload, timeout=60)
         if response.status_code == 200:
             return {"success": True}
         return {"success": False, "error": f"HTTP {response.status_code}", "body": response.text[-2000:]}
-    except requests.Timeout:
+    except httpx.TimeoutException:
         return {"success": False, "error": "Tiempo de espera agotado al llamar al API"}
     except Exception as e:
         return {"success": False, "error": str(e)}

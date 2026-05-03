@@ -14,7 +14,6 @@ from src.services.auth_system import auth_manager
 pytestmark = [pytest.mark.api, pytest.mark.security]
 
 
-
 def test_account_lockout_expires_and_allows_valid_login(create_user, monkeypatch: pytest.MonkeyPatch) -> None:
     create_user("phase5_lock_user", "StrongPass123", role="operator")
 
@@ -33,7 +32,6 @@ def test_account_lockout_expires_and_allows_valid_login(create_user, monkeypatch
 
     assert success is not None
     assert error_code is None
-
 
 
 def test_refresh_replay_emits_invalid_refresh_security_event(client: TestClient, auth_headers_factory: callable) -> None:
@@ -64,7 +62,6 @@ def test_refresh_replay_emits_invalid_refresh_security_event(client: TestClient,
     logs = logs_response.json().get("logs", [])
     assert logs
     assert any((entry.get("details") or {}).get("reason") == "invalid_refresh_token" for entry in logs)
-
 
 
 def test_ws_invalid_scope_emits_security_telemetry(client: TestClient, admin_headers: dict[str, str]) -> None:

@@ -5,32 +5,31 @@ gpt-4o-mini, claude-3-haiku-20240307, gemini-1.5-flash, grok-beta, etc.
 
 Si un modelo nuevo se retira, añadirlo a la lista RETIRED_MODELS.
 """
+
 from __future__ import annotations
 
 import importlib
-import os
 
 import pytest
 
-
 # Modelos retirados o desaconsejados para producción a la fecha.
 RETIRED_MODELS = {
-    "gpt-4o-mini",                  # Retirado 13 Feb 2026
+    "gpt-4o-mini",  # Retirado 13 Feb 2026
     "gpt-4o",
     "gpt-4-turbo",
     "gpt-3.5-turbo",
     "gpt-3.5-turbo-16k",
     "gpt-4",
     "gpt-4-32k",
-    "claude-3-haiku-20240307",      # Claude 3 generación 2024
+    "claude-3-haiku-20240307",  # Claude 3 generación 2024
     "claude-3-sonnet-20240229",
     "claude-3-opus-20240229",
     "claude-3-5-sonnet-20241022",
-    "gemini-1.5-flash",             # Se desactiva 1 Jun 2026
+    "gemini-1.5-flash",  # Se desactiva 1 Jun 2026
     "gemini-1.5-pro",
     "gemini-2.0-flash",
     "gemini-pro",
-    "grok-beta",                    # Modelo de 2024
+    "grok-beta",  # Modelo de 2024
     "grok-vision-beta",
 }
 
@@ -67,8 +66,7 @@ def test_no_retired_models_in_provider_defaults(fresh_provider_keys: None) -> No
             failing.append((provider.value, cfg.model))
 
     assert not failing, (
-        "Modelos retirados detectados como default en multi_provider_llm.py: "
-        f"{failing}. Actualizar a un modelo vigente."
+        f"Modelos retirados detectados como default en multi_provider_llm.py: {failing}. Actualizar a un modelo vigente."
     )
 
 
@@ -85,9 +83,7 @@ def test_openai_default_is_current(fresh_provider_keys: None) -> None:
     providers, LLMProvider = _load_providers()
     cfg = providers.get(LLMProvider.OPENAI)
     assert cfg is not None
-    assert cfg.model.startswith("gpt-5"), (
-        f"OpenAI default debe ser gpt-5.x, no {cfg.model} (gpt-4o-mini fue retirado)"
-    )
+    assert cfg.model.startswith("gpt-5"), f"OpenAI default debe ser gpt-5.x, no {cfg.model} (gpt-4o-mini fue retirado)"
 
 
 def test_claude_default_is_current(fresh_provider_keys: None) -> None:
@@ -103,9 +99,7 @@ def test_xai_default_is_current(fresh_provider_keys: None) -> None:
     providers, LLMProvider = _load_providers()
     cfg = providers.get(LLMProvider.XAI)
     assert cfg is not None
-    assert cfg.model.startswith("grok-4"), (
-        f"xAI default debe ser grok-4.x, no {cfg.model} (grok-beta es de 2024)"
-    )
+    assert cfg.model.startswith("grok-4"), f"xAI default debe ser grok-4.x, no {cfg.model} (grok-beta es de 2024)"
 
 
 def test_provider_can_be_overridden_by_env(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -10,7 +10,6 @@ from src.models.models import Base
 pytestmark = pytest.mark.unit
 
 
-
 def test_model_metadata_contains_critical_phase5_tables() -> None:
     expected_tables = {
         "appointments",
@@ -23,7 +22,6 @@ def test_model_metadata_contains_critical_phase5_tables() -> None:
     available = set(Base.metadata.tables.keys())
     missing = expected_tables - available
     assert not missing, f"Missing tables: {missing}"
-
 
 
 def test_appointment_table_columns_contract() -> None:
@@ -46,11 +44,9 @@ def test_appointment_table_columns_contract() -> None:
     assert expected_columns.issubset(available_columns)
 
 
-
 def test_contacts_phone_unique_index_contract() -> None:
     table = Base.metadata.tables["contacts"]
     assert any(index.unique and "phone" in [column.name for column in index.columns] for index in table.indexes)
-
 
 
 def test_database_info_contract_shape() -> None:

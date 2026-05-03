@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from playwright.async_api import async_playwright
 
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 class WhatsAppManager:
-    def __init__(self, business_config_manager=None, multi_llm=None, analytics_manager=None):
+    def __init__(self, business_config_manager=None, multi_llm=None, analytics_manager=None) -> None:
         self.business_config = business_config_manager
         self.multi_llm = multi_llm
         self.analytics = analytics_manager
@@ -118,7 +118,7 @@ class WhatsAppManager:
             logger.error("Error deteniendo WhatsApp bot: %s", e)
             return {"success": False, "message": f"Error: {str(e)}"}
 
-    async def _setup_message_listeners(self):
+    async def _setup_message_listeners(self) -> None:
         """Configurar listeners para mensajes nuevos"""
         await self.page.evaluate("""
             () => {
@@ -148,7 +148,7 @@ class WhatsAppManager:
         # Loop para procesar mensajes
         asyncio.create_task(self._message_processing_loop())
 
-    async def _message_processing_loop(self):
+    async def _message_processing_loop(self) -> None:
         """Loop principal para procesar mensajes"""
         while self.is_running:
             try:
@@ -165,7 +165,7 @@ class WhatsAppManager:
                 logger.error("Error en loop de mensajes: %s", e)
                 await asyncio.sleep(5)
 
-    async def _process_incoming_message(self):
+    async def _process_incoming_message(self) -> None:
         """Procesar mensaje entrante (con soporte para imágenes)"""
         try:
             # Obtener información del chat actual
@@ -301,7 +301,7 @@ class WhatsAppManager:
         except Exception as e:
             logger.error("Error procesando mensaje: %s", e)
 
-    async def _get_current_chat_info(self) -> Optional[dict[str, Any]]:
+    async def _get_current_chat_info(self) -> dict[str, Any] | None:
         """Obtener información del chat actual"""
         try:
             return await self.page.evaluate("""
@@ -330,7 +330,7 @@ class WhatsAppManager:
         except Exception:
             return None
 
-    async def _detect_and_download_image(self) -> Optional[bytes]:
+    async def _detect_and_download_image(self) -> bytes | None:
         """
         Detecta si el último mensaje contiene imagen y la descarga
 
@@ -396,7 +396,7 @@ class WhatsAppManager:
             logger.error("❌ Error detectando/descargando imagen: %s", e)
             return None
 
-    async def _generate_response(self, contact_name: str, message_text: str) -> Optional[str]:
+    async def _generate_response(self, contact_name: str, message_text: str) -> str | None:
         """Generar respuesta usando la configuración actual"""
         try:
             # Obtener configuración de negocio
@@ -448,10 +448,9 @@ class WhatsAppManager:
                     )
 
                 return response_text
-            else:
-                # Respuesta de fallback usando configuración
-                greeting = business_info.get("greeting", "¡Hola!")
-                return f"{greeting} Gracias por contactarnos. Te ayudo enseguida."
+            # Respuesta de fallback usando configuración
+            greeting = business_info.get("greeting", "¡Hola!")
+            return f"{greeting} Gracias por contactarnos. Te ayudo enseguida."
 
         except Exception as e:
             logger.error("Error generando respuesta: %s", e)
@@ -490,7 +489,7 @@ class WhatsAppManager:
             logger.error("Error enviando mensaje: %s", e)
             return False
 
-    def _extract_phone_from_chat(self, contact_name: str) -> Optional[str]:
+    def _extract_phone_from_chat(self, contact_name: str) -> str | None:
         """Extraer número de teléfono del identificador de chat si es posible"""
         # WhatsApp contactos sin guardar aparecen como +XX XXXX XXXX
 

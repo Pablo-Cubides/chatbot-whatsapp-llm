@@ -57,9 +57,7 @@ def test_security_silence_can_be_renewed(client: TestClient, admin_headers: dict
 
     before = client.get("/api/audit/security-silences", headers=admin_headers)
     assert before.status_code == 200
-    before_entry = next(
-        item for item in before.json().get("silences", []) if item.get("fingerprint") == fingerprint
-    )
+    before_entry = next(item for item in before.json().get("silences", []) if item.get("fingerprint") == fingerprint)
     before_until = datetime.fromisoformat(before_entry["silenced_until"])
 
     renew = client.post(

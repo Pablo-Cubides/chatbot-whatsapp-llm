@@ -20,8 +20,8 @@ def _read(path: str) -> str:
 def test_ui_500_page_exists_and_links_dashboard() -> None:
     text = _read("ui/500.html")
 
-    assert "<h1 class=\"error-code\">500</h1>" in text
-    assert "href=\"/ui/index.html\"" in text
+    assert '<h1 class="error-code">500</h1>' in text
+    assert 'href="/ui/index.html"' in text
     assert "/ui/common.css" in text
     assert "/ui/500.css" in text
 
@@ -31,4 +31,4 @@ def test_admin_panel_uses_custom_500_for_non_api_routes() -> None:
 
     assert 'request.url.path.startswith("/api")' in text
     assert 'custom_500 = os.path.join(os.path.dirname(__file__), "ui", "500.html")' in text
-    assert 'return HTMLResponse(content=file_handler.read(), status_code=500)' in text
+    assert "return HTMLResponse(content=file_handler.read(), status_code=500)" in text

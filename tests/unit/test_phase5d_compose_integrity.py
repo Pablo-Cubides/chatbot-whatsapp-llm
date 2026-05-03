@@ -9,7 +9,6 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
-
 def test_docker_compose_worker_web_environment_block_integrity() -> None:
     compose_path = Path(__file__).resolve().parents[2] / "docker-compose.yml"
     assert compose_path.exists(), "docker-compose.yml not found"
@@ -31,7 +30,6 @@ def test_docker_compose_worker_web_environment_block_integrity() -> None:
     assert "DATABASE_URL:" in worker_block
     assert "WHATSAPP_MODE:" in worker_block
     assert "DISPLAY:" in worker_block
-
 
 
 def test_docker_compose_has_no_stray_single_letter_line_from_snapshot() -> None:

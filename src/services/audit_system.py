@@ -6,12 +6,9 @@ Registro de acciones administrativas para trazabilidad y seguridad
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
-from sqlalchemy import func
-from sqlalchemy import delete
-from sqlalchemy import and_, or_
-from sqlalchemy import JSON, Column, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Column, DateTime, Integer, String, Text, and_, delete, func, or_
 
 from src.models.admin_db import get_session
 from src.models.models import Base
@@ -71,7 +68,7 @@ class AuditLog(Base):
 class AuditManager:
     """Gestor de auditoría"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = os.environ.get("AUDIT_ENABLED", "true").lower() == "true"
         if self.enabled:
             logger.info("🔍 Sistema de auditoría habilitado")
@@ -81,12 +78,12 @@ class AuditManager:
         username: str,
         action: str,
         role: str = "unknown",
-        resource: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
+        resource: str | None = None,
+        details: dict[str, Any] | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
         success: bool = True,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ) -> bool:
         """
         Registrar una acción administrativa
@@ -141,11 +138,11 @@ class AuditManager:
 
     def get_logs(
         self,
-        username: Optional[str] = None,
-        action: Optional[str] = None,
-        resource: Optional[str] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        username: str | None = None,
+        action: str | None = None,
+        resource: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -207,7 +204,7 @@ class AuditManager:
             logger.error(f"❌ Error obteniendo logs de auditoría: {e}")
             return []
 
-    def get_stats(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> dict[str, Any]:
+    def get_stats(self, start_date: datetime | None = None, end_date: datetime | None = None) -> dict[str, Any]:
         """
         Obtener estadísticas de auditoría
 
@@ -264,7 +261,7 @@ class AuditManager:
     def get_security_signal_report(
         self,
         window_minutes: int = 15,
-        thresholds: Optional[dict[str, int]] = None,
+        thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """Build threshold-based anomaly report from SECURITY_* audit events."""
         now = datetime.now(timezone.utc)
@@ -553,7 +550,7 @@ class AuditManager:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def get_security_export_checkpoint(self, consumer: str) -> Optional[dict[str, Any]]:
+    def get_security_export_checkpoint(self, consumer: str) -> dict[str, Any] | None:
         """Get latest export checkpoint for a given consumer."""
         normalized_consumer = (consumer or "").strip().lower()
         if not normalized_consumer:
@@ -630,17 +627,17 @@ audit_manager = AuditManager()
 
 
 # Helper functions para facilitar el uso
-def log_login(username: str, role: str, ip: Optional[str] = None, success: bool = True, error: Optional[str] = None):
+def log_login(username: str, role: str, ip: str | None = None, success: bool = True, error: str | None = None) -> None:
     """Log de inicio de sesión"""
     audit_manager.log_action(username, "LOGIN", role=role, ip_address=ip, success=success, error_message=error)
 
 
-def log_logout(username: str, role: str, ip: Optional[str] = None):
+def log_logout(username: str, role: str, ip: str | None = None) -> None:
     """Log de cierre de sesión"""
     audit_manager.log_action(username, "LOGOUT", role=role, ip_address=ip)
 
 
-def log_bulk_send(username: str, role: str, campaign_id: str, contact_count: int, details: Optional[dict] = None):
+def log_bulk_send(username: str, role: str, campaign_id: str, contact_count: int, details: dict | None = None) -> None:
     """Log de envío masivo"""
     audit_manager.log_action(
         username,
@@ -651,17 +648,17 @@ def log_bulk_send(username: str, role: str, campaign_id: str, contact_count: int
     )
 
 
-def log_config_change(username: str, role: str, config_key: str, details: Optional[dict] = None):
+def log_config_change(username: str, role: str, config_key: str, details: dict | None = None) -> None:
     """Log de cambio de configuración"""
     audit_manager.log_action(username, "CONFIG_CHANGE", role=role, resource=config_key, details=details)
 
 
-def log_schedule_create(username: str, role: str, schedule_id: str, details: Optional[dict] = None):
+def log_schedule_create(username: str, role: str, schedule_id: str, details: dict | None = None) -> None:
     """Log de creación de mensaje programado"""
     audit_manager.log_action(username, "SCHEDULE_CREATE", role=role, resource=f"schedule:{schedule_id}", details=details)
 
 
-def log_alert_action(username: str, role: str, alert_id: str, action: str, details: Optional[dict] = None):
+def log_alert_action(username: str, role: str, alert_id: str, action: str, details: dict | None = None) -> None:
     """Log de acción sobre alerta"""
     audit_manager.log_action(username, f"ALERT_{action.upper()}", role=role, resource=f"alert:{alert_id}", details=details)
 
@@ -670,12 +667,12 @@ def log_security_event(
     event_type: str,
     username: str = "unknown",
     role: str = "unknown",
-    ip: Optional[str] = None,
-    user_agent: Optional[str] = None,
+    ip: str | None = None,
+    user_agent: str | None = None,
     success: bool = False,
-    details: Optional[dict[str, Any]] = None,
-    error: Optional[str] = None,
-):
+    details: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> None:
     """Log de evento de seguridad estructurado para detección y forense."""
     normalized_event = event_type.strip().upper().replace(" ", "_")
     action = f"SECURITY_{normalized_event}"

@@ -51,13 +51,13 @@ class OutlookCalendarProvider(BaseCalendarProvider):
     - Event creation with Teams meeting integration
     """
 
-    def __init__(self, config: CalendarConfig):
+    def __init__(self, config: CalendarConfig) -> None:
         super().__init__(config)
         self._msal_app = None
-        self._access_token: Optional[str] = None
-        self._refresh_token: Optional[str] = None
-        self._token_expires_at: Optional[datetime] = None
-        self._oauth_state: Optional[str] = None
+        self._access_token: str | None = None
+        self._refresh_token: str | None = None
+        self._token_expires_at: datetime | None = None
+        self._oauth_state: str | None = None
 
         # Azure AD App credentials (from environment or config)
         self._client_id = os.getenv("MICROSOFT_CLIENT_ID", "")
@@ -72,7 +72,7 @@ class OutlookCalendarProvider(BaseCalendarProvider):
     def provider_name(self) -> str:
         return CalendarProvider.OUTLOOK.value
 
-    def configure(self, client_id: str, client_secret: str, tenant_id: str = "common"):
+    def configure(self, client_id: str, client_secret: str, tenant_id: str = "common") -> None:
         """Configure Azure AD app credentials"""
         self._client_id = client_id
         self._client_secret = client_secret
@@ -102,7 +102,7 @@ class OutlookCalendarProvider(BaseCalendarProvider):
 
         return self._msal_app
 
-    def _save_token_cache(self):
+    def _save_token_cache(self) -> None:
         """Save token cache to file"""
         if self._msal_app and self._msal_app.token_cache.has_state_changed:
             self._token_cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,8 +169,8 @@ class OutlookCalendarProvider(BaseCalendarProvider):
             return False
 
     def get_oauth_url(
-        self, redirect_uri: str = "http://localhost:8003/api/calendar/oauth/outlook/callback", state: Optional[str] = None
-    ) -> Optional[str]:
+        self, redirect_uri: str = "http://localhost:8003/api/calendar/oauth/outlook/callback", state: str | None = None
+    ) -> str | None:
         """
         Generate OAuth authorization URL for user consent.
 
@@ -186,9 +186,7 @@ class OutlookCalendarProvider(BaseCalendarProvider):
 
         try:
             oauth_state = state or str(uuid.uuid4())
-            authorization_url = app.get_authorization_request_url(
-                scopes=SCOPES, redirect_uri=redirect_uri, state=oauth_state
-            )
+            authorization_url = app.get_authorization_request_url(scopes=SCOPES, redirect_uri=redirect_uri, state=oauth_state)
             self._oauth_state = oauth_state
             return authorization_url
 
@@ -196,7 +194,7 @@ class OutlookCalendarProvider(BaseCalendarProvider):
             logger.error(f"❌ Failed to generate OAuth URL: {e}")
             return None
 
-    async def handle_oauth_callback(self, authorization_code: str, redirect_uri: str, state: Optional[str] = None) -> bool:
+    async def handle_oauth_callback(self, authorization_code: str, redirect_uri: str, state: str | None = None) -> bool:
         """
         Handle OAuth callback and exchange code for tokens.
 
@@ -230,11 +228,10 @@ class OutlookCalendarProvider(BaseCalendarProvider):
 
                 logger.info("✅ Outlook OAuth tokens obtained")
                 return True
-            else:
-                error = result.get("error_description", result.get("error", "Unknown error"))
-                logger.error(f"❌ OAuth token exchange failed: {error}")
-                self._oauth_state = None
-                return False
+            error = result.get("error_description", result.get("error", "Unknown error"))
+            logger.error(f"❌ OAuth token exchange failed: {error}")
+            self._oauth_state = None
+            return False
 
         except Exception as e:
             logger.error(f"❌ OAuth callback failed: {e}")
@@ -269,7 +266,7 @@ class OutlookCalendarProvider(BaseCalendarProvider):
         data: dict = None,
         retry_count: int = 0,
         max_retries: int = 1,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Make an authenticated request to Microsoft Graph API"""
         if not self._access_token:
             logger.error("❌ No access token available")
@@ -295,7 +292,7 @@ class OutlookCalendarProvider(BaseCalendarProvider):
 
                 if response.status_code in [200, 201]:
                     return response.json()
-                elif response.status_code == 401:
+                if response.status_code == 401:
                     # Token expired, try refresh
                     if retry_count >= max_retries:
                         logger.error("❌ Graph API auth failed after max retries")
@@ -519,7 +516,7 @@ class OutlookCalendarProvider(BaseCalendarProvider):
             logger.error(f"❌ Error cancelling Outlook event: {e}")
             return False
 
-    async def get_appointment(self, external_id: str) -> Optional[dict[str, Any]]:
+    async def get_appointment(self, external_id: str) -> dict[str, Any] | None:
         """Get details of a specific Outlook event"""
         if not self.is_authenticated:
             return None

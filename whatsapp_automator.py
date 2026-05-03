@@ -9,17 +9,18 @@ import os as _os
 import signal
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from string import Template
 from typing import Any
 
-from admin_db import get_session
 from dotenv import load_dotenv
 from model_manager import ModelManager
 from playwright.sync_api import sync_playwright
 from stub_chat import chat as stub_chat
 
 import chat_sessions
+from admin_db import get_session
 from models import Conversation
 from src.services.queue_system import queue_manager
 
@@ -55,8 +56,7 @@ def sanitize_message_content(text: str) -> str:
     # También redacción defensiva de trazas tipo key=value para contenido.
     import re
 
-    redacted = re.sub(r"(message|content|texto|mensaje)\s*[=:]\s*.+", r"\1=[contenido redactado]", redacted, flags=re.IGNORECASE)
-    return redacted
+    return re.sub(r"(message|content|texto|mensaje)\s*[=:]\s*.+", r"\1=[contenido redactado]", redacted, flags=re.IGNORECASE)
 
 
 def load_config() -> dict:
@@ -102,7 +102,7 @@ def setup_logging(log_path: str) -> None:
     handler = logging.handlers.RotatingFileHandler(log_path, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
 
     class SmartFilter(logging.Filter):
-        def __init__(self):
+        def __init__(self) -> None:
             import re
             import time
 
@@ -122,7 +122,7 @@ def setup_logging(log_path: str) -> None:
                 "→ Entrando a fetch_new_message",
             ]
 
-        def filter(self, record):
+        def filter(self, record) -> bool:
             # Aplicar el filtro de números
             original_msg = record.getMessage()
             sanitized_msg = sanitize_message_content(original_msg)
@@ -376,7 +376,7 @@ def _get_message_input(page):
     raise RuntimeError("No se encontró la caja de texto del mensaje")
 
 
-def send_reply(page, chat_id, reply_text):
+def send_reply(page, chat_id, reply_text) -> None:
     """Envía 'reply_text' en el chat actual."""
     input_box = _get_message_input(page)
     with contextlib.suppress(Exception):
@@ -386,7 +386,7 @@ def send_reply(page, chat_id, reply_text):
     log.info(f"Mensaje enviado a {chat_id}")
 
 
-def send_reply_with_typing(page, chat_id, reply_text, per_char_delay=PER_CHAR_TYPING_DELAY):
+def send_reply_with_typing(page, chat_id, reply_text, per_char_delay=PER_CHAR_TYPING_DELAY) -> bool | None:
     """Simula typing de forma eficiente (chunked/instant/human) evitando latencias extremas."""
     log.debug(f"📝 Iniciando envío con typing para {chat_id}: {reply_text[:30]}...")
 
@@ -451,7 +451,10 @@ def send_reply_with_typing(page, chat_id, reply_text, per_char_delay=PER_CHAR_TY
         if mode == "chunked":
             chunk_size = max(
                 25,
-                int(os.getenv("AUTOMATOR_TYPING_CHUNK_SIZE", str(TEXT_LENGTH_TYPING_THRESHOLD)) or str(TEXT_LENGTH_TYPING_THRESHOLD)),
+                int(
+                    os.getenv("AUTOMATOR_TYPING_CHUNK_SIZE", str(TEXT_LENGTH_TYPING_THRESHOLD))
+                    or str(TEXT_LENGTH_TYPING_THRESHOLD)
+                ),
             )
             base_pause_ms = max(10, int(os.getenv("AUTOMATOR_TYPING_CHUNK_PAUSE_MS", "35") or "35"))
 
@@ -476,7 +479,7 @@ def send_reply_with_typing(page, chat_id, reply_text, per_char_delay=PER_CHAR_TY
         return False
 
 
-def cleanup_search_and_return_to_normal(page):
+def cleanup_search_and_return_to_normal(page) -> None:
     """Limpia la búsqueda y vuelve a la ventana normal de WhatsApp"""
     try:
         log.debug("🧹 Iniciando limpieza de búsqueda...")
@@ -523,7 +526,7 @@ def cleanup_search_and_return_to_normal(page):
         log.warning(f"⚠️ Error en limpieza de búsqueda: {e}")
 
 
-def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
+def send_manual_message(page, chat_id, message_text, per_char_delay=0.05) -> bool | None:
     """Envía un mensaje manual buscando el chat específico primero."""
     try:
         log.info(f"📤 Iniciando envío manual a {chat_id}: {message_text[:50]}...")
@@ -601,9 +604,8 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
                     # PASO ADICIONAL: Limpiar búsqueda y volver a ventana normal
                     cleanup_search_and_return_to_normal(page)
                     return True
-                else:
-                    log.error("❌ Error enviando mensaje en chat abierto con Enter")
-                    return False
+                log.error("❌ Error enviando mensaje en chat abierto con Enter")
+                return False
         except Exception as e:
             log.debug(f"❌ Enter no funcionó: {e}")
 
@@ -695,11 +697,9 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
                                 # PASO ADICIONAL: Limpiar búsqueda y volver a ventana normal
                                 cleanup_search_and_return_to_normal(page)
                                 return True
-                            else:
-                                log.error(f"❌ Error enviando mensaje en chat abierto con {selector}")
-                                return False
-                        else:
-                            log.debug(f"❌ Click en {selector} no abrió el chat - ningún indicador encontrado")
+                            log.error(f"❌ Error enviando mensaje en chat abierto con {selector}")
+                            return False
+                        log.debug(f"❌ Click en {selector} no abrió el chat - ningún indicador encontrado")
                     else:
                         log.debug(f"❌ Todos los tipos de click fallaron con {selector}")
 
@@ -715,7 +715,7 @@ def send_manual_message(page, chat_id, message_text, per_char_delay=0.05):
         return False
 
 
-def exit_chat_safely(page):
+def exit_chat_safely(page) -> None:
     """Sale del chat actual y vuelve a la lista principal."""
     try:
         # ESC para salir

@@ -21,9 +21,9 @@ def _read(rel_path: str) -> str:
 def test_ci_deploy_uses_password_stdin_for_ghcr_login() -> None:
     text = _read(".github/workflows/ci.yml")
 
-    assert "docker login ghcr.io -u \"${{ github.actor }}\" --password-stdin" in text
-    assert "echo \"${{ secrets.GITHUB_TOKEN }}\" | docker login ghcr.io" in text
-    assert "-p \"${{ secrets.GITHUB_TOKEN }}\"" not in text
+    assert 'docker login ghcr.io -u "${{ github.actor }}" --password-stdin' in text
+    assert 'echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io' in text
+    assert '-p "${{ secrets.GITHUB_TOKEN }}"' not in text
 
 
 def test_deployment_docs_recommend_password_stdin_for_registry_login() -> None:

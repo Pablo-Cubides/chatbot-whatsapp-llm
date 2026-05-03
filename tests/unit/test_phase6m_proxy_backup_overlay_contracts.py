@@ -34,10 +34,10 @@ def test_nginx_reverse_proxy_keeps_forward_headers_and_security_headers() -> Non
     assert "proxy_set_header X-Real-IP $remote_addr;" in text
     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in text
     assert "proxy_set_header X-Forwarded-Proto $scheme;" in text
-    assert "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;" in text
-    assert "add_header X-Content-Type-Options \"nosniff\" always;" in text
-    assert "add_header X-Frame-Options \"DENY\" always;" in text
-    assert "add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;" in text
+    assert 'add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;' in text
+    assert 'add_header X-Content-Type-Options "nosniff" always;' in text
+    assert 'add_header X-Frame-Options "DENY" always;' in text
+    assert 'add_header Referrer-Policy "strict-origin-when-cross-origin" always;' in text
 
 
 def test_backup_overlay_requires_db_password_and_retention_controls() -> None:

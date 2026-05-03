@@ -7,7 +7,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +52,12 @@ class GoogleCalendarProvider(BaseCalendarProvider):
     - Event updates and cancellations
     """
 
-    def __init__(self, config: CalendarConfig):
+    def __init__(self, config: CalendarConfig) -> None:
         super().__init__(config)
         self._service = None
-        self._credentials_path: Optional[Path] = None
-        self._token_path: Optional[Path] = None
-        self._oauth_state: Optional[str] = None
+        self._credentials_path: Path | None = None
+        self._token_path: Path | None = None
+        self._oauth_state: str | None = None
 
         # Default paths
         project_root = Path(__file__).parent.parent.parent
@@ -68,7 +68,7 @@ class GoogleCalendarProvider(BaseCalendarProvider):
     def provider_name(self) -> str:
         return CalendarProvider.GOOGLE_CALENDAR.value
 
-    def set_credentials_path(self, credentials_path: str, token_path: str = None):
+    def set_credentials_path(self, credentials_path: str, token_path: str = None) -> None:
         """Set custom paths for credentials files"""
         self._credentials_path = Path(credentials_path)
         if token_path:
@@ -138,8 +138,8 @@ class GoogleCalendarProvider(BaseCalendarProvider):
             return False
 
     def get_oauth_url(
-        self, redirect_uri: str = "http://localhost:8003/api/calendar/oauth/google/callback", state: Optional[str] = None
-    ) -> Optional[str]:
+        self, redirect_uri: str = "http://localhost:8003/api/calendar/oauth/google/callback", state: str | None = None
+    ) -> str | None:
         """
         Generate OAuth authorization URL for user consent.
 
@@ -172,7 +172,7 @@ class GoogleCalendarProvider(BaseCalendarProvider):
             logger.error(f"❌ Failed to generate OAuth URL: {e}")
             return None
 
-    async def handle_oauth_callback(self, authorization_code: str, redirect_uri: str, state: Optional[str] = None) -> bool:
+    async def handle_oauth_callback(self, authorization_code: str, redirect_uri: str, state: str | None = None) -> bool:
         """
         Handle OAuth callback and exchange code for tokens.
 
@@ -210,7 +210,7 @@ class GoogleCalendarProvider(BaseCalendarProvider):
             self._oauth_state = None
             return False
 
-    def _save_token(self, creds: "Credentials"):
+    def _save_token(self, creds: "Credentials") -> None:
         """Save credentials to token file"""
         if self._token_path:
             self._token_path.parent.mkdir(parents=True, exist_ok=True)
@@ -478,7 +478,7 @@ class GoogleCalendarProvider(BaseCalendarProvider):
             logger.error(f"❌ Error cancelling appointment: {e}")
             return False
 
-    async def get_appointment(self, external_id: str) -> Optional[dict[str, Any]]:
+    async def get_appointment(self, external_id: str) -> dict[str, Any] | None:
         """Get details of a specific event"""
         if not self.is_authenticated or not self._service:
             return None

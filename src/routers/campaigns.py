@@ -5,7 +5,7 @@ Extracted from admin_panel.py.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,20 +26,19 @@ class CampaignCreate(BaseModel):
     name: str
     template: str
     contacts: list[str]  # List of phone numbers
-    scheduled_at: Optional[str] = None  # ISO datetime or None for immediate
-    delay_between_messages: Optional[int] = 5  # seconds
+    scheduled_at: str | None = None  # ISO datetime or None for immediate
+    delay_between_messages: int | None = 5  # seconds
 
 
 @router.get("")
 async def list_campaigns(
-    status: Optional[str] = None,
+    status: str | None = None,
     limit: int = 50,
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """Listar todas las campañas"""
     try:
-        campaigns = queue_manager.list_campaigns(status=status, limit=limit)
-        return campaigns
+        return queue_manager.list_campaigns(status=status, limit=limit)
     except Exception as e:
         logger.error(f"Error listando campañas: {e}")
         return []
@@ -61,7 +60,7 @@ async def create_campaign(
                 detail="Se requiere al menos un contacto",
             )
 
-        scheduled_base: Optional[datetime] = None
+        scheduled_base: datetime | None = None
         if campaign.scheduled_at:
             parsed = campaign.scheduled_at.replace("Z", "+00:00")
             scheduled_base = datetime.fromisoformat(parsed)
@@ -117,8 +116,7 @@ async def create_campaign(
                 "message": (f"Campaña '{campaign.name}' creada con {len(campaign.contacts)} contactos"),
                 "total_messages": len(campaign.contacts),
             }
-        else:
-            raise HTTPException(status_code=500, detail="Error creando campaña")
+        raise HTTPException(status_code=500, detail="Error creando campaña")
 
     except HTTPException:
         raise

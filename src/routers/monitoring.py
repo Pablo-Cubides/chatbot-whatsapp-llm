@@ -3,14 +3,14 @@ Monitoring API Router — Audit logs & Alert management.
 Extracted from admin_panel.py.
 """
 
-import logging
-import os
 import base64
 import hashlib
 import hmac
 import json
+import logging
+import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -73,7 +73,9 @@ def _list_active_security_silences(now: datetime | None = None) -> list[dict[str
     return items
 
 
-def _build_security_recommendations(anomaly_report: dict[str, Any], active_silences: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_security_recommendations(
+    anomaly_report: dict[str, Any], active_silences: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     anomalies = anomaly_report.get("anomalies", [])
     if not anomalies:
         return [
@@ -418,9 +420,9 @@ def _build_security_alert_fingerprint(anomalies: list[dict[str, Any]]) -> str:
 
 @router.get("/api/audit/logs", response_model=dict[str, Any])
 async def get_audit_logs(
-    username: Optional[str] = None,
-    action: Optional[str] = None,
-    resource: Optional[str] = None,
+    username: str | None = None,
+    action: str | None = None,
+    resource: str | None = None,
     limit: int = 100,
     offset: int = 0,
     current_user: dict[str, Any] = Depends(require_admin),
@@ -445,8 +447,7 @@ async def get_audit_stats(
 ) -> dict[str, Any]:
     """Obtener estadísticas de auditoría (solo admin)"""
     try:
-        stats = audit_manager.get_stats()
-        return stats
+        return audit_manager.get_stats()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -454,11 +455,11 @@ async def get_audit_stats(
 @router.get("/api/audit/security-anomalies", response_model=dict[str, Any])
 async def get_security_anomalies(
     window_minutes: int = 15,
-    login_failed_threshold: Optional[int] = None,
-    login_lockout_threshold: Optional[int] = None,
-    refresh_failed_threshold: Optional[int] = None,
-    ws_unauthorized_threshold: Optional[int] = None,
-    ws_invalid_scope_threshold: Optional[int] = None,
+    login_failed_threshold: int | None = None,
+    login_lockout_threshold: int | None = None,
+    refresh_failed_threshold: int | None = None,
+    ws_unauthorized_threshold: int | None = None,
+    ws_invalid_scope_threshold: int | None = None,
     auto_create_alert: bool = False,
     alert_cooldown_minutes: int = 30,
     current_user: dict[str, Any] = Depends(require_admin),
@@ -550,7 +551,7 @@ async def get_security_anomalies(
 async def acknowledge_security_alert(
     alert_id: str,
     silence_minutes: int = 0,
-    reason: Optional[str] = None,
+    reason: str | None = None,
     current_user: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     """Confirmar alerta automática de seguridad y silenciar temporalmente su fingerprint."""
@@ -570,8 +571,7 @@ async def acknowledge_security_alert(
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    f"Silence duration exceeds role policy. "
-                    f"Max allowed for role '{role}' is {max_silence_minutes} minutes."
+                    f"Silence duration exceeds role policy. Max allowed for role '{role}' is {max_silence_minutes} minutes."
                 ),
             )
 
@@ -668,8 +668,7 @@ async def renew_security_silence(
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    f"Silence duration exceeds role policy. "
-                    f"Max allowed for role '{role}' is {max_silence_minutes} minutes."
+                    f"Silence duration exceeds role policy. Max allowed for role '{role}' is {max_silence_minutes} minutes."
                 ),
             )
 
@@ -839,12 +838,11 @@ async def get_security_incident_snapshot(
         normalized_recent_limit = max(1, min(recent_events_limit, 100))
         role = str(current_user.get("role", "unknown"))
 
-        snapshot = _build_security_incident_snapshot(
+        return _build_security_incident_snapshot(
             window_minutes=normalized_window,
             recent_events_limit=normalized_recent_limit,
             role=role,
         )
-        return snapshot
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -880,10 +878,10 @@ async def get_security_incident_snapshot_signed(
 
 @router.get("/api/alerts", response_model=dict[str, Any])
 async def get_alerts(
-    status: Optional[str] = None,
-    severity: Optional[str] = None,
-    chat_id: Optional[str] = None,
-    assigned_to: Optional[str] = None,
+    status: str | None = None,
+    severity: str | None = None,
+    chat_id: str | None = None,
+    assigned_to: str | None = None,
     limit: int = 100,
     offset: int = 0,
     current_user: dict[str, Any] = Depends(get_current_user),
@@ -924,7 +922,7 @@ async def assign_alert(
 @router.put("/api/alerts/{alert_id}/resolve", response_model=dict[str, Any])
 async def resolve_alert(
     alert_id: str,
-    notes: Optional[str] = None,
+    notes: str | None = None,
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Resolver una alerta"""
@@ -957,9 +955,9 @@ class AlertRuleCreate(BaseModel):
     pattern: str
     severity: str
     actions: list[str]
-    enabled: Optional[bool] = True
-    schedule: Optional[dict] = None
-    metadata: Optional[dict] = None
+    enabled: bool | None = True
+    schedule: dict | None = None
+    metadata: dict | None = None
 
 
 class SnapshotVerificationRequest(BaseModel):
@@ -1155,9 +1153,9 @@ async def export_security_events_incremental(
 
 @router.get("/api/audit/security-events-export-v2")
 async def export_security_events_incremental_v2(
-    since: Optional[datetime] = None,
+    since: datetime | None = None,
     after_id: int = 0,
-    cursor_token: Optional[str] = None,
+    cursor_token: str | None = None,
     limit: int = 200,
     current_user: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
@@ -1298,7 +1296,7 @@ async def upsert_security_export_checkpoint(
 async def export_security_events_for_consumer(
     consumer: str,
     limit: int = 200,
-    bootstrap_since: Optional[datetime] = None,
+    bootstrap_since: datetime | None = None,
     current_user: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     """Consumer-aware incremental export that auto-resumes and updates checkpoint."""

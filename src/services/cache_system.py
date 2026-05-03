@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from cachetools import TTLCache
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class CacheManager:
     """Gestor de caché con soporte Redis y fallback en memoria"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.redis_client = None
         self.memory_cache = None  # type: ignore[assignment]
         self.cache_enabled = False
@@ -52,13 +52,13 @@ class CacheManager:
         else:
             logger.warning("Redis no disponible, usando caché en memoria")
 
-    async def _ensure_redis_initialized(self):
+    async def _ensure_redis_initialized(self) -> None:
         """Asegurar que Redis esté inicializado"""
         if REDIS_AVAILABLE and self.redis_client is None and not hasattr(self, "_redis_init_attempted"):
             self._redis_init_attempted = True
             await self._initialize_redis()
 
-    async def _initialize_redis(self):
+    async def _initialize_redis(self) -> None:
         """Inicializar conexión Redis"""
         try:
             self.redis_client = redis.from_url(
@@ -94,7 +94,7 @@ class CacheManager:
 
         return hashlib.sha256(serialized.encode()).hexdigest()
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """Obtener valor del caché"""
         try:
             await self._ensure_redis_initialized()
@@ -106,15 +106,14 @@ class CacheManager:
                 if value:
                     return json.loads(value)
                 return None
-            else:
-                # Obtener de memoria (TTLCache expira automáticamente)
-                return self.memory_cache.get(cache_key)
+            # Obtener de memoria (TTLCache expira automáticamente)
+            return self.memory_cache.get(cache_key)
 
         except Exception as e:
             logger.error(f"Error obteniendo caché {key}: {e}")
             return None
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Guardar valor en caché"""
         try:
             await self._ensure_redis_initialized()
@@ -126,10 +125,9 @@ class CacheManager:
                 serialized_value = json.dumps(value, default=str)
                 await self.redis_client.setex(cache_key, ttl, serialized_value)
                 return True
-            else:
-                # Guardar en memoria (evicción automática LRU+TTL)
-                self.memory_cache[cache_key] = value
-                return True
+            # Guardar en memoria (evicción automática LRU+TTL)
+            self.memory_cache[cache_key] = value
+            return True
 
         except Exception as e:
             logger.error(f"Error guardando caché {key}: {e}")
@@ -164,19 +162,18 @@ class CacheManager:
                 if keys:
                     await self.redis_client.delete(*keys)
                 return len(keys)
-            else:
-                # Limpiar memoria
-                pattern_key = self._get_key(pattern.replace("*", ""))
-                keys_to_delete = [k for k in self.memory_cache if k.startswith(pattern_key)]
-                for key in keys_to_delete:
-                    del self.memory_cache[key]
-                return len(keys_to_delete)
+            # Limpiar memoria
+            pattern_key = self._get_key(pattern.replace("*", ""))
+            keys_to_delete = [k for k in self.memory_cache if k.startswith(pattern_key)]
+            for key in keys_to_delete:
+                del self.memory_cache[key]
+            return len(keys_to_delete)
 
         except Exception as e:
             logger.error(f"Error limpiando patrón {pattern}: {e}")
             return 0
 
-    async def get_or_set(self, key: str, factory_func, ttl: Optional[int] = None) -> Any:
+    async def get_or_set(self, key: str, factory_func, ttl: int | None = None) -> Any:
         """Obtener del caché o calcular y guardar"""
         value = await self.get(key)
         if value is not None:
@@ -252,14 +249,13 @@ class CacheManager:
             if self.redis_client and self.cache_enabled:
                 await self.redis_client.ping()
                 return True
-            else:
-                # Para memoria, siempre está "sano"
-                return True
+            # Para memoria, siempre está "sano"
+            return True
         except Exception as e:
             logger.error(f"Health check falló: {e}")
             return False
 
-    def _cleanup_memory_cache(self):
+    def _cleanup_memory_cache(self) -> None:
         """Compatibility no-op: TTLCache handles expiration/eviction automatically."""
         return
 
@@ -271,51 +267,51 @@ cache_manager = CacheManager()
 # Funciones de conveniencia para casos de uso específicos
 
 
-async def cache_business_config(business_id: str, config: dict[str, Any], ttl: int = 7200):
+async def cache_business_config(business_id: str, config: dict[str, Any], ttl: int = 7200) -> None:
     """Cachear configuración de negocio (2 horas por defecto)"""
     key = f"business_config:{business_id}"
     await cache_manager.set(key, config, ttl)
 
 
-async def get_cached_business_config(business_id: str) -> Optional[dict[str, Any]]:
+async def get_cached_business_config(business_id: str) -> dict[str, Any] | None:
     """Obtener configuración de negocio cacheada"""
     key = f"business_config:{business_id}"
     return await cache_manager.get(key)
 
 
-async def cache_llm_response(prompt_hash: str, response: str, provider: str, ttl: int = 3600):
+async def cache_llm_response(prompt_hash: str, response: str, provider: str, ttl: int = 3600) -> None:
     """Cachear respuesta de LLM (1 hora por defecto)"""
     key = f"llm_response:{provider}:{prompt_hash}"
     cached_data = {"response": response, "provider": provider, "cached_at": datetime.now(timezone.utc).isoformat()}
     await cache_manager.set(key, cached_data, ttl)
 
 
-async def get_cached_llm_response(prompt_hash: str, provider: str) -> Optional[dict[str, Any]]:
+async def get_cached_llm_response(prompt_hash: str, provider: str) -> dict[str, Any] | None:
     """Obtener respuesta de LLM cacheada"""
     key = f"llm_response:{provider}:{prompt_hash}"
     return await cache_manager.get(key)
 
 
-async def cache_conversation_context(session_id: str, context: list[dict], ttl: int = 1800):
+async def cache_conversation_context(session_id: str, context: list[dict], ttl: int = 1800) -> None:
     """Cachear contexto de conversación (30 minutos por defecto)"""
     key = f"conversation:{session_id}"
     await cache_manager.set(key, context, ttl)
 
 
-async def get_cached_conversation_context(session_id: str) -> Optional[list[dict]]:
+async def get_cached_conversation_context(session_id: str) -> list[dict] | None:
     """Obtener contexto de conversación cacheado"""
     key = f"conversation:{session_id}"
     return await cache_manager.get(key)
 
 
-async def invalidate_business_cache(business_id: str):
+async def invalidate_business_cache(business_id: str) -> None:
     """Invalidar todo el caché relacionado con un negocio"""
     pattern = f"business_*:{business_id}"
     deleted = await cache_manager.clear_pattern(pattern)
     logger.info(f"Invalidadas {deleted} entradas de caché para negocio {business_id}")
 
 
-async def clear_all_cache():
+async def clear_all_cache() -> None:
     """Limpiar todo el caché"""
     deleted = await cache_manager.clear_pattern("*")
     logger.info(f"Limpiadas {deleted} entradas del caché")
@@ -329,7 +325,7 @@ if __name__ != "__main__":
 
 if __name__ == "__main__":
     # Script de prueba del caché
-    async def test_cache():
+    async def test_cache() -> None:
         print("🧪 Probando sistema de caché...")
 
         # Probar set/get

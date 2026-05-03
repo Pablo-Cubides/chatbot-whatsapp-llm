@@ -9,10 +9,11 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class CircuitBreakerStats:
     failure_count: int = 0
     success_count: int = 0
     total_requests: int = 0
-    last_failure_time: Optional[datetime] = None
+    last_failure_time: datetime | None = None
     state_changed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -47,7 +48,7 @@ class CircuitBreaker:
         recovery_timeout: int = 60,
         expected_exception: tuple = (Exception,),
         name: str = "default",
-    ):
+    ) -> None:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
@@ -91,7 +92,7 @@ class CircuitBreaker:
         time_since_last_failure = datetime.now(timezone.utc) - self.stats.last_failure_time
         return time_since_last_failure.total_seconds() >= self.recovery_timeout
 
-    def _on_success(self):
+    def _on_success(self) -> None:
         """Manejar caso de éxito"""
         self.stats.success_count += 1
         self.stats.failure_count = 0  # Reset failure count
@@ -101,7 +102,7 @@ class CircuitBreaker:
             self.stats.state_changed_at = datetime.now(timezone.utc)
             logger.info(f"Circuit breaker {self.name}: HALF_OPEN -> CLOSED")
 
-    def _on_failure(self):
+    def _on_failure(self) -> None:
         """Manejar caso de fallo"""
         self.stats.failure_count += 1
         self.stats.last_failure_time = datetime.now(timezone.utc)
@@ -151,9 +152,9 @@ class RateLimiter:
     Rate Limiter usando algoritmo de sliding window
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.request_history: dict[str, list] = {}
-        self._cleanup_thread: Optional[threading.Thread] = None
+        self._cleanup_thread: threading.Thread | None = None
         self._cleanup_stop = threading.Event()
         self._cleanup_interval_seconds = max(5, int(os.environ.get("RATE_LIMIT_CLEANUP_INTERVAL_SECONDS", "60")))
 
@@ -194,7 +195,7 @@ class RateLimiter:
 
         return allowed, info
 
-    def cleanup_stale_entries(self, max_age: int = 600):
+    def cleanup_stale_entries(self, max_age: int = 600) -> None:
         """Remove stale entries older than max_age seconds to prevent memory leak"""
         current_time = time.time()
         cutoff = current_time - max_age
@@ -204,7 +205,7 @@ class RateLimiter:
         if stale_keys:
             logger.debug(f"🧹 Limpiados {len(stale_keys)} identifiers stale del rate limiter")
 
-    def _cleanup_old_entries(self):
+    def _cleanup_old_entries(self) -> None:
         """Internal periodic cleanup callback."""
         self.cleanup_stale_entries()
 
@@ -287,7 +288,7 @@ def circuit_breaker(name: str, failure_threshold: int = 5, recovery_timeout: int
     return decorator
 
 
-def rate_limit(rule_name: str, identifier_func: Optional[Callable] = None):
+def rate_limit(rule_name: str, identifier_func: Callable | None = None):
     """Decorator para aplicar rate limiting"""
 
     def decorator(func):
@@ -360,7 +361,7 @@ def get_user_identifier(request) -> str:
 class RateLimitMiddleware:
     """Middleware para aplicar rate limiting automático"""
 
-    def __init__(self, app, default_rule: str = "api_general"):
+    def __init__(self, app, default_rule: str = "api_general") -> None:
         self.app = app
         self.default_rule = default_rule
 
@@ -398,15 +399,16 @@ class RateLimitMiddleware:
                 import json
 
                 await send({"type": "http.response.body", "body": json.dumps(response).encode()})
-                return
+                return None
 
         # Continuar con la aplicación
         await self.app(scope, receive, send)
+        return None
 
 
 def get_protection_stats() -> dict[str, Any]:
     """Obtener estadísticas de todos los sistemas de protección"""
-    stats = {
+    return {
         "rate_limiter": rate_limiter.get_stats(),
         "circuit_breakers": {name: cb.get_stats() for name, cb in circuit_breakers.items()},
         "protection_rules": {
@@ -415,14 +417,12 @@ def get_protection_stats() -> dict[str, Any]:
         },
     }
 
-    return stats
-
 
 if __name__ == "__main__":
     # Tests de desarrollo - no importar en producción
-    async def _test_circuit_breaker():
+    async def _test_circuit_breaker() -> None:
         @circuit_breaker("test_cb", failure_threshold=2, recovery_timeout=5)
-        async def failing_function(should_fail: bool = True):
+        async def failing_function(should_fail: bool = True) -> str:
             if should_fail:
                 raise Exception("Simulated failure")
             return "Success!"

@@ -24,8 +24,8 @@ def test_ci_deploy_checks_critical_services_running_and_no_unhealthy() -> None:
     assert "Runtime status checks for critical services" in text
     assert "for svc in app worker-web scheduler; do" in text
     assert "Service $svc is not running/healthy" in text
-    assert "grep -Eiq \"Up|running|healthy\"" in text
-    assert "grep -Eiq \"unhealthy|Exited|dead\"" in text
+    assert 'grep -Eiq "Up|running|healthy"' in text
+    assert 'grep -Eiq "unhealthy|Exited|dead"' in text
     assert "Detected unhealthy/exited containers after deploy" in text
 
 
@@ -35,4 +35,4 @@ def test_deployment_docs_include_critical_service_runtime_check_commands() -> No
     assert "Estado de servicios críticos" in text
     assert "docker compose ps" in text
     assert "for svc in app worker-web scheduler; do" in text
-    assert "grep -Eiq \"Up|running|healthy\"" in text
+    assert 'grep -Eiq "Up|running|healthy"' in text

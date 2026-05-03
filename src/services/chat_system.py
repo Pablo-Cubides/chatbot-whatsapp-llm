@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class ChatConnectionManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: list[WebSocket] = []
         self.chat_sessions: dict[str, dict] = {}
 
-    async def connect(self, websocket: WebSocket, session_id: str):
+    async def connect(self, websocket: WebSocket, session_id: str) -> None:
         """Conectar nueva sesión de chat"""
         await websocket.accept()
         self.active_connections.append(websocket)
@@ -41,23 +41,23 @@ class ChatConnectionManager:
             websocket,
         )
 
-    def disconnect(self, websocket: WebSocket, session_id: str):
+    def disconnect(self, websocket: WebSocket, session_id: str) -> None:
         """Desconectar sesión de chat"""
         self.active_connections.remove(websocket)
         if session_id in self.chat_sessions:
             self.chat_sessions[session_id]["status"] = "disconnected"
 
-    async def send_personal_message(self, message: dict, websocket: WebSocket):
+    async def send_personal_message(self, message: dict, websocket: WebSocket) -> None:
         """Enviar mensaje a una conexión específica"""
         await websocket.send_text(json.dumps(message, ensure_ascii=False))
 
-    async def broadcast(self, message: dict):
+    async def broadcast(self, message: dict) -> None:
         """Broadcast a todas las conexiones"""
         for connection in self.active_connections:
             with contextlib.suppress(Exception):
                 await connection.send_text(json.dumps(message, ensure_ascii=False))
 
-    async def process_message(self, session_id: str, user_message: str, websocket: WebSocket):
+    async def process_message(self, session_id: str, user_message: str, websocket: WebSocket) -> None:
         """Procesar mensaje del usuario y generar respuesta"""
         try:
             # Agregar mensaje del usuario al historial
@@ -117,16 +117,16 @@ class ChatConnectionManager:
             if any(word in user_message_lower for word in ["hola", "buenos días", "buenas tardes"]):
                 return "¡Hola! 👋 Bienvenido/a a nuestro chat de prueba. Soy tu asistente virtual. ¿En qué puedo ayudarte hoy?"
 
-            elif any(word in user_message_lower for word in ["precio", "costo", "cuánto", "valor"]):
+            if any(word in user_message_lower for word in ["precio", "costo", "cuánto", "valor"]):
                 return "Me interesa ayudarte con información sobre precios. ¿Podrías ser más específico sobre qué producto o servicio te interesa? 💰"
 
-            elif any(word in user_message_lower for word in ["horario", "hora", "cuándo", "abierto"]):
+            if any(word in user_message_lower for word in ["horario", "hora", "cuándo", "abierto"]):
                 return "Nuestros horarios de atención son de Lunes a Viernes de 9:00 AM a 6:00 PM. ¿Te gustaría agendar una cita? 📅"
 
-            elif any(word in user_message_lower for word in ["contacto", "teléfono", "email", "dirección"]):
+            if any(word in user_message_lower for word in ["contacto", "teléfono", "email", "dirección"]):
                 return "Puedes contactarnos por:\n📧 Email: contacto@minegocio.com\n📞 Teléfono: +1-234-567-8900\n📍 Ubicación: Ciudad, País"
 
-            elif any(word in user_message_lower for word in ["ayuda", "help", "qué puedes hacer"]):
+            if any(word in user_message_lower for word in ["ayuda", "help", "qué puedes hacer"]):
                 return """¡Perfecto! Puedo ayudarte con:
 
 ✅ Información sobre nuestros servicios
@@ -138,8 +138,7 @@ class ChatConnectionManager:
 
 ¿Con qué te gustaría que empiece?"""
 
-            else:
-                return f"Gracias por tu mensaje: '{user_message}'. Estoy procesando tu consulta con nuestra configuración de negocio personalizada. ¿Hay algo específico en lo que pueda ayudarte? 🤖"
+            return f"Gracias por tu mensaje: '{user_message}'. Estoy procesando tu consulta con nuestra configuración de negocio personalizada. ¿Hay algo específico en lo que pueda ayudarte? 🤖"
 
         except Exception as e:
             logger.error("Error generando respuesta: %s", e)

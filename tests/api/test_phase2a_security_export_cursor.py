@@ -55,7 +55,9 @@ def test_security_incremental_export_v2_requires_admin(client: TestClient, opera
     assert forbidden.status_code == 403
 
 
-def test_security_incremental_export_v2_cursor_handles_same_timestamp(client: TestClient, admin_headers: dict[str, str]) -> None:
+def test_security_incremental_export_v2_cursor_handles_same_timestamp(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
     base = (datetime.now(timezone.utc) - timedelta(minutes=25)).replace(microsecond=0)
 
     _seed_event("SECURITY_LOGIN_FAILED", "p2_cursor_1", base + timedelta(minutes=1))

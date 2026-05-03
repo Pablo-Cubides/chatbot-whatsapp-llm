@@ -21,7 +21,7 @@ def _read(rel_path: str) -> str:
 def test_ci_workflow_has_coverage_gate_and_strict_mypy() -> None:
     text = _read(".github/workflows/ci.yml")
 
-    assert "PYTHON_VERSION: \"3.11.8\"" in text
+    assert 'PYTHON_VERSION: "3.11.8"' in text
     assert "--cov-fail-under=70" in text
     assert "mypy --config-file mypy.ini --strict" in text
 
@@ -30,15 +30,15 @@ def test_precommit_has_fast_pytest_hook() -> None:
     text = _read(".pre-commit-config.yaml")
 
     assert "id: pytest-fast" in text
-    assert "entry: pytest -q -m \"unit and not integration\"" in text
+    assert 'entry: pytest -q -m "unit and not integration"' in text
 
 
 def test_dependabot_weekly_for_pip_and_docker() -> None:
     text = _read(".github/dependabot.yml")
 
-    assert "package-ecosystem: \"pip\"" in text
-    assert "package-ecosystem: \"docker\"" in text
-    assert "interval: \"weekly\"" in text
+    assert 'package-ecosystem: "pip"' in text
+    assert 'package-ecosystem: "docker"' in text
+    assert 'interval: "weekly"' in text
 
 
 def test_dockerfiles_pin_python_patch_version() -> None:

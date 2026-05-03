@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from src.services.context_loader import ContextLoader
 
 
@@ -13,7 +11,9 @@ def test_load_all_contexts_populates_contact_objective(monkeypatch) -> None:
         "load_contact_profile",
         lambda chat_id: {"chat_id": chat_id, "objective": "cerrar cita", "instructions": "tono cordial"},
     )
-    monkeypatch.setattr(loader, "load_active_strategy", lambda chat_id: {"version": 2, "strategy_text": "hacer pregunta cerrada"})
+    monkeypatch.setattr(
+        loader, "load_active_strategy", lambda chat_id: {"version": 2, "strategy_text": "hacer pregunta cerrada"}
+    )
 
     contexts = loader.load_all_contexts("chat-ctx-1")
 

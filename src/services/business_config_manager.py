@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class BusinessConfigManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self.project_root = Path(__file__).resolve().parents[2]
         config_dir = self.project_root / "config"
         data_dir = self.project_root / "data"
@@ -181,11 +181,10 @@ class BusinessConfigManager:
                 # Mergear con defaults para asegurar que tenga todas las claves
                 default = self.get_default_config()
                 return self._merge_configs(default, config)
-            else:
-                # Primera vez, crear config por defecto
-                config = self.get_default_config()
-                self.save_config(config)
-                return config
+            # Primera vez, crear config por defecto
+            config = self.get_default_config()
+            self.save_config(config)
+            return config
 
         except Exception as e:
             logger.error(f"Error cargando configuración: {e}")
@@ -217,7 +216,7 @@ class BusinessConfigManager:
             logger.error(f"Error guardando configuración: {e}")
             return False
 
-    def _update_payload_files(self, config: dict[str, Any]):
+    def _update_payload_files(self, config: dict[str, Any]) -> None:
         """Actualiza payload.json y payload_reasoner.json basado en la configuración"""
 
         # Payload principal
@@ -278,7 +277,7 @@ class BusinessConfigManager:
         # Nombre de empleado (por defecto: nombre del negocio + "asesor")
         employee_name = os.getenv("BOT_EMPLOYEE_NAME", business_info.get("name", "Alex"))
 
-        prompt = f"""Te llamas {employee_name} y trabajas en {business_info.get("name", "este negocio")} atendiendo clientes por WhatsApp.
+        return f"""Te llamas {employee_name} y trabajas en {business_info.get("name", "este negocio")} atendiendo clientes por WhatsApp.
 
 IDENTIDAD CRÍTICA:
 - Eres {employee_name}, una persona REAL que trabaja aquí
@@ -327,8 +326,6 @@ REGLAS ABSOLUTAS:
 - Sé {business_info.get("tone", "profesional pero amigable")} como una persona real
 
 Recuerda: Eres {employee_name}, una persona REAL atendiendo por WhatsApp. Tu éxito se mide en que el cliente NUNCA sospeche que no eres humano."""
-
-        return prompt
 
     def update_field(self, field_path: str, value: Any) -> bool:
         """Actualiza un campo específico de la configuración"""
