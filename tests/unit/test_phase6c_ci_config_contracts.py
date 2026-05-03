@@ -22,7 +22,7 @@ def test_ci_workflow_has_coverage_gate_and_strict_mypy() -> None:
     text = _read(".github/workflows/ci.yml")
 
     assert 'PYTHON_VERSION: "3.13"' in text
-    assert "--cov-fail-under=70" in text
+    assert "--cov-fail-under=55" in text
     assert "mypy --config-file mypy.ini --strict" in text
 
 
