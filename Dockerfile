@@ -1,5 +1,5 @@
 # Dockerfile para API/Admin Panel (multi-stage)
-FROM python:3.11.8-slim AS builder
+FROM python:3.13-slim AS builder
 
 LABEL maintainer="Pablo Cubides"
 LABEL description="WhatsApp Chatbot Admin Panel & API"
@@ -28,7 +28,7 @@ COPY requirements.txt .
 RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 
-FROM python:3.11.8-slim AS runtime
+FROM python:3.13-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -68,3 +68,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Comando por defecto
 CMD ["gunicorn", "admin_panel:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8003", "--workers", "2", "--timeout", "120", "--graceful-timeout", "30"]
+
