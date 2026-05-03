@@ -19,10 +19,10 @@ jobs:
   verify-remote-deploy:
     name: ✅ Verify Remote Deploy
     runs-on: ubuntu-latest
-    if: secrets.DEPLOY_HOST != '' && secrets.DEPLOY_USER != '' && secrets.DEPLOY_SSH_KEY != ''
+    if: vars.DEPLOY_HOST != ''
     steps:
       - name: Verify deployment health/smoke via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -85,3 +85,4 @@ jobs:
             fi
 
             echo "✅ Remote deploy verification passed"
+
