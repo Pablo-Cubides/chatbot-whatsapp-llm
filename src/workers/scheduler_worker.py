@@ -16,10 +16,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Setup logging
+_log_handlers: list[logging.Handler] = [logging.StreamHandler()]
+_log_dir = "logs"
+os.makedirs(_log_dir, exist_ok=True)
+try:
+    _log_handlers.append(logging.FileHandler(os.path.join(_log_dir, "scheduler.log")))
+except OSError:
+    pass  # Read-only filesystem or missing permissions — stdout only
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("logs/scheduler.log"), logging.StreamHandler()],
+    handlers=_log_handlers,
 )
 logger = logging.getLogger(__name__)
 
