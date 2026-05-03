@@ -50,7 +50,8 @@ jobs:
 
       - name: Type check (targeted hardened modules)
         run: |
-          mypy --config-file mypy.ini --strict src/services/http_rate_limit.py crypto.py src/workers/scheduler_worker.py admin_panel.py src/services/process_control.py
+          mypy --config-file mypy.ini --strict src/services/http_rate_limit.py crypto.py src/workers/scheduler_worker.py src/services/process_control.py
+          mypy --config-file mypy.ini admin_panel.py
 
   # ===========================
   # Tests

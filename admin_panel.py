@@ -20,10 +20,11 @@ from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+jsonlogger: Any = None
 try:
     from pythonjsonlogger import jsonlogger
 except ImportError:  # pragma: no cover
-    jsonlogger = None
+    pass
 
 redis: Any
 try:
@@ -170,7 +171,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _configure_logging_output()
     validate_runtime_environment()
     run_startup_migrations()
-    initialize_schema()  # type: ignore[no-untyped-call]
+    initialize_schema()
     ensure_bot_disabled_by_default()
 
     shared_http_session: aiohttp.ClientSession | None = None
@@ -197,7 +198,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Error closing HTTP rate limiter: %s", e)
 
     try:
-        cleanup_connections()  # type: ignore[no-untyped-call]
+        cleanup_connections()
     except Exception as e:
         logger.warning("Error cleaning DB connections on shutdown: %s", e)
 
@@ -457,7 +458,7 @@ async def enforce_api_auth(request: Request, call_next: Callable[[Request], Awai
 
 
 @app.exception_handler(HTTPException)
-async def sanitized_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+async def sanitized_http_exception_handler(request: Request, exc: HTTPException) -> Response:
     """Prevent leaking internal exception details in 5xx HTTP errors."""
     if exc.status_code >= 500:
         logger.error("❌ HTTP %s at %s", exc.status_code, request.url.path)
@@ -533,7 +534,7 @@ def health() -> Response:
 
     # Database check
     try:
-        session = get_session()  # type: ignore[no-untyped-call]
+        session = get_session()
         session.execute(text("SELECT 1"))
         session.close()
         db_status = {"status": "ok"}
