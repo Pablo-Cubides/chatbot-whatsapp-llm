@@ -27,7 +27,7 @@ pydantic-settings==2.13.0
 pyee==12.1.1
 Pygments==2.20.0
 python-dotenv==1.2.2
-python-json-logger==2.0.7
+python-json-logger==4.1.0
 requests==2.33.0
 rich==14.0.0
 alembic==1.11.1
