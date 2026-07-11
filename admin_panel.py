@@ -700,7 +700,7 @@ def dashboard_redirect(current_user: dict[str, Any] = Depends(get_current_user))
 # --- Minimal web chat UI -------------------------------------------------
 @app.get("/chat", response_class=HTMLResponse)
 def chat_ui(request: Request, current_user: dict[str, Any] = Depends(get_current_user)) -> HTMLResponse:
-    return templates.TemplateResponse("chat_quick.html", {"request": request})
+    return templates.TemplateResponse(request, "chat_quick.html")
 
 
 @app.websocket("/ws/metrics")
