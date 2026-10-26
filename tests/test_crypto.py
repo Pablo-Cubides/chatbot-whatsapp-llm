@@ -3,6 +3,7 @@ Tests for the Crypto module — Fernet encryption/decryption.
 """
 
 import os
+import secrets
 from unittest.mock import patch
 
 import pytest
@@ -109,7 +110,7 @@ class TestCrypto:
 
         with patch("crypto.get_fernet") as mock_fernet:
             mock_fernet.return_value = self.fernet
-            token = "ya29.abcdef1234567890"
+            token = secrets.token_urlsafe(32)
             encrypted = encrypt_oauth_token(token)
             decrypted = decrypt_oauth_token(encrypted)
             assert decrypted == token
@@ -122,7 +123,7 @@ class TestCrypto:
 
         with patch("crypto.get_fernet") as mock_fernet:
             mock_fernet.return_value = self.fernet
-            key = "sk-1234567890abcdef"
+            key = secrets.token_urlsafe(32)
             encrypted = encrypt_api_key(key)
             decrypted = decrypt_api_key(encrypted)
             assert decrypted == key

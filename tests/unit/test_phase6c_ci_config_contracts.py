@@ -41,12 +41,17 @@ def test_dependabot_weekly_for_pip_and_docker() -> None:
     assert 'interval: "weekly"' in text
 
 
+def test_retired_project_deploy_requires_explicit_opt_in() -> None:
+    text = _read(".github/workflows/ci.yml")
+    assert "vars.ENABLE_LEGACY_DEPLOY == 'true'" in text
+
+
 def test_dockerfiles_pin_python_patch_version() -> None:
     dockerfile = _read("Dockerfile")
     scheduler = _read("Dockerfile.scheduler")
 
-    assert "FROM python:3.13.3-slim AS builder" in dockerfile
-    assert "FROM python:3.13.3-slim AS runtime" in dockerfile
+    assert "FROM python:3.13.16-slim AS builder" in dockerfile
+    assert "FROM python:3.13.16-slim AS runtime" in dockerfile
 
-    assert "FROM python:3.13.3-slim AS builder" in scheduler
-    assert "FROM python:3.13.3-slim AS runtime" in scheduler
+    assert "FROM python:3.13.16-slim AS builder" in scheduler
+    assert "FROM python:3.13.16-slim AS runtime" in scheduler

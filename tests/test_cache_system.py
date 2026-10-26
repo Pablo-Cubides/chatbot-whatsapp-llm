@@ -20,6 +20,12 @@ from src.services.cache_system import (
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def isolated_memory_backend(monkeypatch):
+    """These fallback tests must not connect to a developer's live Redis."""
+    monkeypatch.setattr("src.services.cache_system.REDIS_AVAILABLE", False)
+
+
 class TestCacheManager:
     """Test suite for CacheManager with in-memory fallback."""
 

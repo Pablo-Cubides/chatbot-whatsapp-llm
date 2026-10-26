@@ -15,7 +15,8 @@ Antes de desplegar, configura estas variables:
 
 ```bash
 # Seguridad - OBLIGATORIAS
-JWT_SECRET=<genera-un-secreto-seguro-de-64-caracteres>
+# Genera un valor local con secrets.token_urlsafe(48); no reutilices ejemplos.
+JWT_SECRET=
 ADMIN_PASSWORD=<password-seguro>
 OPERATOR_PASSWORD=<password-operador-seguro>
 
@@ -133,7 +134,8 @@ gcloud run deploy chatbot-whatsapp \
     --platform managed \
     --region us-central1 \
     --allow-unauthenticated \
-    --set-env-vars "JWT_SECRET=xxx,DATABASE_URL=xxx" \
+# Genera un valor local con secrets.token_urlsafe(48); no reutilices ejemplos.
+JWT_SECRET=
     --memory 1Gi \
     --cpu 1
 ```
@@ -175,7 +177,8 @@ az container create \
     --image chatbotacr.azurecr.io/chatbot-whatsapp:v1 \
     --dns-name-label chatbot-unique \
     --ports 8003 \
-    --environment-variables JWT_SECRET=xxx DATABASE_URL=xxx
+# Genera un valor local con secrets.token_urlsafe(48); no reutilices ejemplos.
+JWT_SECRET=
 ```
 
 ---
@@ -194,7 +197,8 @@ cd chatbot-whatsapp-llm
 
 # 3. Crear .env de producción
 cat > .env << 'EOF'
-JWT_SECRET=tu-secreto-seguro-64-caracteres-aqui
+# Genera un valor local con secrets.token_urlsafe(48); no reutilices ejemplos.
+JWT_SECRET=
 ADMIN_PASSWORD=password-seguro-produccion
 DATABASE_URL=postgresql://chatbot:password@postgres:5432/chatbot
 POSTGRES_PASSWORD=password-seguro-db

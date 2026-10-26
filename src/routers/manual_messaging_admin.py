@@ -1,5 +1,6 @@
 """Manual messaging and media routes extracted from admin_panel."""
 
+import asyncio
 import json
 import logging
 import mimetypes
@@ -9,11 +10,11 @@ from datetime import datetime
 from pathlib import PurePath
 from typing import Any
 
-import stub_chat
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 import chat_sessions
+import stub_chat
 from src.routers.whatsapp_runtime_admin import get_whatsapp_runtime_status
 from src.services.audit_system import log_bulk_send
 from src.services.auth_system import get_current_user, require_admin
@@ -188,7 +189,7 @@ INSTRUCCIONES:
 
 Genera el contenido personalizado:"""
 
-                personalized_content = stub_chat.chat(compose_prompt, contact_number, [])
+                personalized_content = await asyncio.to_thread(stub_chat.chat, compose_prompt, contact_number, [])
                 final_message = (
                     payload.template.replace("{custom}", personalized_content)
                     if personalized_content

@@ -17,12 +17,12 @@ from typing import Any
 from dotenv import load_dotenv
 from model_manager import ModelManager
 from playwright.sync_api import sync_playwright
-from stub_chat import chat as stub_chat
 
 import chat_sessions
 from admin_db import get_session
 from models import Conversation
 from src.services.queue_system import queue_manager
+from stub_chat import chat as stub_chat
 
 # --------------------------------------------
 # Definición de logger

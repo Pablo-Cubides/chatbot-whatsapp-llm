@@ -8,12 +8,13 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
 
-import stub_chat
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 import chat_sessions
+import stub_chat
 from src.services.adaptive_layer import adaptive_layer_manager
 from src.services.auth_system import get_current_user, require_admin
 from src.services.business_config_manager import business_config
@@ -124,7 +125,7 @@ async def api_chat(payload: ChatIn, current_user: dict[str, Any] = Depends(get_c
         elif style_hint == "empathetic":
             user_message = f"[Estilo: tono empático, cálido y conversacional]\n{payload.message}"
 
-        reply = stub_chat.chat(user_message, payload.chat_id, history)
+        reply = await run_in_threadpool(stub_chat.chat, user_message, payload.chat_id, history)
         history.append({"role": "user", "content": payload.message})
         history.append({"role": "assistant", "content": reply})
         chat_sessions.save_context(payload.chat_id, history)

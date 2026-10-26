@@ -5,10 +5,10 @@ import json
 import os
 from typing import Any
 
-import stub_chat
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+import stub_chat
 from src.services.auth_system import get_current_user, require_admin
 
 router = APIRouter(tags=["model-switch-admin"])
